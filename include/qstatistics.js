@@ -1,186 +1,314 @@
-var refresh_visible = 2000;
-var refresh_hidden = 10000;
-var refresh_current = refresh_visible;
-var david = 1;
+function CSOptions () {
+    var timeControls = [
+            'startday',
+            'start_year',
+            'start_month',
+            'start_day',
+            'start_hour',
+            'start_minute',
+            'start_second',
+            'endday',
+            'end_year',
+            'end_month',
+            'end_day',
+            'end_hour',
+            'end_minute',
+            'end_second'
+        ],
+        columnControls = [
+            'totalcalls',
+            'answer',
+            'noanswer',
+            'incalls',
+            'inanswer',
+            'innoanswer',
+            'internalcalls',
+            'internalanswer',
+            'internalnoanswer',
+            'outcalls',
+            'outanswer',
+            'outnoanswer'
+        ];
 
-var hidden_property = '';
-var timeout_handle = null;
-var error_alerted = 0;
 
-var username = '';
-var password = '';
-var start = null;
-var end = null;
+    function setWatchers() {
+        var i;
 
-function qstatistics_begin() {
-	var properties = {
-		hidden: "visibilitychange",
-		mozHidden: "mozvisibilitychange",
-		webkitHidden: "webkitvisibilitychange",
-		msHidden: "msvisibilitychange",
-		oHidden: "ovisibilitychange"
-	};
+        for (i in timeControls) {
+            byId(timeControls[i]).addEventListener('change', function () {
+                csPoll.newPoll(function () {
+                    csTable.update();
+                });
+            });
+        }
+        for (i in columnControls) {
+            byId(columnControls[i]).addEventListener('change', function () {
+                csTable.setColumn(this.id, this.value !== '0');
+            });
+        }
+    }
 
-	var value = null;
-	for ( hidden_property in properties ) {
-		if ( properties.hasOwnProperty( hidden_property ) && hidden_property in document ) {
-			value = properties[ hidden_property ];
-			break;
-		}
-	}
 
-	if ( value ) {
-		document.addEventListener( value, qstatistics_visible_change );
-	} else if (/*@cc_on!@*/false) { // IE 9 and earlier
-		document.onfocusin = document.onfocusout = qstatistics_visible_change;
-	} else {
-		window.onfocus = window.onblur = qstatistics_visible_change;
-	}
+    this.getColumnsVisibilities = function () {
+        var result = [],
+            i;
 
-	// Get settings from the /view/ web page.
-	username = config( 'settings', 'username', 'string' );
-	password = config( 'settings', 'password', 'string' );
-	refresh_visible = config( 'settings', 'refresh', 'number' ); // Override refresh interval.
-	refresh_current = refresh_visible;
-	debug = config( 'settings', 'debug', 'number' ); // If enabled log debugging information to browser console.
-	allcolumns = config( 'settings', 'allcolumns', 'number' ); // If enabled show all columns regardless of what options are specified.
+        for (i in columnControls) {
+            result[i] = byId(columnControls[i]).value !== '0';
+        }
+        return result;
+    };
 
-	// Set up page here.
 
-	// Make first request for data.
-	qstatistics_request();
+    setWatchers();
 }
+function CSPoll () {
+    var username = '';
+    var password = '';
+    var start,
+        end,
+        alertShown,
+        that = this,
+        allcolumns,
+        timeoutHandle;
 
-var qstatistics_request = function() {
-	// Get current timestamp
-	if ( ! Date.now ) {
-		// For IE.
-		Date.now = function() { return new Date().getTime(); }
-	}
-	var now = Math.floor( Date.now() / 1000 );
 
-	// Start timestamp
-	if ( start == null ) {
-		start = now;
+    function initAndStart () {
+        document.addEventListener('visibilitychange', visibilityChange);
 
-		var startday = option( 'startday', true );
-		
-		if ( startday == 1 ) {
-			var start_year = option( 'start_year', true );
-			var start_month = option( 'start_month', true );
-			var start_day = option( 'start_day', true );
-			start = new Date( start_year + '.' + start_month + '.' + start_day ).getTime() / 1000;
-		
-		} else {
-			start = now - ( now % 86400 ) - ( startday * 86400 );
-		}
-		
-		start = start + ( option( 'start_hour', true ) * 3600 ) + ( option( 'start_minute', true ) * 60 ) + option( 'start_second', true );
-	}
+        // Get settings from the /view/ web page.
+        username = config('settings', 'username');
+        password = config('settings', 'password');
+        allcolumns = config('settings', 'allcolumns');      // Show all columns regardless of what options are specified.
 
-	// End timestamp
-	if ( end == null ) {
-		end = now;
+        that.newPoll();
+    }
 
-		var endday = option( 'endday', true );
-		
-		if ( endday == 1 ) {
-			var end_year = option( 'end_year', true );
-			var end_month = option( 'end_month', true );
-			var end_day = option( 'end_day', true );
-			end = new Date( end_year + '.' + end_month + '.' + end_day ).getTime() / 1000;
-		
-		} else {
-			end = now - ( now % 86400 ) - ( endday * 86400 );
-		}
-		
-		end = end + ( option( 'end_hour', true ) * 3600 ) + ( option( 'end_minute', true ) * 60 ) + option( 'end_second', true );
-	}
 
-	// Make request	for data
-	var request = '/local/qstatistics/update/?_username=' + username + ';_password=' + password + ';start=' + start + ';end=' + end;
-	if ( debug ) console.log( 'Requesting: ' + request );
+    function ajaxGet (uri, success, failure) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '/local/qstatistics/update/' + uri);
+        xhr.onload = function() {
+            if (xhr.status === 200) {
+                success(xhr.responseXML);
+            }
+            else {
+                failure();
+            }
+        };
+        xhr.onerror = failure;
+        xhr.send();
+    }
 
-	ajax_get( request, qstatistics_update );
 
-	if ( timeout_handle ) {
-		clearTimeout( timeout_handle );
-	}
+    function calcTimeframe () {
+        var today = Math.floor(Date.now() / 1000);
+        today -= today % 86400;
+
+        var startday = number('startday');
+        if (startday === 1) {
+            start = new Date(number('start_year') + '.' + number('start_month') + '.' + number('start_day')).getTime() / 1000;
+        }
+        else {
+            start = today + startday * 86400;
+        }
+        start += number('start_hour') * 3600 + number('start_minute') * 60 + number('start_second');
+
+        var endday = number('endday');
+        if (endday == 1) {
+            end = new Date(number('end_year') + '.' + number('end_month') + '.' + number('end_day')).getTime() / 1000;
+        }
+        else {
+            end = today + endday * 86400;
+        }
+        end += number('end_hour') * 3600 + number('end_minute') * 60 + number('end_second');
+
+        //alertShown = false;
+    }
+
+
+    function requestIfVisible () {
+        if (!document.hidden && start < Date.now()) {
+            var request = '?_username=' + username + ';_password=' + password + ';start=' + start + ';end=' + end;
+
+            ajaxGet(request, response, function () {
+                timeoutHandle = setTimeout(requestIfVisible, 4000);
+            });
+        }
+    }
+
+
+    this.newPoll = function () {
+        clearTimeout(timeoutHandle);
+        calcTimeframe();
+        requestIfVisible();
+    };
+
+
+    function response(response) {
+        var update = response.getElementsByTagName('update')[0];
+
+        if (!update) {
+            var error = response.getElementsByTagName('errors')[0];
+            if (error && !alertShown) {
+                alert(error.getElementsByTagName('error')[0].getAttribute('message'));
+          //      alertShown = true;
+            }
+            return;
+        }
+
+        // Update start time for next request to server.
+        start = update.getAttribute('timestamp');
+
+        var calls = update.getElementsByTagName('cdrs')[0].getElementsByTagName('call');
+
+        // Don't forget to handle the change of day at midnight. If the start or end day is not a specific date then the report period will change every day.
+
+        //today
+
+        // Next request for update
+        timeoutHandle = setTimeout(requestIfVisible, 4000);
+    }
+
+
+    function visibilityChange () {
+        clearTimeout(timeoutHandle);
+        requestIfVisible();
+    }
+
+
+    function config(form, field) {
+        if (document[form][field]) {
+            return document[form][field].value;
+        }
+    }
+
+
+    function option(id) {
+        return byId(id).value;
+    }
+
+
+    function number(id) {
+        return +byId(id).value;
+    }
+
+
+    initAndStart();
 }
+function CSTable (container, options) {
+    var columns = [
+            'Destination',
+            'Total calls',
+            'Answered',
+            'Not answered',
+            'Inbound calls',
+            'Inbound answered',
+            'Inbound not answered',
+            'Internal calls',
+            'Internal answered',
+            'Internal not answered',
+            'Outbound calls',
+            'Outbound answered',
+            'Outbound not answered'
+        ],
+        ids = [
+            '',
+            'totalcalls',
+            'answer',
+            'noanswer',
+            'incalls',
+            'inanswer',
+            'innoanswer',
+            'internalcalls',
+            'internalanswer',
+            'internalnoanswer',
+            'outcalls',
+            'outanswer',
+            'outnoanswer'
+        ],
+        //that = this,
+        table,
+        th,
+        tbody;
 
-function qstatistics_update( response ) {
-	// Process update
-	var update = response.getElementsByTagName( 'update' )[ 0 ];
 
-	if ( ! update ) {
-		var error = response.getElementsByTagName( 'errors' )[ 0 ];
-		if ( error && error_alerted == 0 ) {
-			alert( error.getElementsByTagName( 'error' )[ 0 ].getAttribute( 'message' ) );
-			error_alerted = 1;
-		}
-		return;
-	}
+    function buildHtml () {
+        var str = '<table width="100%" border="0" cellpadding="0" cellspacing="0">' +
+                    '<thead><tr class="head">';
 
-	error_alerted = 0;
+        for (var i in columns) {
+            str += '<th>' + columns[i] + '</th>';
+        }
 
-	// Update start time for next request to server.
-	start = update.getAttribute( 'timestamp' );
+        str += '</tr></thead><tbody></tbody>';
 
-	// Main functionality here...
+        container.innerHTML = str;
+        table = container.children[0];
+        th = table.children[0].children[0].children;
+        tbody = table.children[1];
+        filterColumns();
+    }
 
-	var calls = update.getElementsByTagName( 'cdrs' )[ 0 ].getElementsByTagName( 'call' );
-	console.log( 'Got ' + calls.length + ' CDRs' );
 
-	// Don't forget to handle the change of day at midnight. If the start or end day is not a specific date then the report period will change every day.
+    this.setColumn = function (columnId, visibility) {
+        var pos = ids.indexOf(columnId);
+        options.visibleColumns[pos] = visibility;
+        filterColumn(pos);
+    };
 
-	// Next request for update
-	timeout_handle = window.setTimeout( 'qstatistics_request()', refresh_current );
+
+    function filterColumns () {
+        var rows = tbody.children,
+            visibleColumns = options.visibleColumns;
+
+        for (var i = 0, n = visibleColumns.length; i < n; i++) {
+            th[i].style.display = visibleColumns[i] ? '' : 'none';
+        }
+        for (var j = 0, m = rows.length; j < m; j++) {
+            var row = rows[i];
+            for (i = 0, n = visibleColumns.length; i < n; i++) {
+                row[i].style.display = visibleColumns[i] ? '' : 'none';
+            }
+        }
+    }
+
+
+    function filterColumn (pos) {
+        var rows = tbody.children,
+            visibleColumns = options.visibleColumns;
+
+        th[pos].style.display = visibleColumns[pos] ? '' : 'none';
+
+        for (var j = 0, m = rows.length; j < m; j++) {
+            rows[j].row[pos].style.display = visibleColumns[pos] ? '' : 'none';
+        }
+    }
+
+
+    this.update = function () {
+
+    };
+
+
+    buildHtml();
 }
-
-function qstatistics_visible_change ( e ) {
-	var body = document.body;
-	e = e || window.event;
-
-	if ( e.type == 'focus' || e.type == 'focusin' ) {
-		if ( debug ) console.log( 'Focus in' );
-		refresh_current = refresh_visible;
-		qstatistics_request();
-
-	} else if ( e.type == 'blur' || e.type == 'focusout' ) {
-		if ( debug ) console.log( 'Focus out' );
-		refresh_current = refresh_hidden;
-
-	} else if ( this[ hidden_property ] ) {
-		if ( debug ) console.log( 'Hidden' );
-		refresh_current = refresh_hidden;
-
-	} else {
-		if ( debug ) console.log( 'Visible' );
-		refresh_current = refresh_visible;
-		qstatistics_request();
-	}
+function byId (id) {
+    return document.getElementById(id);
 }
+document.addEventListener("DOMContentLoaded", function() {
 
-function config ( form, field, type ) {
-	if ( document[ form ][ field ] == undefined ) console.log( 'No config for ' + form + '.' + field );
-	var value = document[ form ][ field ].value;
+    window.csOptions = new CSOptions();
 
-	if ( type == 'number' ) {
-		return Number( value );
-	} else {
-		return value;
-	}
+    window.csTable = new CSTable(byId('left-content'), {
+            visibleColumns: csOptions.getColumnsVisibilities()
+        });
+
+    window.csPoll = new CSPoll();
+
+});
+
+
+function qstatistics_begin () {
+
 }
-
-function option ( id, number ) {
-	var element = document.getElementById( id );
-	if ( element == undefined ) console.log( 'No option for ' + id );
-	var value = element.value;
-
-	if ( number ) {
-		return Number( value );
-	} else {
-		return value;
-	}
-}
-

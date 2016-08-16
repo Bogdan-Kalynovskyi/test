@@ -1,8 +1,4 @@
 (function () {
-	function byId (id) {
-		return document.getElementById(id);
-	}
-
 	var main = byId('main-content'),
 		openBtn = byId('panel-open-button'),
 		heading = byId('options-heading'),
