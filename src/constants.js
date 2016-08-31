@@ -1,0 +1,98 @@
+
+var START,
+    END,
+    PERIOD,
+    
+    DAY = 86400,
+
+    
+    DESTINATIONS = [
+        'All calls',
+        'External callers',
+        'Internal callers',
+        'External destinations'
+    ],
+    
+    QUEUES = [
+        'Queues',
+        'Queue agents',
+        'Telephone lines'
+    ],
+    
+    COLUMNS = [
+        '',
+        'Total calls',
+        'Answered',
+        'Not answered',
+        'Inbound calls',
+        'Inbound answered',
+        'Inbound not answered',
+        'Internal calls',
+        'Internal answered',
+        'Internal not answered',
+        'Outbound calls',
+        'Outbound answered',
+        'Outbound not answered'
+    ],
+    
+    timeControls = [
+        'startday',
+        'start_year',
+        'start_month',
+        'start_day',
+        'start_hour',
+        'start_minute',
+        'start_second',
+        'endday',
+        'end_year',
+        'end_month',
+        'end_day',
+        'end_hour',
+        'end_minute',
+        'end_second'
+    ],
+    
+    columnControls = [
+        'totalcalls',
+        'answer',
+        'noanswer',
+        'incalls',
+        'inanswer',
+        'innoanswer',
+        'internalcalls',
+        'internalanswer',
+        'internalnoanswer',
+        'outcalls',
+        'outanswer',
+        'outnoanswer'
+    ],
+
+    destControls = [
+        'allcalls',
+        'inbound',
+        'internal',
+        'outbound'
+    ],
+
+    queueControls = [
+        'queues',
+        'agents',
+        'phones'
+    ],
+    
+    filterByList = [
+        'queues_selected',
+        'agents_selected',
+        'phones_selected'
+    ];
+
+    daysOfWeek = [
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+        'Sunday'
+    ];
+
