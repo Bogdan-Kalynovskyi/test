@@ -7,6 +7,7 @@ function CSPoll (onResponse) {
         lastDate,
         requestStart,
         requestEnd,
+        firstPoll,
         timeoutHandle,
         pollDelay = 6000;
 
@@ -75,9 +76,10 @@ function CSPoll (onResponse) {
             calcTimeFrame();
         }
 
-        // don't poll regularly
+        firstPoll = true;
+
         if (START >= csBase.minTime && END <= csBase.maxTime) {
-            onResponse(csBase.filterByTime(START, END));
+            onResponse(csBase.filterByTime(START, END));    //don't poll again
             return;
         }
         //query what is missing
@@ -124,10 +126,11 @@ function CSPoll (onResponse) {
             var updateEnd = +update.getAttribute('timestamp') - 1,
                 updateNotEmpty = csBase.add(update, requestStart, Math.min(requestEnd, updateEnd));
 
-            if (updateNotEmpty) {
+            if (firstPoll || updateNotEmpty) {
                 onResponse();
             }
 
+            firstPoll = false;
             hidePreloader();
 
             // Handle the change of day at midnight. If the start or end day is not a specific date then the report period will change every day.

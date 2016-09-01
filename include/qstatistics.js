@@ -136,6 +136,9 @@ function CSBase () {
         if (csTable.sortingCol > 0) {
             table.sort(byCol);
         }
+        else if (csTable.sortingOrder === -1) {
+            table.reverse();
+        }
     };
 
 
@@ -295,23 +298,31 @@ function CSBase () {
             notEmpty = true;
         }
 
+        //todo this change detection scheme is wrong
         for (i = 0, n = _queues.length; i < n; i++) {
             var queue = _queues[i];
-            queues[queue.id] = queue;
-            notEmpty = true;
+            if (!queues[queue.id]) {
+                queues[queue.id] = queue;
+                notEmpty = true;
+            }
         }
 
         for (i = 0, n = _agents.length; i < n; i++) {
             var agent = _agents[i];
-            agents[agent.id] = agent;
-            notEmpty = true;
+            if (!agents[agent.id]) {
+                agents[agent.id] = agent;
+                notEmpty = true;
+            }
         }
 
         for (i = 0, n = _phones.length; i < n; i++) {
             var phone = _phones[i];
-            phones[phone.id] = phone;
-            notEmpty = true;
+            if (!phones[phone.id]) {
+                phones[phone.id] = phone;
+                notEmpty = true;
+            }
         }
+        return notEmpty;
     };
 
 
@@ -633,6 +644,7 @@ function CSOptions () {
 
         byId('period').addEventListener('change', function () {
             PERIOD = +this.value;
+            csTable.createHeader();
             csBase.filter();
             dirty();
         });
@@ -640,10 +652,10 @@ function CSOptions () {
 
 
     this.getColumns = function () {
-        var result = [];
+        var result = [1];
 
         for (var i in columnControls) {
-            result[i + 1] = +byId(columnControls[i]).value;
+            result[+i + 1] = +byId(columnControls[i]).value;
         }
         return result;
     };
@@ -687,6 +699,7 @@ function CSPoll (onResponse) {
         lastDate,
         requestStart,
         requestEnd,
+        firstPoll,
         timeoutHandle,
         pollDelay = 6000;
 
@@ -755,9 +768,10 @@ function CSPoll (onResponse) {
             calcTimeFrame();
         }
 
-        // don't poll regularly
+        firstPoll = true;
+
         if (START >= csBase.minTime && END <= csBase.maxTime) {
-            onResponse(csBase.filterByTime(START, END));
+            onResponse(csBase.filterByTime(START, END));    //don't poll again
             return;
         }
         //query what is missing
@@ -804,10 +818,11 @@ function CSPoll (onResponse) {
             var updateEnd = +update.getAttribute('timestamp') - 1,
                 updateNotEmpty = csBase.add(update, requestStart, Math.min(requestEnd, updateEnd));
 
-            if (updateNotEmpty) {
+            if (firstPoll || updateNotEmpty) {
                 onResponse();
             }
 
+            firstPoll = false;
             hidePreloader();
 
             // Handle the change of day at midnight. If the start or end day is not a specific date then the report period will change every day.
@@ -891,7 +906,7 @@ function CSTable (container) {
         ths,
         tbody;
 
-    this.sortignCol = 0;
+    this.sortingCol = 0;
     this.sortingOrder = 1;
 
 
@@ -929,13 +944,13 @@ function CSTable (container) {
                 }
 
                 if (this.sortingCol === newI) {
-                    sorting = ' class="' + (this.sortingOrder === 1 ? 'asc' : 'desc') + '"';
+                    sorting = this.sortingOrder === 1 ? ' ▼' : ' ▲'
                 }
                 else {
                     sorting = '';
                 }
 
-                str += '<th id="' + newI + 'col" draggable="true" ondragover="return false"' + sorting + '>' + title + '</th>';
+                str += '<th id="' + newI + 'col" draggable="true" ondragover="return false"><b>' + title + sorting + '</b></th>';
             }
         }
         if (initial) {
@@ -943,6 +958,7 @@ function CSTable (container) {
         }
         
         theadTr.innerHTML = str;
+        ths = theadTr.children;
         this.resizeHeader();
     };
 
@@ -985,6 +1001,7 @@ function CSTable (container) {
             }
             else {
                 csBase.filter();
+                // sort and update are called by filter
             }
             that.createHeader();
         });
@@ -1117,12 +1134,15 @@ function CSTable (container) {
         if (!data) {
             data = cachedData;
         }
-        ths[0].innerHTML = (PERIOD === 0) ? 'Destination' : 'Time';
-
         var str = '';
 
         for (var i in data) {
-            str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
+            var line = data[i];
+            str += '<tr>';
+            for (var j in line) {
+                str += '<td>' + line[newIds[j]] + '</td>';
+            }
+            str += '</tr>';
         }
         tbody.innerHTML = str;
         cachedData = data;

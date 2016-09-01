@@ -37,6 +37,9 @@ function CSBase () {
         if (csTable.sortingCol > 0) {
             table.sort(byCol);
         }
+        else if (csTable.sortingOrder === -1) {
+            table.reverse();
+        }
     };
 
 
@@ -196,23 +199,31 @@ function CSBase () {
             notEmpty = true;
         }
 
+        //todo this change detection scheme is wrong
         for (i = 0, n = _queues.length; i < n; i++) {
             var queue = _queues[i];
-            queues[queue.id] = queue;
-            notEmpty = true;
+            if (!queues[queue.id]) {
+                queues[queue.id] = queue;
+                notEmpty = true;
+            }
         }
 
         for (i = 0, n = _agents.length; i < n; i++) {
             var agent = _agents[i];
-            agents[agent.id] = agent;
-            notEmpty = true;
+            if (!agents[agent.id]) {
+                agents[agent.id] = agent;
+                notEmpty = true;
+            }
         }
 
         for (i = 0, n = _phones.length; i < n; i++) {
             var phone = _phones[i];
-            phones[phone.id] = phone;
-            notEmpty = true;
+            if (!phones[phone.id]) {
+                phones[phone.id] = phone;
+                notEmpty = true;
+            }
         }
+        return notEmpty;
     };
 
 

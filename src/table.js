@@ -9,7 +9,7 @@ function CSTable (container) {
         ths,
         tbody;
 
-    this.sortignCol = 0;
+    this.sortingCol = 0;
     this.sortingOrder = 1;
 
 
@@ -47,13 +47,13 @@ function CSTable (container) {
                 }
 
                 if (this.sortingCol === newI) {
-                    sorting = ' class="' + (this.sortingOrder === 1 ? 'asc' : 'desc') + '"';
+                    sorting = this.sortingOrder === 1 ? ' ▼' : ' ▲'
                 }
                 else {
                     sorting = '';
                 }
 
-                str += '<th id="' + newI + 'col" draggable="true" ondragover="return false"' + sorting + '>' + title + '</th>';
+                str += '<th id="' + newI + 'col" draggable="true" ondragover="return false"><b>' + title + sorting + '</b></th>';
             }
         }
         if (initial) {
@@ -61,6 +61,7 @@ function CSTable (container) {
         }
         
         theadTr.innerHTML = str;
+        ths = theadTr.children;
         this.resizeHeader();
     };
 
@@ -103,6 +104,7 @@ function CSTable (container) {
             }
             else {
                 csBase.filter();
+                // sort and update are called by filter
             }
             that.createHeader();
         });
@@ -235,12 +237,15 @@ function CSTable (container) {
         if (!data) {
             data = cachedData;
         }
-        ths[0].innerHTML = (PERIOD === 0) ? 'Destination' : 'Time';
-
         var str = '';
 
         for (var i in data) {
-            str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
+            var line = data[i];
+            str += '<tr>';
+            for (var j in line) {
+                str += '<td>' + line[newIds[j]] + '</td>';
+            }
+            str += '</tr>';
         }
         tbody.innerHTML = str;
         cachedData = data;

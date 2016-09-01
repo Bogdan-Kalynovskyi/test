@@ -90,29 +90,6 @@
 	padding-right: .4em;
 }
 
-.asc, .desc {
-	position: relative;
-	padding-right: 10px!important;
-}
-
-.asc:after,
-.desc:after {
-	position: absolute;
-	top: 2px;
-	right: 2.5%;
-	font-size: 10px;
-	background: rgba(236, 238, 239, 0.8);
-	border-radius: 50%;
-}
-
-.asc:hover:after,
-.desc:hover:after {
-	font-size: 11px;
-}
-
-.asc:after {
-	content: '▼';
-}
-.desc:after {
-	content: '▲';
+th > b {
+	cursor: pointer;
 }

@@ -41,6 +41,7 @@ function CSOptions () {
 
         byId('period').addEventListener('change', function () {
             PERIOD = +this.value;
+            csTable.createHeader();
             csBase.filter();
             dirty();
         });
@@ -48,10 +49,10 @@ function CSOptions () {
 
 
     this.getColumns = function () {
-        var result = [];
+        var result = [1];
 
         for (var i in columnControls) {
-            result[i + 1] = +byId(columnControls[i]).value;
+            result[+i + 1] = +byId(columnControls[i]).value;
         }
         return result;
     };
