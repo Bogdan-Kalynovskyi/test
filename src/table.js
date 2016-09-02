@@ -42,12 +42,9 @@ function CSTable (container) {
 
         var str = '<th id="0col" align="left">' + (PERIOD === 0 ? 'Destination' : 'Time') + getSorting(0) + '</th>';
         
-        for (var i in COLUMNS) {
-            var newI = REARRANGE[+i + 1];
-
-            if (csBase.visibleCols[i]) {
-                str += '<th id="' + newI + 'col" draggable="true" ondragover="return false" align="left">' + COLUMNS[newI] + getSorting(newI) + '</th>';
-            }
+        for (var i in csBase.colPos) {
+            var newI = csBase.colPos[i];
+            str += '<th id="' + newI + 'col" draggable="true" ondragover="return false" align="left">' + COLUMNS[newI] + getSorting(newI) + '</th>';
         }
         if (initial) {
             return str;
@@ -145,8 +142,9 @@ function CSTable (container) {
                 var temp = REARRANGE[currId];
                 REARRANGE[currId] = REARRANGE[startId];
                 REARRANGE[startId] = temp;
+                csBase.calculateColPos();
                 that.createHeader();
-                that.update();
+                csBase.filter();
             }
         });
     }
@@ -167,11 +165,9 @@ function CSTable (container) {
                 row = [];
             
             row.push((PERIOD === 0) ? 'Destination' : 'Time');
-            
-            for (var i in COLUMNS) {
-                if (csBase.visibleCols[i]) {
-                    row[REARRANGE[i]] = COLUMNS[i];
-                }
+
+            for (var i in csBase.colPos) {
+                row.push(COLUMNS[csBase.colPos[i]]);
             }
             encodeRow(row);
 

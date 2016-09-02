@@ -7,7 +7,7 @@ function CSChart (container) {
 
 
     this.create = function (table) {
-        if (!window.google || !google.charts.Bar || !google.visualization) {
+        if (!window.google || !google.charts.Line || !google.visualization) {
             setTimeout(function () {
                 that.create(table);
             }, 200);

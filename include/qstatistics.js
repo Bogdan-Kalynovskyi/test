@@ -7,7 +7,7 @@ function CSChart (container) {
 
 
     this.create = function (table) {
-        if (!window.google || !google.charts.Bar || !google.visualization) {
+        if (!window.google || !google.charts.Line || !google.visualization) {
             setTimeout(function () {
                 that.create(table);
             }, 200);
@@ -968,7 +968,7 @@ function CSTable (container) {
                     '<thead><tr class="head">';
 
         str += that.createHeader(true) + '</tr></thead><tbody></tbody></table><br>' +
-            '<div id="line-chart"></div><br>' +
+            '<div id="line-chart" style="height: 500px"></div><br>' +
             '<button id="csv">Download as CSV</button>';
 
         container.innerHTML = str;

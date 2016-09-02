@@ -12,8 +12,7 @@ function CSOptions () {
         for (i in columnControls) {
             byId(columnControls[i]).addEventListener('change', function () {
                 var pos = columnControls.indexOf(this.id);
-                csBase.visibleCols[pos] = +this.value;
-                csBase.filter();
+                csBase.setVisibleCols(pos, +this.value);
                 csTable.createHeader();
                 dirty();
             });
@@ -21,8 +20,7 @@ function CSOptions () {
         for (i in destControls) {
             byId(destControls[i]).addEventListener('change', function () {
                 var pos = destControls.indexOf(this.id);
-                csBase.visibleRows[pos] = +this.value;
-                csBase.filter();
+                csBase.setVisibleRows(pos, +this.value);
                 dirty();
             });
         }

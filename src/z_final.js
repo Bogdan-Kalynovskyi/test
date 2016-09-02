@@ -2,9 +2,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
     window.csOptions = new CSOptions();
 
-    window.csBase = new CSBase();
-    csBase.visibleCols = csOptions.getColumns();
-    csBase.visibleRows = csOptions.getRows();
+    window.csBase = new CSBase(csOptions.getColumns(), csOptions.getRows());
 
     window.csTable = new CSTable(byId('left-content'));
     window.csChart = new CSChart(byId('line-chart'));
@@ -25,7 +23,7 @@ document.addEventListener("DOMContentLoaded", function() {
 (function () {
     var s = document.createElement('script');
     s.onload = function () {
-        google.charts.load('current', {'packages': ['line']});
+        google.charts.load('current', {'packages': ['corechart']});
     };
     s.src = '//www.gstatic.com/charts/loader.js';
     document.head.appendChild(s);

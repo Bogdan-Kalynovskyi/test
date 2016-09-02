@@ -1,4 +1,4 @@
-function CSBase () {
+function CSBase (visibleCols, visibleRows) {
     var that = this,
         calls,
         queues,
@@ -53,6 +53,18 @@ function CSBase () {
     }
 
 
+    this.calculateColPos = function () {
+        this.colPos = [];
+        for (var i = 0, n = COLUMNS.length; i < n; i++) {
+            if (visibleCols[i]) {
+                this.colPos.push(REARRANGE[i] + 1);
+            }
+        }
+    };
+
+
+
+
     this.drop = function () {
         calls = [];
         queues = {};
@@ -61,26 +73,37 @@ function CSBase () {
         this.minTime = Infinity;
         this.maxTime = 0;
     };
-    this.drop();
+
+
+    this.setVisibleCols = function (pos, value) {
+        visibleCols[pos] = value;
+        this.calculateColPos();
+        this.filter();
+    };
+
+
+    this.setVisibleCols = function (pos, value) {
+        visibleRows[pos] = value;
+        this.filter();
+    };
 
 
     function filterRow (row) {
         var result = [row[0]];
-        for (var i in COLUMNS) {
-            if (that.visibleCols[i]) {
-                result[REARRANGE[+i + 1]] = row[+i + 1];
-            }
-        } 
+        for (var i in that.colPos) {
+            result.push(row[that.colPos[i]]);
+        }
+
         return result;
     }
 
 
     function percTable () {
-        for (var j in COLUMNS) {
-            if (that.visibleCols[j] === 2) {
+        for (var j in that.colPos) {
+            var newI = that.colPos[j];
+            if (visibleCols[newI] === 2) {
                 for (var i in table) {
-                    var newI = REARRANGE[+j + 1];
-                    table[i][newI] = table[i][newI] + ' <small>(' + Math.round(table[i][newI] / that.total * 100) + '%)</small>';
+                    table[i][+j + 1] = table[i][+j + 1] + ' <small>(' + Math.round(table[i][+j + 1] / that.total * 100) + '%)</small>';
                 }
             }
         }
@@ -89,7 +112,7 @@ function CSBase () {
 
     function addDestinationRow (display, row) {
         row = filterRow(row);
-        if (that.visibleRows[display]) {
+        if (visibleRows[display]) {
             for (var i = 1, n = row.length; i < n; i++) {
                 table[display][i] += row[i];
             }
@@ -262,7 +285,7 @@ function CSBase () {
         that.total = 0;
         table = [];
         for (var i in DESTINATIONS) {
-            if (that.visibleRows[i]) {
+            if (visibleRows[i]) {
                 var row = filterRow(new Array(COLUMNS.length + 1).fill(0));
                 row[0] = DESTINATIONS[i];
                 table.push(row);
@@ -487,5 +510,10 @@ function CSBase () {
         this.sort();
         percTable(table);
         csTable.update(table);
-    }
+    };
+
+
+    // constructor
+    this.calculateColPos();
+    this.drop();
 }
