@@ -19,10 +19,8 @@ function CSChart (container) {
 
                 row.push((PERIOD === 0) ? 'Destination' : 'Time');
 
-                for (var i in COLUMNS) {
-                    if (csBase.visibleCols[i]) {
-                        row[REARRANGE[i]] = COLUMNS[i];
-                    }
+                for (var i in csBase.colPos) {
+                    row.push(COLUMNS[csBase.colPos[i]]);
                 }
                 data.push(row);
                 data = data.concat(table);
@@ -30,7 +28,7 @@ function CSChart (container) {
                 gData = google.visualization.arrayToDataTable(data);
 
                 if (!chart) {
-                    chart = new google.charts.LineChart(container);
+                    chart = new google.charts.Line(container);
                 }
 
                 chart.draw(gData, options);

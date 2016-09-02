@@ -53,16 +53,6 @@ function CSBase (visibleCols, visibleRows) {
     }
 
 
-    this.calculateColPos = function () {
-        this.colPos = [];
-        for (var i = 0, n = COLUMNS.length; i < n; i++) {
-            if (visibleCols[i]) {
-                this.colPos.push(REARRANGE[i] + 1);
-            }
-        }
-    };
-
-
 
 
     this.drop = function () {
@@ -82,16 +72,26 @@ function CSBase (visibleCols, visibleRows) {
     };
 
 
-    this.setVisibleCols = function (pos, value) {
+    this.setVisibleRows = function (pos, value) {
         visibleRows[pos] = value;
         this.filter();
+    };
+
+
+    this.calculateColPos = function () {
+        this.colPos = [];
+        for (var i = 0, n = COLUMNS.length; i < n; i++) {
+            if (visibleCols[i]) {
+                this.colPos.push(REARRANGE[i]);
+            }
+        }
     };
 
 
     function filterRow (row) {
         var result = [row[0]];
         for (var i in that.colPos) {
-            result.push(row[that.colPos[i]]);
+            result.push(row[that.colPos[i] + 1]);
         }
 
         return result;
@@ -99,11 +99,12 @@ function CSBase (visibleCols, visibleRows) {
 
 
     function percTable () {
+        var total = that.total || Infinity;
         for (var j in that.colPos) {
             var newI = that.colPos[j];
             if (visibleCols[newI] === 2) {
                 for (var i in table) {
-                    table[i][+j + 1] = table[i][+j + 1] + ' <small>(' + Math.round(table[i][+j + 1] / that.total * 100) + '%)</small>';
+                    table[i][+j + 1] = table[i][+j + 1] + ' <small>(' + Math.round(table[i][+j + 1] / total * 100) + '%)</small>';
                 }
             }
         }

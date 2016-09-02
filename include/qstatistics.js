@@ -19,10 +19,8 @@ function CSChart (container) {
 
                 row.push((PERIOD === 0) ? 'Destination' : 'Time');
 
-                for (var i in COLUMNS) {
-                    if (csBase.visibleCols[i]) {
-                        row[REARRANGE[i]] = COLUMNS[i];
-                    }
+                for (var i in csBase.colPos) {
+                    row.push(COLUMNS[csBase.colPos[i]]);
                 }
                 data.push(row);
                 data = data.concat(table);
@@ -30,7 +28,7 @@ function CSChart (container) {
                 gData = google.visualization.arrayToDataTable(data);
 
                 if (!chart) {
-                    chart = new google.charts.LineChart(container);
+                    chart = new google.charts.Line(container);
                 }
 
                 chart.draw(gData, options);
@@ -150,7 +148,7 @@ var START,
     ];
 
 
-function CSBase () {
+function CSBase (visibleCols, visibleRows) {
     var that = this,
         calls,
         queues,
@@ -205,6 +203,8 @@ function CSBase () {
     }
 
 
+
+
     this.drop = function () {
         calls = [];
         queues = {};
@@ -213,26 +213,48 @@ function CSBase () {
         this.minTime = Infinity;
         this.maxTime = 0;
     };
-    this.drop();
+
+
+    this.setVisibleCols = function (pos, value) {
+        visibleCols[pos] = value;
+        this.calculateColPos();
+        this.filter();
+    };
+
+
+    this.setVisibleRows = function (pos, value) {
+        visibleRows[pos] = value;
+        this.filter();
+    };
+
+
+    this.calculateColPos = function () {
+        this.colPos = [];
+        for (var i = 0, n = COLUMNS.length; i < n; i++) {
+            if (visibleCols[i]) {
+                this.colPos.push(REARRANGE[i]);
+            }
+        }
+    };
 
 
     function filterRow (row) {
         var result = [row[0]];
-        for (var i in COLUMNS) {
-            if (that.visibleCols[i]) {
-                result[REARRANGE[+i + 1]] = row[+i + 1];
-            }
-        } 
+        for (var i in that.colPos) {
+            result.push(row[that.colPos[i] + 1]);
+        }
+
         return result;
     }
 
 
     function percTable () {
-        for (var j in COLUMNS) {
-            if (that.visibleCols[j] === 2) {
+        var total = that.total || Infinity;
+        for (var j in that.colPos) {
+            var newI = that.colPos[j];
+            if (visibleCols[newI] === 2) {
                 for (var i in table) {
-                    var newI = REARRANGE[+j + 1];
-                    table[i][newI] = table[i][newI] + ' <small>(' + Math.round(table[i][newI] / that.total * 100) + '%)</small>';
+                    table[i][+j + 1] = table[i][+j + 1] + ' <small>(' + Math.round(table[i][+j + 1] / total * 100) + '%)</small>';
                 }
             }
         }
@@ -241,7 +263,7 @@ function CSBase () {
 
     function addDestinationRow (display, row) {
         row = filterRow(row);
-        if (that.visibleRows[display]) {
+        if (visibleRows[display]) {
             for (var i = 1, n = row.length; i < n; i++) {
                 table[display][i] += row[i];
             }
@@ -414,7 +436,7 @@ function CSBase () {
         that.total = 0;
         table = [];
         for (var i in DESTINATIONS) {
-            if (that.visibleRows[i]) {
+            if (visibleRows[i]) {
                 var row = filterRow(new Array(COLUMNS.length + 1).fill(0));
                 row[0] = DESTINATIONS[i];
                 table.push(row);
@@ -639,7 +661,12 @@ function CSBase () {
         this.sort();
         percTable(table);
         csTable.update(table);
-    }
+    };
+
+
+    // constructor
+    this.calculateColPos();
+    this.drop();
 }
 
 function dirty() {
@@ -671,8 +698,7 @@ function CSOptions () {
         for (i in columnControls) {
             byId(columnControls[i]).addEventListener('change', function () {
                 var pos = columnControls.indexOf(this.id);
-                csBase.visibleCols[pos] = +this.value;
-                csBase.filter();
+                csBase.setVisibleCols(pos, +this.value);
                 csTable.createHeader();
                 dirty();
             });
@@ -680,8 +706,7 @@ function CSOptions () {
         for (i in destControls) {
             byId(destControls[i]).addEventListener('change', function () {
                 var pos = destControls.indexOf(this.id);
-                csBase.visibleRows[pos] = +this.value;
-                csBase.filter();
+                csBase.setVisibleRows(pos, +this.value);
                 dirty();
             });
         }
@@ -967,7 +992,7 @@ function CSTable (container) {
         var str = '<table width="100%" border="0" cellpadding="0" cellspacing="0">' +
                     '<thead><tr class="head">';
 
-        str += that.createHeader(true) + '</tr></thead><tbody></tbody></table><br>' +
+        str += that.createHeader(true) + '</tr></thead><tbody></tbody></table><br><br>' +
             '<div id="line-chart" style="height: 500px"></div><br>' +
             '<button id="csv">Download as CSV</button>';
 
@@ -995,12 +1020,9 @@ function CSTable (container) {
 
         var str = '<th id="0col" align="left">' + (PERIOD === 0 ? 'Destination' : 'Time') + getSorting(0) + '</th>';
         
-        for (var i in COLUMNS) {
-            var newI = REARRANGE[+i + 1];
-
-            if (csBase.visibleCols[i]) {
-                str += '<th id="' + newI + 'col" draggable="true" ondragover="return false" align="left">' + COLUMNS[newI] + getSorting(newI) + '</th>';
-            }
+        for (var i in csBase.colPos) {
+            var newI = csBase.colPos[i];
+            str += '<th id="' + (newI + 1) + 'col" draggable="true" ondragover="return false" align="left">' + COLUMNS[newI] + getSorting(newI + 1) + '</th>';
         }
         if (initial) {
             return str;
@@ -1041,7 +1063,7 @@ function CSTable (container) {
                 that.sortingOrder *= -1;
             }
             else {
-                that.sortingOrder = -1;
+                that.sortingOrder = 1;
             }
             that.sortingCol = startId;
             if (startId) {
@@ -1095,11 +1117,14 @@ function CSTable (container) {
 
             startTh.style.opacity = 1;
             if (startTh !== target) {
-                var temp = REARRANGE[currId];
-                REARRANGE[currId] = REARRANGE[startId];
-                REARRANGE[startId] = temp;
+                var id1 = currId - 1,
+                    id2 = startId - 1;
+                var temp = REARRANGE[id1];
+                REARRANGE[id1] = REARRANGE[id2];
+                REARRANGE[id2] = temp;
+                csBase.calculateColPos();
                 that.createHeader();
-                that.update();
+                csBase.filter();
             }
         });
     }
@@ -1120,11 +1145,9 @@ function CSTable (container) {
                 row = [];
             
             row.push((PERIOD === 0) ? 'Destination' : 'Time');
-            
-            for (var i in COLUMNS) {
-                if (csBase.visibleCols[i]) {
-                    row[REARRANGE[i]] = COLUMNS[i];
-                }
+
+            for (var i in csBase.colPos) {
+                row.push(COLUMNS[csBase.colPos[i]]);
             }
             encodeRow(row);
 
@@ -1185,9 +1208,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
     window.csOptions = new CSOptions();
 
-    window.csBase = new CSBase();
-    csBase.visibleCols = csOptions.getColumns();
-    csBase.visibleRows = csOptions.getRows();
+    window.csBase = new CSBase(csOptions.getColumns(), csOptions.getRows());
 
     window.csTable = new CSTable(byId('left-content'));
     window.csChart = new CSChart(byId('line-chart'));
@@ -1208,7 +1229,7 @@ document.addEventListener("DOMContentLoaded", function() {
 (function () {
     var s = document.createElement('script');
     s.onload = function () {
-        google.charts.load('current', {'packages': ['corechart']});
+        google.charts.load('current', {'packages': ['line']});
     };
     s.src = '//www.gstatic.com/charts/loader.js';
     document.head.appendChild(s);

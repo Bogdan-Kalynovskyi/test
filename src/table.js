@@ -14,7 +14,7 @@ function CSTable (container) {
         var str = '<table width="100%" border="0" cellpadding="0" cellspacing="0">' +
                     '<thead><tr class="head">';
 
-        str += that.createHeader(true) + '</tr></thead><tbody></tbody></table><br>' +
+        str += that.createHeader(true) + '</tr></thead><tbody></tbody></table><br><br>' +
             '<div id="line-chart" style="height: 500px"></div><br>' +
             '<button id="csv">Download as CSV</button>';
 
@@ -44,7 +44,7 @@ function CSTable (container) {
         
         for (var i in csBase.colPos) {
             var newI = csBase.colPos[i];
-            str += '<th id="' + newI + 'col" draggable="true" ondragover="return false" align="left">' + COLUMNS[newI] + getSorting(newI) + '</th>';
+            str += '<th id="' + (newI + 1) + 'col" draggable="true" ondragover="return false" align="left">' + COLUMNS[newI] + getSorting(newI + 1) + '</th>';
         }
         if (initial) {
             return str;
@@ -85,7 +85,7 @@ function CSTable (container) {
                 that.sortingOrder *= -1;
             }
             else {
-                that.sortingOrder = -1;
+                that.sortingOrder = 1;
             }
             that.sortingCol = startId;
             if (startId) {
@@ -130,7 +130,9 @@ function CSTable (container) {
         });
 
         tr.addEventListener('dragend', function () {
-            startTh.style.opacity = 1;
+            for (var i = 0, n = ths.length; i < n; i++) {
+                ths[i].style.opacity = '';
+            }
         });
 
         tr.addEventListener('drop', function (evt) {
@@ -139,9 +141,11 @@ function CSTable (container) {
 
             startTh.style.opacity = 1;
             if (startTh !== target) {
-                var temp = REARRANGE[currId];
-                REARRANGE[currId] = REARRANGE[startId];
-                REARRANGE[startId] = temp;
+                var id1 = currId - 1,
+                    id2 = startId - 1;
+                var temp = REARRANGE[id1];
+                REARRANGE[id1] = REARRANGE[id2];
+                REARRANGE[id2] = temp;
                 csBase.calculateColPos();
                 that.createHeader();
                 csBase.filter();
