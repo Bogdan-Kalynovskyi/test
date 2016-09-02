@@ -49,10 +49,10 @@ function CSOptions () {
 
 
     this.getColumns = function () {
-        var result = [1];
+        var result = [];
 
         for (var i in columnControls) {
-            result[+i + 1] = +byId(columnControls[i]).value;
+            result[i] = +byId(columnControls[i]).value;
         }
         return result;
     };

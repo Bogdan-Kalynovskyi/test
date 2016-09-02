@@ -1,8 +1,5 @@
 function CSTable (container) {
-        var newIds = [
-            0,1,2,3,4,5,6,7,8,9,10,11
-        ],
-        that = this,
+    var that = this,
         cachedData,
         table,
         theadTr,
@@ -17,8 +14,9 @@ function CSTable (container) {
         var str = '<table width="100%" border="0" cellpadding="0" cellspacing="0">' +
                     '<thead><tr class="head">';
 
-        str += that.createHeader(true) + '</tr></thead><tbody></tbody></table>' +
-            '<br><br><button id="csv">Download as CSV</button>';
+        str += that.createHeader(true) + '</tr></thead><tbody></tbody></table><br>' +
+            '<div id="line-chart" style="height: 500px"></div><br>' +
+            '<button id="csv">Download as CSV</button>';
 
         container.innerHTML = str;
         table = container.children[0],
@@ -31,29 +29,24 @@ function CSTable (container) {
 
 
     this.createHeader = function (initial) {
-        var str = '';
+        
+        function getSorting (i) {
+            if (that.sortingCol === i) {
+                return that.sortingOrder === 1 ? ' ▼' : ' ▲';
+            }
+            else {
+                return '';
+            }
+        }
+        
+
+        var str = '<th id="0col" align="left">' + (PERIOD === 0 ? 'Destination' : 'Time') + getSorting(0) + '</th>';
+        
         for (var i in COLUMNS) {
-            var newI = newIds[i],
-                title,
-                sorting;
+            var newI = REARRANGE[+i + 1];
 
-            if (csBase.visibleCols[newI]) {
-
-                if (newI === 0) {
-                    title = PERIOD === 0 ? 'Destination' : 'Time';
-                }
-                else {
-                    title = COLUMNS[newI];
-                }
-
-                if (this.sortingCol === newI) {
-                    sorting = this.sortingOrder === 1 ? ' ▼' : ' ▲'
-                }
-                else {
-                    sorting = '';
-                }
-
-                str += '<th id="' + newI + 'col" draggable="true" ondragover="return false"><b>' + title + sorting + '</b></th>';
+            if (csBase.visibleCols[i]) {
+                str += '<th id="' + newI + 'col" draggable="true" ondragover="return false" align="left">' + COLUMNS[newI] + getSorting(newI) + '</th>';
             }
         }
         if (initial) {
@@ -72,7 +65,7 @@ function CSTable (container) {
             tableWidth = table.clientWidth,
             fontSize = 13;
 
-        if (containerWidth === tableWidth) {
+        if (containerWidth >= tableWidth) {
             return;
         }
 
@@ -112,33 +105,27 @@ function CSTable (container) {
         tr.addEventListener('dragstart', function (evt) {
             startTh = evt.target;
             startId = parseInt(startTh.id);
-            if (!isNaN(startId)) {
-                startTh.style.opacity = 0.6;
-            }
+            startTh.style.opacity = 0.6;
             evt.dataTransfer.effectAllowed = 'move';
             evt.dataTransfer.dropEffect = 'move';
         });
 
         tr.addEventListener('dragover', function (evt) {
-            var target = evt.target,
-                id = parseInt(startTh.id);
+            var target = evt.target;
 
-            if (!isNaN(id) && startTh !== target) {
-                target.style.opacity = 0.9;
+            for (var i = 0, n = ths.length; i < n; i++) {
+                if (ths[i] !== startTh && ths[i] !== target) {
+                    ths[i].style.opacity = '';
+                }
+            }
+
+            if (startTh !== target) {
+                target.style.opacity = 0.77;
                 var currId = parseInt(target.id);
 
                 if (!currId) {
                     return false;
                 }
-
-                // var eventX = evt.pageX - target.offsetLeft,
-                //     width = target.clientWidth;
-                // if (eventX < width / 2) {
-                //     target.style.marginLeft = width + 'px';
-                // }
-                // else {
-                //     target.style.marginRight = width + 'px';
-                // }
             }
             else {
                 return false;
@@ -154,20 +141,10 @@ function CSTable (container) {
                 currId = parseInt(target.id);
 
             startTh.style.opacity = 1;
-            if (!isNaN(currId) && startTh !== target) {
-                var eventX = evt.pageX - target.offsetLeft,
-                    width = target.clientWidth,
-                    temp;
-
-                // if (eventX < width / 2) {
-                //     temp = currId < startId ? currId : currId - 1;
-                // }
-                // else {
-                //     temp = currId < startId ? currId + 1 : currId;
-                // }
-                temp = newIds[currId];
-                newIds[currId] = newIds[startId];
-                newIds[startId] = temp;
+            if (startTh !== target) {
+                var temp = REARRANGE[currId];
+                REARRANGE[currId] = REARRANGE[startId];
+                REARRANGE[startId] = temp;
                 that.createHeader();
                 that.update();
             }
@@ -180,12 +157,7 @@ function CSTable (container) {
 
             function encodeRow (row) {
                 for (var j = 0; j < row.length; j++) {
-                    var cell = row[j].toString().replace(/"/g, '""');
-                    if (cell.search(/("|,|\n)/g) >= 0) {
-                        cell = '"' + cell + '"';
-                    }
-
-                    str += (j > 0) ? (',' + cell) : cell;
+                    str += (j > 0) ? (',' + row[j]) : row[j];
                 }
                 str += '\n';
             }
@@ -197,8 +169,8 @@ function CSTable (container) {
             row.push((PERIOD === 0) ? 'Destination' : 'Time');
             
             for (var i in COLUMNS) {
-                if (csBase.visibleCols[newIds[i]]) {
-                    row.push(COLUMNS[newIds[i]]);
+                if (csBase.visibleCols[i]) {
+                    row[REARRANGE[i]] = COLUMNS[i];
                 }
             }
             encodeRow(row);
@@ -240,14 +212,11 @@ function CSTable (container) {
         var str = '';
 
         for (var i in data) {
-            var line = data[i];
-            str += '<tr>';
-            for (var j in line) {
-                str += '<td>' + line[newIds[j]] + '</td>';
-            }
-            str += '</tr>';
+            str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
         }
         tbody.innerHTML = str;
+        csChart.create(data);
+        
         cachedData = data;
     };
 

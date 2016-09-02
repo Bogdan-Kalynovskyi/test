@@ -1,9 +1,63 @@
+function CSChart (container) {
+    var that = this,
+        gData,
+        updateThrottle,
+        chart,
+        options = {};
+
+
+    this.create = function (table) {
+        if (!window.google || !google.charts.Bar || !google.visualization) {
+            setTimeout(function () {
+                that.create(table);
+            }, 200);
+        }
+        else {
+            google.charts.setOnLoadCallback(function () {
+                var data = [],
+                    row = [];
+
+                row.push((PERIOD === 0) ? 'Destination' : 'Time');
+
+                for (var i in COLUMNS) {
+                    if (csBase.visibleCols[i]) {
+                        row[REARRANGE[i]] = COLUMNS[i];
+                    }
+                }
+                data.push(row);
+                data = data.concat(table);
+
+                gData = google.visualization.arrayToDataTable(data);
+
+                if (!chart) {
+                    chart = new google.charts.LineChart(container);
+                }
+
+                chart.draw(gData, options);
+            });
+        }
+    };
+
+
+    this.resize = function () {
+        clearTimeout(updateThrottle);
+
+        updateThrottle = setTimeout(function () {
+            if (chart) {
+                chart.draw(gData, options);
+            }
+        }, 100);
+    }
+}
 
 var START,
     END,
     PERIOD,
-    
     DAY = 86400,
+    
+    REARRANGE = [
+        0,1,2,3,4,5,6,7,8,9,10,11
+    ],
 
     
     DESTINATIONS = [
@@ -20,7 +74,6 @@ var START,
     ],
     
     COLUMNS = [
-        '',
         'Total calls',
         'Answered',
         'Not answered',
@@ -119,22 +172,24 @@ function CSBase () {
     }
 
 
-    function byCol (a, b) {
-        if (a[csTable.sortingCol] > b[csTable.sortingCol]) {
-            return csTable.sortingOrder;
-        }
-        else if (a[csTable.sortingCol] < b[csTable.sortingCol]) {
-            return -csTable.sortingOrder;
-        }
-        else {
-            return 0;
+    function byCol (col, order) {
+        return function (a, b) {
+            if (a[col] > b[col]) {
+                return order;
+            }
+            else if (a[col] < b[col]) {
+                return -order;
+            }
+            else {
+                return 0;
+            }
         }
     }
-    
+
     
     this.sort = function () {
         if (csTable.sortingCol > 0) {
-            table.sort(byCol);
+            table.sort(byCol(csTable.sortingCol, csTable.sortingOrder));
         }
         else if (csTable.sortingOrder === -1) {
             table.reverse();
@@ -162,10 +217,10 @@ function CSBase () {
 
 
     function filterRow (row) {
-        var result = [];
-        for (var i in row) {
-            if (i === '0' || that.visibleCols[i]) {
-                result.push(row[i]);
+        var result = [row[0]];
+        for (var i in COLUMNS) {
+            if (that.visibleCols[i]) {
+                result[REARRANGE[+i + 1]] = row[+i + 1];
             }
         } 
         return result;
@@ -173,10 +228,11 @@ function CSBase () {
 
 
     function percTable () {
-        for (var j in that.visibleCols) {
+        for (var j in COLUMNS) {
             if (that.visibleCols[j] === 2) {
                 for (var i in table) {
-                    table[i][j] = table[i][j] + ' (' + Math.round(table[i][j] / that.total * 100) + '%)';
+                    var newI = REARRANGE[+j + 1];
+                    table[i][newI] = table[i][newI] + ' <small>(' + Math.round(table[i][newI] / that.total * 100) + '%)</small>';
                 }
             }
         }
@@ -201,7 +257,7 @@ function CSBase () {
             snumber = call.getAttribute('snumber'),
             dnumber = call.getAttribute('dnumber'),
             answered = +call.getAttribute('answered'),
-            row = output || Array(COLUMNS.length).fill(0),
+            row = output || Array(COLUMNS.length + 1).fill(0),
 
             external = 'external',
             local = 'local',
@@ -359,7 +415,7 @@ function CSBase () {
         table = [];
         for (var i in DESTINATIONS) {
             if (that.visibleRows[i]) {
-                var row = filterRow(new Array(COLUMNS.length).fill(0));
+                var row = filterRow(new Array(COLUMNS.length + 1).fill(0));
                 row[0] = DESTINATIONS[i];
                 table.push(row);
             }
@@ -387,7 +443,7 @@ function CSBase () {
 
         while (time < END) {
             calls = that.filterByTime(time, time + period);
-            row = new Array(COLUMNS.length).fill(0);
+            row = new Array(COLUMNS.length + 1).fill(0);
 
             timeObj = new Date(time * 1000);
             if (period < DAY) {
@@ -431,7 +487,7 @@ function CSBase () {
         table = [];
 
         while (day < END && day < now) {
-            row = new Array(COLUMNS.length).fill(0);
+            row = new Array(COLUMNS.length + 1).fill(0);
             row[0] = daysOfWeek[i];
             calls = that.filterByTime(day, day + DAY);
             for (var j in calls) {
@@ -467,7 +523,7 @@ function CSBase () {
             var queue = queues[queueIds[j]],
                 name = queue.getAttribute('name');
 
-            var row = new Array(COLUMNS.length).fill(0);
+            var row = new Array(COLUMNS.length + 1).fill(0);
             row[0] = 'Queue: ' + name;
 
             for (i in filteredCalls) {
@@ -505,7 +561,7 @@ function CSBase () {
             var agent = agents[agentIds[j]],
                 name = agent.getAttribute('name');
 
-            var row = new Array(COLUMNS.length).fill(0);
+            var row = new Array(COLUMNS.length + 1).fill(0);
             row[0] = 'Queue agent: ' + name;
 
             for (i in filteredCalls) {
@@ -544,7 +600,7 @@ function CSBase () {
                 name = phone.getAttribute('name'),
                 dnumber = phone.getAttribute('dnumber');
 
-            var row = new Array(COLUMNS.length).fill(0);
+            var row = new Array(COLUMNS.length + 1).fill(0);
             row[0] = 'Ext: ' + phone.getAttribute('name');
 
             for (i in filteredCalls) {
@@ -652,10 +708,10 @@ function CSOptions () {
 
 
     this.getColumns = function () {
-        var result = [1];
+        var result = [];
 
         for (var i in columnControls) {
-            result[+i + 1] = +byId(columnControls[i]).value;
+            result[i] = +byId(columnControls[i]).value;
         }
         return result;
     };
@@ -896,10 +952,7 @@ function CSPoll (onResponse) {
     this.rePoll();
 }
 function CSTable (container) {
-        var newIds = [
-            0,1,2,3,4,5,6,7,8,9,10,11
-        ],
-        that = this,
+    var that = this,
         cachedData,
         table,
         theadTr,
@@ -914,8 +967,9 @@ function CSTable (container) {
         var str = '<table width="100%" border="0" cellpadding="0" cellspacing="0">' +
                     '<thead><tr class="head">';
 
-        str += that.createHeader(true) + '</tr></thead><tbody></tbody></table>' +
-            '<br><br><button id="csv">Download as CSV</button>';
+        str += that.createHeader(true) + '</tr></thead><tbody></tbody></table><br>' +
+            '<div id="line-chart"></div><br>' +
+            '<button id="csv">Download as CSV</button>';
 
         container.innerHTML = str;
         table = container.children[0],
@@ -928,29 +982,24 @@ function CSTable (container) {
 
 
     this.createHeader = function (initial) {
-        var str = '';
+        
+        function getSorting (i) {
+            if (that.sortingCol === i) {
+                return that.sortingOrder === 1 ? ' ▼' : ' ▲';
+            }
+            else {
+                return '';
+            }
+        }
+        
+
+        var str = '<th id="0col" align="left">' + (PERIOD === 0 ? 'Destination' : 'Time') + getSorting(0) + '</th>';
+        
         for (var i in COLUMNS) {
-            var newI = newIds[i],
-                title,
-                sorting;
+            var newI = REARRANGE[+i + 1];
 
-            if (csBase.visibleCols[newI]) {
-
-                if (newI === 0) {
-                    title = PERIOD === 0 ? 'Destination' : 'Time';
-                }
-                else {
-                    title = COLUMNS[newI];
-                }
-
-                if (this.sortingCol === newI) {
-                    sorting = this.sortingOrder === 1 ? ' ▼' : ' ▲'
-                }
-                else {
-                    sorting = '';
-                }
-
-                str += '<th id="' + newI + 'col" draggable="true" ondragover="return false"><b>' + title + sorting + '</b></th>';
+            if (csBase.visibleCols[i]) {
+                str += '<th id="' + newI + 'col" draggable="true" ondragover="return false" align="left">' + COLUMNS[newI] + getSorting(newI) + '</th>';
             }
         }
         if (initial) {
@@ -969,7 +1018,7 @@ function CSTable (container) {
             tableWidth = table.clientWidth,
             fontSize = 13;
 
-        if (containerWidth === tableWidth) {
+        if (containerWidth >= tableWidth) {
             return;
         }
 
@@ -1009,33 +1058,27 @@ function CSTable (container) {
         tr.addEventListener('dragstart', function (evt) {
             startTh = evt.target;
             startId = parseInt(startTh.id);
-            if (!isNaN(startId)) {
-                startTh.style.opacity = 0.6;
-            }
+            startTh.style.opacity = 0.6;
             evt.dataTransfer.effectAllowed = 'move';
             evt.dataTransfer.dropEffect = 'move';
         });
 
         tr.addEventListener('dragover', function (evt) {
-            var target = evt.target,
-                id = parseInt(startTh.id);
+            var target = evt.target;
 
-            if (!isNaN(id) && startTh !== target) {
-                target.style.opacity = 0.9;
+            for (var i = 0, n = ths.length; i < n; i++) {
+                if (ths[i] !== startTh && ths[i] !== target) {
+                    ths[i].style.opacity = '';
+                }
+            }
+
+            if (startTh !== target) {
+                target.style.opacity = 0.77;
                 var currId = parseInt(target.id);
 
                 if (!currId) {
                     return false;
                 }
-
-                // var eventX = evt.pageX - target.offsetLeft,
-                //     width = target.clientWidth;
-                // if (eventX < width / 2) {
-                //     target.style.marginLeft = width + 'px';
-                // }
-                // else {
-                //     target.style.marginRight = width + 'px';
-                // }
             }
             else {
                 return false;
@@ -1051,20 +1094,10 @@ function CSTable (container) {
                 currId = parseInt(target.id);
 
             startTh.style.opacity = 1;
-            if (!isNaN(currId) && startTh !== target) {
-                var eventX = evt.pageX - target.offsetLeft,
-                    width = target.clientWidth,
-                    temp;
-
-                // if (eventX < width / 2) {
-                //     temp = currId < startId ? currId : currId - 1;
-                // }
-                // else {
-                //     temp = currId < startId ? currId + 1 : currId;
-                // }
-                temp = newIds[currId];
-                newIds[currId] = newIds[startId];
-                newIds[startId] = temp;
+            if (startTh !== target) {
+                var temp = REARRANGE[currId];
+                REARRANGE[currId] = REARRANGE[startId];
+                REARRANGE[startId] = temp;
                 that.createHeader();
                 that.update();
             }
@@ -1077,12 +1110,7 @@ function CSTable (container) {
 
             function encodeRow (row) {
                 for (var j = 0; j < row.length; j++) {
-                    var cell = row[j].toString().replace(/"/g, '""');
-                    if (cell.search(/("|,|\n)/g) >= 0) {
-                        cell = '"' + cell + '"';
-                    }
-
-                    str += (j > 0) ? (',' + cell) : cell;
+                    str += (j > 0) ? (',' + row[j]) : row[j];
                 }
                 str += '\n';
             }
@@ -1094,8 +1122,8 @@ function CSTable (container) {
             row.push((PERIOD === 0) ? 'Destination' : 'Time');
             
             for (var i in COLUMNS) {
-                if (csBase.visibleCols[newIds[i]]) {
-                    row.push(COLUMNS[newIds[i]]);
+                if (csBase.visibleCols[i]) {
+                    row[REARRANGE[i]] = COLUMNS[i];
                 }
             }
             encodeRow(row);
@@ -1137,14 +1165,11 @@ function CSTable (container) {
         var str = '';
 
         for (var i in data) {
-            var line = data[i];
-            str += '<tr>';
-            for (var j in line) {
-                str += '<td>' + line[newIds[j]] + '</td>';
-            }
-            str += '</tr>';
+            str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
         }
         tbody.innerHTML = str;
+        csChart.create(data);
+        
         cachedData = data;
     };
 
@@ -1165,9 +1190,11 @@ document.addEventListener("DOMContentLoaded", function() {
     csBase.visibleRows = csOptions.getRows();
 
     window.csTable = new CSTable(byId('left-content'));
+    window.csChart = new CSChart(byId('line-chart'));
     
     window.addEventListener('resize', function () {
         csTable.resizeHeader();
+        csChart.resize();
     });
 
     window.csPoll = new CSPoll(
@@ -1179,19 +1206,21 @@ document.addEventListener("DOMContentLoaded", function() {
 
 
 (function () {
-    var s = document.createElement('script'),
-        ua = navigator.userAgent,
-        IEVersion = ua.indexOf("MSIE ");
+    var s = document.createElement('script');
+    s.onload = function () {
+        google.charts.load('current', {'packages': ['corechart']});
+    };
+    s.src = '//www.gstatic.com/charts/loader.js';
+    document.head.appendChild(s);
 
-    if (IEVersion !== -1) {
-        IEVersion = parseInt(ua.split('MSIE ')[1]);
-    } else if (ua.match(/trident.*rv\:11\./)) {
-        IEVersion = 11;
+
+    // patch move_selected
+    var savedMoveselect = move_selects;
+    move_selects = function () {
+        savedMoveselect.apply(window, arguments);
+        csBase.filter();
     }
-    if (IEVersion !== -1 && IEVersion <= 11) {
-        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/es6-promise/3.2.2/es6-promise.min.js';
-        document.head.appendChild(s);
-    }
+
 })();
 
 

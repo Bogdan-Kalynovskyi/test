@@ -93,3 +93,11 @@
 th > b {
 	cursor: pointer;
 }
+
+.results td {
+	padding: 3px 5px;
+}
+
+.results tr:nth-child(2n) {
+	background: #e1ecfa;;
+}

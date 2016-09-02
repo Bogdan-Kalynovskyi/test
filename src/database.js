@@ -20,22 +20,24 @@ function CSBase () {
     }
 
 
-    function byCol (a, b) {
-        if (a[csTable.sortingCol] > b[csTable.sortingCol]) {
-            return csTable.sortingOrder;
-        }
-        else if (a[csTable.sortingCol] < b[csTable.sortingCol]) {
-            return -csTable.sortingOrder;
-        }
-        else {
-            return 0;
+    function byCol (col, order) {
+        return function (a, b) {
+            if (a[col] > b[col]) {
+                return order;
+            }
+            else if (a[col] < b[col]) {
+                return -order;
+            }
+            else {
+                return 0;
+            }
         }
     }
-    
+
     
     this.sort = function () {
         if (csTable.sortingCol > 0) {
-            table.sort(byCol);
+            table.sort(byCol(csTable.sortingCol, csTable.sortingOrder));
         }
         else if (csTable.sortingOrder === -1) {
             table.reverse();
@@ -63,10 +65,10 @@ function CSBase () {
 
 
     function filterRow (row) {
-        var result = [];
-        for (var i in row) {
-            if (i === '0' || that.visibleCols[i]) {
-                result.push(row[i]);
+        var result = [row[0]];
+        for (var i in COLUMNS) {
+            if (that.visibleCols[i]) {
+                result[REARRANGE[+i + 1]] = row[+i + 1];
             }
         } 
         return result;
@@ -74,10 +76,11 @@ function CSBase () {
 
 
     function percTable () {
-        for (var j in that.visibleCols) {
+        for (var j in COLUMNS) {
             if (that.visibleCols[j] === 2) {
                 for (var i in table) {
-                    table[i][j] = table[i][j] + ' (' + Math.round(table[i][j] / that.total * 100) + '%)';
+                    var newI = REARRANGE[+j + 1];
+                    table[i][newI] = table[i][newI] + ' <small>(' + Math.round(table[i][newI] / that.total * 100) + '%)</small>';
                 }
             }
         }
@@ -102,7 +105,7 @@ function CSBase () {
             snumber = call.getAttribute('snumber'),
             dnumber = call.getAttribute('dnumber'),
             answered = +call.getAttribute('answered'),
-            row = output || Array(COLUMNS.length).fill(0),
+            row = output || Array(COLUMNS.length + 1).fill(0),
 
             external = 'external',
             local = 'local',
@@ -260,7 +263,7 @@ function CSBase () {
         table = [];
         for (var i in DESTINATIONS) {
             if (that.visibleRows[i]) {
-                var row = filterRow(new Array(COLUMNS.length).fill(0));
+                var row = filterRow(new Array(COLUMNS.length + 1).fill(0));
                 row[0] = DESTINATIONS[i];
                 table.push(row);
             }
@@ -288,7 +291,7 @@ function CSBase () {
 
         while (time < END) {
             calls = that.filterByTime(time, time + period);
-            row = new Array(COLUMNS.length).fill(0);
+            row = new Array(COLUMNS.length + 1).fill(0);
 
             timeObj = new Date(time * 1000);
             if (period < DAY) {
@@ -332,7 +335,7 @@ function CSBase () {
         table = [];
 
         while (day < END && day < now) {
-            row = new Array(COLUMNS.length).fill(0);
+            row = new Array(COLUMNS.length + 1).fill(0);
             row[0] = daysOfWeek[i];
             calls = that.filterByTime(day, day + DAY);
             for (var j in calls) {
@@ -368,7 +371,7 @@ function CSBase () {
             var queue = queues[queueIds[j]],
                 name = queue.getAttribute('name');
 
-            var row = new Array(COLUMNS.length).fill(0);
+            var row = new Array(COLUMNS.length + 1).fill(0);
             row[0] = 'Queue: ' + name;
 
             for (i in filteredCalls) {
@@ -406,7 +409,7 @@ function CSBase () {
             var agent = agents[agentIds[j]],
                 name = agent.getAttribute('name');
 
-            var row = new Array(COLUMNS.length).fill(0);
+            var row = new Array(COLUMNS.length + 1).fill(0);
             row[0] = 'Queue agent: ' + name;
 
             for (i in filteredCalls) {
@@ -445,7 +448,7 @@ function CSBase () {
                 name = phone.getAttribute('name'),
                 dnumber = phone.getAttribute('dnumber');
 
-            var row = new Array(COLUMNS.length).fill(0);
+            var row = new Array(COLUMNS.length + 1).fill(0);
             row[0] = 'Ext: ' + phone.getAttribute('name');
 
             for (i in filteredCalls) {
