@@ -117,7 +117,7 @@ function CSTable (container) {
             }
 
             if (startTh !== target) {
-                target.style.opacity = 0.77;
+                target.style.opacity = 0.7;
                 var currId = parseInt(target.id);
 
                 if (!currId) {

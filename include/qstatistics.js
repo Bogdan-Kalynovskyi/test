@@ -7,7 +7,7 @@ function CSChart (container) {
 
 
     this.create = function (table) {
-        if (!window.google || !google.charts.Line || !google.visualization) {
+        if (!window.google || !google.charts.LineChart || !google.visualization) {
             setTimeout(function () {
                 that.create(table);
             }, 200);
@@ -28,7 +28,7 @@ function CSChart (container) {
                 gData = google.visualization.arrayToDataTable(data);
 
                 if (!chart) {
-                    chart = new google.charts.Line(container);
+                    chart = new google.charts.LineChart(container);
                 }
 
                 chart.draw(gData, options);
@@ -1095,7 +1095,7 @@ function CSTable (container) {
             }
 
             if (startTh !== target) {
-                target.style.opacity = 0.77;
+                target.style.opacity = 0.7;
                 var currId = parseInt(target.id);
 
                 if (!currId) {
@@ -1108,7 +1108,9 @@ function CSTable (container) {
         });
 
         tr.addEventListener('dragend', function () {
-            startTh.style.opacity = 1;
+            for (var i = 0, n = ths.length; i < n; i++) {
+                ths[i].style.opacity = '';
+            }
         });
 
         tr.addEventListener('drop', function (evt) {
@@ -1229,7 +1231,7 @@ document.addEventListener("DOMContentLoaded", function() {
 (function () {
     var s = document.createElement('script');
     s.onload = function () {
-        google.charts.load('current', {'packages': ['line']});
+        google.charts.load('current', {'packages': ['corechart']});
     };
     s.src = '//www.gstatic.com/charts/loader.js';
     document.head.appendChild(s);

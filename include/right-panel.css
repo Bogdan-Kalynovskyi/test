@@ -85,9 +85,13 @@
 	padding: 0;
 	border: 0;
 }
-.results .head th {
+.results th {
 	padding-left: .4em;
 	padding-right: .4em;
+}
+
+.results th:first-child {
+	cursor: pointer;
 }
 
 th > b {

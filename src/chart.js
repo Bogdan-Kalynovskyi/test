@@ -7,7 +7,7 @@ function CSChart (container) {
 
 
     this.create = function (table) {
-        if (!window.google || !google.charts.Line || !google.visualization) {
+        if (!window.google || !google.charts.LineChart || !google.visualization) {
             setTimeout(function () {
                 that.create(table);
             }, 200);
@@ -28,7 +28,7 @@ function CSChart (container) {
                 gData = google.visualization.arrayToDataTable(data);
 
                 if (!chart) {
-                    chart = new google.charts.Line(container);
+                    chart = new google.charts.LineChart(container);
                 }
 
                 chart.draw(gData, options);
