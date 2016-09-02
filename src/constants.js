@@ -16,11 +16,11 @@ var START,
         'External destinations'
     ],
     
-    QUEUES = [
-        'Queues',
-        'Queue agents',
-        'Telephone lines'
-    ],
+    // QUEUES = [
+    //     'Queues',
+    //     'Queue agents',
+    //     'Telephone lines'
+    // ],
     
     COLUMNS = [
         'Total calls',

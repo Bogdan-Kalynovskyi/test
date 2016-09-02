@@ -517,4 +517,6 @@ function CSBase (visibleCols, visibleRows) {
     // constructor
     this.calculateColPos();
     this.drop();
+    
+    this.visibleCols = visibleCols;
 }

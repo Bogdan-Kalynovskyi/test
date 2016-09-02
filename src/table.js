@@ -88,7 +88,7 @@ function CSTable (container) {
                 that.sortingOrder = 1;
             }
             that.sortingCol = startId;
-            if (startId) {
+            if (startId && csBase.visibleCols !== 2) {
                 csBase.sort();
                 that.update();
             }
