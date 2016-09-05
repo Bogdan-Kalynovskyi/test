@@ -305,7 +305,7 @@ function CSBase (visibleCols, visibleRows) {
             calls,
             row;
 
-        if ((END - START) / period > 1000) {
+        if ((END - START) / period > 10000) {
             alert('Too many data to display. Please set smaller period');
             throw 'too many rows to display';
         }

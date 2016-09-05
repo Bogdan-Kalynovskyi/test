@@ -141,8 +141,8 @@ function CSTable (container) {
 
             startTh.style.opacity = 1;
             if (startTh !== target) {
-                var id1 = currId - 1,
-                    id2 = startId - 1;
+                var id1 = REARRANGE.indexOf(currId - 1),
+                    id2 = REARRANGE.indexOf(startId - 1);
                 var temp = REARRANGE[id1];
                 REARRANGE[id1] = REARRANGE[id2];
                 REARRANGE[id2] = temp;
