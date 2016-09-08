@@ -16,12 +16,6 @@ var START,
         'External destinations'
     ],
     
-    // QUEUES = [
-    //     'Queues',
-    //     'Queue agents',
-    //     'Telephone lines'
-    // ],
-    
     COLUMNS = [
         'Total calls',
         'Answered',
@@ -89,12 +83,12 @@ var START,
     ];
 
     daysOfWeek = [
+        'Sunday',
         'Monday',
         'Tuesday',
         'Wednesday',
         'Thursday',
         'Friday',
-        'Saturday',
-        'Sunday'
+        'Saturday'
     ];
 

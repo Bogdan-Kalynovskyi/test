@@ -4,7 +4,8 @@ function CSPoll (onResponse) {
         password = csOptions.config('settings', 'password'),
         xhr,
         preloaderShown,
-        lastDate,
+        today,
+        lastToday,
         requestStart,
         requestEnd,
         firstPoll,
@@ -29,12 +30,11 @@ function CSPoll (onResponse) {
 
 
     function calcTimeFrame () {
-        var today = Math.floor(Date.now() / 1000);
-        today -= today % DAY;
+        today = lastToday = getToday();
 
         var startday = csOptions.getNumber('startday');
         if (startday === 1) {
-            START = new Date(csOptions.getNumber('start_year'), csOptions.getNumber('start_month'), csOptions.getNumber('start_day')).getTime() / 1000;
+            START = new Date(csOptions.getNumber('start_year'), csOptions.getNumber('start_month') - 1, csOptions.getNumber('start_day')).getTime() / 1000;
         }
         else {
             START = today + startday * DAY;
@@ -43,7 +43,7 @@ function CSPoll (onResponse) {
 
         var endday = csOptions.getNumber('endday');
         if (endday == 1) {
-            END = new Date(csOptions.getNumber('end_year'), csOptions.getNumber('end_month'), csOptions.getNumber('end_day')).getTime() / 1000;
+            END = new Date(csOptions.getNumber('end_year'), csOptions.getNumber('end_month') - 1, csOptions.getNumber('end_day')).getTime() / 1000;
         }
         else {
             END = today + endday * DAY;
@@ -51,8 +51,15 @@ function CSPoll (onResponse) {
         END += csOptions.getNumber('end_hour') * 3600 + csOptions.getNumber('end_minute') * 60 + csOptions.getNumber('end_second');
 
         if (START >= END) {
-            alert('Start time should be before end time');
-            throw 'start > end';
+            alert('Start time should be before end time. Please select another time.');
+            stopPolling();
+            throw 'start >= end';
+        }
+
+        else if (START > Date.now() / 1000) {
+            alert('Start time is after current moment. This request won\'t work');
+            stopPolling();
+            throw 'start > now';
         }
     }
 
@@ -79,19 +86,19 @@ function CSPoll (onResponse) {
         firstPoll = true;
 
         if (START >= csBase.minTime && END <= csBase.maxTime) {
-            onResponse(csBase.filterByTime(START, END));    //don't poll again
-            return;
+            onResponse();
+            return;    
         }
         //query what is missing
         else if (START < csBase.minTime && END >= csBase.minTime) {
-            onResponse(csBase.filterByTime(csBase.minTime, Math.min(csBase.maxTime, END)));  // return part from cache
+            onResponse();
             requestStart = START;
-            requestEnd = csBase.minTime - 1;
+            requestEnd = csBase.minTime;
         }
         //query what is missing
-        else if (START <= csBase.maxTime/* && END > csBase.maxTime*/) {
-            onResponse(csBase.filterByTime(START, csBase.maxTime/*Math.min(csBase.maxTime, END)*/));  // return part from cache
-            requestStart = csBase.maxTime + 1;
+        else if (START <= csBase.maxTime && END > csBase.maxTime) {
+            onResponse();
+            requestStart = csBase.maxTime;
             requestEnd = END;
         }
 
@@ -100,11 +107,8 @@ function CSPoll (onResponse) {
             requestEnd = END;
         }
 
-        clearTimeout(timeoutHandle);
-        if (xhr) {
-            xhr.abort();
-        }
-        if (!preloaderShown) {
+        stopPolling();
+        if (!preloaderShown && requestEnd - requestStart > DAY / 2) {
             showPreloader();
         }
       
@@ -118,12 +122,12 @@ function CSPoll (onResponse) {
         // break polling loop on error
         if (!update) {
             var error = response.getElementsByTagName('errors')[0];
-            if (error && !alertShown) {
+            if (error) {
                 alert(error.getElementsByTagName('error')[0].getAttribute('message'));
             }
         }
         else {
-            var updateEnd = +update.getAttribute('timestamp') - 1,
+            var updateEnd = +update.getAttribute('timestamp'),
                 updateNotEmpty = csBase.add(update, requestStart, Math.min(requestEnd, updateEnd));
 
             if (firstPoll || updateNotEmpty) {
@@ -134,7 +138,8 @@ function CSPoll (onResponse) {
             hidePreloader();
 
             // Handle the change of day at midnight. If the start or end day is not a specific date then the report period will change every day.
-            if (lastDate && lastDate !== (new Date()).getDay()) {
+            today = getToday();
+            if (today !== lastToday) {
                 if (byId('startday').value === '0') {
                     START += DAY;
                 }
@@ -142,7 +147,7 @@ function CSPoll (onResponse) {
                     END += DAY;
                 }
             }
-            lastDate = (new Date()).getDay();
+            lastToday = today;
 
             if (START >= END) {
                 alert('Because start time was set for "Today", it became greater than end time after midnight. Stopping.');
@@ -161,11 +166,16 @@ function CSPoll (onResponse) {
     }
 
 
-    function visibilityChange () {
+    function stopPolling () {
         clearTimeout(timeoutHandle);
         if (xhr) {
             xhr.abort();
         }
+    }
+
+
+    function visibilityChange () {
+        stopPolling();
         requestIfAllowed();
     }
 

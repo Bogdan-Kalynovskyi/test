@@ -65,12 +65,6 @@ var START,
         'External destinations'
     ],
     
-    QUEUES = [
-        'Queues',
-        'Queue agents',
-        'Telephone lines'
-    ],
-    
     COLUMNS = [
         'Total calls',
         'Answered',
@@ -138,13 +132,13 @@ var START,
     ];
 
     daysOfWeek = [
+        'Sunday',
         'Monday',
         'Tuesday',
         'Wednesday',
         'Thursday',
         'Friday',
-        'Saturday',
-        'Sunday'
+        'Saturday'
     ];
 
 
@@ -154,15 +148,17 @@ function CSBase (visibleCols, visibleRows) {
         queues,
         agents,
         phones,
+        rowPos,
+        totals,
         table;
 
 
-    function byStart (a, b) {
-        if (a.start > b.start) {
-            return -1;
-        }
-        else if (a.start < b.start) {
+    function byEnd (a, b) {
+        if (a.end > b.end) {
             return 1;
+        }
+        else if (a.end < b.end) {
+            return -1;
         }
         else {
             return 0;
@@ -187,31 +183,11 @@ function CSBase (visibleCols, visibleRows) {
     
     this.sort = function () {
         if (csTable.sortingCol > 0) {
-            table.sort(byCol(csTable.sortingCol, csTable.sortingOrder));
+            table.sort(byCol(this.colPos.indexOf(csTable.sortingCol - 1) + 1, csTable.sortingOrder));
         }
         else if (csTable.sortingOrder === -1) {
             table.reverse();
         }
-    };
-
-
-    function pad (s) {
-        if (s < 10) {
-            s = '0' + s;
-        }
-        return s;
-    }
-
-
-
-
-    this.drop = function () {
-        calls = [];
-        queues = {};
-        agents = {};
-        phones = {};
-        this.minTime = Infinity;
-        this.maxTime = 0;
     };
 
 
@@ -224,6 +200,7 @@ function CSBase (visibleCols, visibleRows) {
 
     this.setVisibleRows = function (pos, value) {
         visibleRows[pos] = value;
+        calculateRowPos();
         this.filter();
     };
 
@@ -231,11 +208,23 @@ function CSBase (visibleCols, visibleRows) {
     this.calculateColPos = function () {
         this.colPos = [];
         for (var i = 0, n = COLUMNS.length; i < n; i++) {
-            if (visibleCols[i]) {
-                this.colPos.push(REARRANGE[i]);
+            var j = REARRANGE[i];
+            if (visibleCols[j]) {
+                this.colPos.push(j);
             }
         }
     };
+
+
+    function calculateRowPos () {
+        rowPos = [];
+        var row = 0;
+        for (var i in visibleRows) {
+            if (visibleRows[i]) {
+                rowPos[i] = row++;
+            }
+        }
+    }
 
 
     function filterRow (row) {
@@ -248,46 +237,75 @@ function CSBase (visibleCols, visibleRows) {
     }
 
 
-    function percTable () {
-        var total = that.total || Infinity;
-        for (var j in that.colPos) {
-            var newI = that.colPos[j];
-            if (visibleCols[newI] === 2) {
+    this.percTable = function (csv) { 
+        var response = new Array(table.length);
+
+        for (i in table) {
+            if (csv) {
+                response[i] = [table[i][0]];
+            }
+            else {
+                response[i] = table[i].slice();
+            }
+        }
+        
+        for (var j in this.colPos) {
+            var i1 = this.colPos[j],
+                j1 = +j + 1;
+            if (visibleCols[i1] === 2) {
                 for (var i in table) {
-                    table[i][+j + 1] = table[i][+j + 1] + ' <small>(' + Math.round(table[i][+j + 1] / total * 100) + '%)</small>';
+                    var perc;
+                    if (PERIOD) {
+                        perc = totals[i1] || Infinity;
+                    }
+                    else {
+                        perc = totals[i] || Infinity;
+                    }
+                    perc = Math.round(table[i][j1] * 100 / perc);
+                    if (csv) {
+                        response[i].push(table[i][j1]);
+                        response[i].push(perc);
+                    }
+                    else {
+                        response[i][j1] += ' <small>(' + perc + '%)</small>';
+                    }
+                }
+            }
+            else if (csv) {
+                for (i in table) {
+                    response[i].push(table[i][j1]);
                 }
             }
         }
-    }
+        return response;
+    };
 
 
     function addDestinationRow (display, row) {
-        row = filterRow(row);
         if (visibleRows[display]) {
+            row = filterRow(row);
+            var pos = rowPos[display];
+            totals[pos]++;
+
             for (var i = 1, n = row.length; i < n; i++) {
-                table[display][i] += row[i];
+                table[pos][i] += row[i];
             }
         }
     }
 
 
-    function decode (call, output) {
-        var
-            id = call.getAttribute('id'),
-            stype = call.getAttribute('stype'),
+    function decode (call, row, destination) {
+        var stype = call.getAttribute('stype'),
             dtype = call.getAttribute('dtype'),
             snumber = call.getAttribute('snumber'),
             dnumber = call.getAttribute('dnumber'),
             answered = +call.getAttribute('answered'),
-            row = output || Array(COLUMNS.length + 1).fill(0),
-
             external = 'external',
             local = 'local',
             isInbound,
             isInternal,
             isOutbound;
 
-        that.total++;
         // total calls
         row[1]++;
         // answered
@@ -338,7 +356,8 @@ function CSBase (visibleCols, visibleRows) {
             row[12]++;
         }
 
-        if (!output) {
+        if (destination) {
+            //total
             addDestinationRow(0, row);
             // external callers
             if (stype === external || stype === local) {
@@ -352,11 +371,6 @@ function CSBase (visibleCols, visibleRows) {
             if (dtype === external || dtype === local) {
                 addDestinationRow(3, row);
             }
-            //queues
-
-            //queue agents
-
-            // telephone lines
         }
     }
 
@@ -372,7 +386,9 @@ function CSBase (visibleCols, visibleRows) {
         this.maxTime = Math.max(this.maxTime, end);
         
         for (var i = 0, n = _calls.length; i < n; i++) {
-            calls.push(_calls[i]);
+            var call = _calls[i];
+            call.end = call.getAttribute('end');
+            calls.push(call);
             notEmpty = true;
         }
 
@@ -404,18 +420,27 @@ function CSBase (visibleCols, visibleRows) {
     };
 
 
+    function totalsCount (row) {
+        if (PERIOD) {
+            for (var i = 1, n = COLUMNS.length + 1; i < n; i++) {
+                totals[i - 1] += row[i];
+            }
+        }
+    }
+
+
     this.filterByTime = function (start, end) {
-        calls.sort(byStart);
+        calls.sort(byEnd);
         var startIndex,
             endIndex,
-            callStart;
+            callEnd;
 
         for (var i in calls) {
-            callStart = +calls[i].getAttribute('start');
-            if (startIndex === undefined && callStart >= start) {
+            callEnd = +calls[i].end;
+            if (startIndex === undefined && callEnd >= start) {
                 startIndex = i;
             }
-            if (callStart < end) {
+            if (callEnd < end) {
                 endIndex = i;
             }
             else {
@@ -432,204 +457,170 @@ function CSBase (visibleCols, visibleRows) {
     };
     
     
-    function byDestination (filteredCalls) {
-        that.total = 0;
-        table = [];
+    function byDestType (filteredCalls) {
         for (var i in DESTINATIONS) {
             if (visibleRows[i]) {
                 var row = filterRow(new Array(COLUMNS.length + 1).fill(0));
                 row[0] = DESTINATIONS[i];
                 table.push(row);
+                totals.push(0);
             }
         }
         for (var j in filteredCalls) {
-            decode(filteredCalls[j]);
+            row = new Array(COLUMNS.length + 1).fill(0);
+            decode(filteredCalls[j], row, true);
+            totalsCount(row);
         }
     }
 
 
     function byTimePeriods (period, today) {
-        var now = Date.now() / 1000,
-            time = today ? (now - now % DAY) : START,
+        var time = today ? getToday() : START,
             timeObj,
             calls,
-            row;
+            row,
+            now = Date.now() / 1000,
+            dateFormat = csOptions.config('settings', 'dateformat'),
+            timeFormat = csOptions.config('settings', 'timeformat');
 
-        if ((END - START) / period > 1000) {
+        if ((END - START) / period > 10000) {
             alert('Too many data to display. Please set smaller period');
             throw 'too many rows to display';
         }
         
-        that.total = 0;
-        table = [];
-
-        while (time < END) {
+        while (time < END && time < now) {
             calls = that.filterByTime(time, time + period);
             row = new Array(COLUMNS.length + 1).fill(0);
 
             timeObj = new Date(time * 1000);
+            row[0] = formatDate(timeObj, dateFormat);
             if (period < DAY) {
-                if (END - START < DAY) {
-                    row[0] = pad(timeObj.getHours()) + ':' + pad(timeObj.getMinutes());
-                }
-                else {
-                    row[0] = pad(timeObj.getMonth() + 1) + '/' + pad(timeObj.getDate()) + '/' + timeObj.getFullYear() + ' ' + pad(timeObj.getHours()) + ':' + pad(timeObj.getMinutes());
-                }
+                row[0] += ' ' + formatTime(timeObj, timeFormat);
             }
-            else {
-                row[0] = pad(timeObj.getMonth() + 1) + '/' + pad(timeObj.getDate()) + '/' + timeObj.getFullYear();
-            }
-            time += period;
 
             for (var j in calls) {
                 decode(calls[j], row);
             }
-
             table.push(filterRow(row));
+            totalsCount(row);
+
+            time += period;
         }
     }
 
 
     function byDaysOfWeek () {
-        // todo: start from closest monday from now?
-        function getMonday (end) {
-            end = new Date(end * 1000);
-            var day = end.getDay(),
-                diff = end.getDate() - day + (day == 0 ? -6 : 1); // adjust when day is sunday
-            return new Date(end.setDate(diff));
-        }
+        // function getMonday (end) {
+        //     end = new Date(end * 1000);
+        //     var day = end.getDay(),
+        //         diff = end.getDate() - day + (day == 0 ? -6 : 1); // adjust when day is sunday
+        //     return new Date(end.setDate(diff));
+        // }
 
-        var i = 0,
-            now = Date.now() / 1000,
-            day = getMonday(END).getTime() / 1000,
+        var now = Date.now() / 1000,
+            day = START,
             calls,
             row;
 
-        that.total = 0;
-        table = [];
-
         while (day < END && day < now) {
             row = new Array(COLUMNS.length + 1).fill(0);
-            row[0] = daysOfWeek[i];
+            row[0] = daysOfWeek[new Date(day * 1000).getDay()];
             calls = that.filterByTime(day, day + DAY);
             for (var j in calls) {
                 decode(calls[j], row);
             }
             table.push(filterRow(row));
+            totalsCount(row);
+
             day += DAY;
-            i++;
         }
     }
 
 
-    function byQueue (filteredCalls, settings) {
-        var queueIds = [],
+    function byDestination (filteredCalls, subject) {
+        var ids = [],
+            arr,
+            settings = csOptions.get(subject),
             i, j, n;
 
+        switch (subject) {
+            case 'queues':
+                arr = queues;
+                break;
+            case 'agents':
+                arr = agents;
+                break;
+            case 'phones':
+                arr = phones;
+                break;
+        }
+
         if (settings === 'use_include') {
-            var options = byId('queues_selected').options;
+            var options = byId(subject + '_selected').options;
             for (i = 0, n = options.length; i < n; i++) {
-                queueIds.push(options[i].value);
+                ids.push(options[i].value);
             }
         }
         else {
-            //todo cache
-            for (i in queues) {
-                if (settings !== 'use_control_panel' || queues[i].getAttribute('panel') === '1') {
-                    queueIds.push(i);
+            for (i in arr) {
+                if (settings !== 'use_control_panel' || arr[i].getAttribute('panel') === '1') {
+                    ids.push(i);
                 }
             }
         }
 
-        for (j in queueIds) {
-            var queue = queues[queueIds[j]],
-                name = queue.getAttribute('name');
+        for (j in ids) {
+            var call,
+                el = arr[ids[j]],
+                name = el.getAttribute('name'),
+                tblLength = table.length,
+                row = new Array(COLUMNS.length + 1).fill(0);
 
-            var row = new Array(COLUMNS.length + 1).fill(0);
-            row[0] = 'Queue: ' + name;
-
-            for (i in filteredCalls) {
-                var call = filteredCalls[i];
-                if (call.getAttribute('dtype') === 'queue' || call.getAttribute('dnumber') === queueIds[j]) {
-                    decode(call, row);
-                }
+            switch (subject) {
+                case 'queues':
+                    row[0] = 'Queue: ' + name;
+                    break;
+                case 'agents':
+                    row[0] = 'Queue agent: ' + name;
+                    var dnumber = el.getAttribute('dnumber');
+                    break;
+                case 'phones':
+                    row[0] = 'Ext: ' + name;
+                    break;
             }
 
-            table.push(filterRow(row));
-        }
-    }
+            totals.push(0);
 
+            switch (subject) {
+                case 'queues':
+                    for (i in filteredCalls) {
+                        call = filteredCalls[i];
+                        if (call.getAttribute('dtype') === 'queue' || call.getAttribute('dnumber') === ids[j]) {
+                            decode(call, row);
+                            totals[tblLength]++;
+                        }
+                    }
+                    break;
 
-    function byAgent (filteredCalls, settings) {
-        var agentIds = [],
-            i, j, n;
+                case 'agents':
+                    for (i in filteredCalls) {
+                        call = filteredCalls[i];
+                        if (call.getAttribute('stype') === 'queue' && call.getAttribute('dnumber') === dnumber) {
+                            decode(call, row);
+                            totals[tblLength]++;
+                        }
+                    }
+                    break;
 
-        if (settings === 'use_include') {
-            var options = byId('agents_selected').options;
-            for (i = 0, n = options.length; i < n; i++) {
-                agentIds.push(options[i].value);
-            }
-        }
-        else {
-            //todo cache
-            for (i in agents) {
-                if (settings !== 'use_control_panel' || agents[i].getAttribute('panel') === '1') {
-                    agentIds.push(i);
-                }
-            }
-        }
-
-        for (j in agentIds) {
-            var agent = agents[agentIds[j]],
-                name = agent.getAttribute('name');
-
-            var row = new Array(COLUMNS.length + 1).fill(0);
-            row[0] = 'Queue agent: ' + name;
-
-            for (i in filteredCalls) {
-                var call = filteredCalls[i];
-                if (call.getAttribute('stype') === 'queue' || call.getAttribute('dnumber') === agent.getAttribute('dnumber')) {
-                    decode(call, row);
-                }
-            }
-
-            table.push(filterRow(row));
-        }
-    }
-
-
-    function byPhone (filteredCalls, settings) {
-        var phoneIds = [],
-            i, j, n;
-
-        if (settings === 'use_include') {
-            var options = byId('phones_selected').options;
-            for (i = 0, n = options.length; i < n; i++) {
-                phoneIds.push(i);
-            }
-        }
-        else {
-            //todo cache
-            for (i in phones) {
-                if (settings !== 'use_control_panel' || phones[i].getAttribute('panel') === '1') {
-                    phoneIds.push(phones[i].id);
-                }
-            }
-        }
-
-        for (j in phoneIds) {
-            var phone = phones[phoneIds[j]],
-                name = phone.getAttribute('name'),
-                dnumber = phone.getAttribute('dnumber');
-
-            var row = new Array(COLUMNS.length + 1).fill(0);
-            row[0] = 'Ext: ' + phone.getAttribute('name');
-
-            for (i in filteredCalls) {
-                var call = filteredCalls[i];
-                if ((call.getAttribute('stype') === 'phone' && call.getAttribute('snumber') === name) || (call.getAttribute('dtype') === 'phone' && call.getAttribute('dnumber') === dnumber)) {
-                    decode(filteredCalls[i], row);
-                }
+                case 'phones':
+                    for (i in filteredCalls) {
+                        call = filteredCalls[i];
+                        if ((call.getAttribute('stype') === 'phone' && call.getAttribute('snumber') === name) || (call.getAttribute('dtype') === 'phone' && call.getAttribute('dnumber') === name)) {
+                            decode(filteredCalls[i], row);
+                            totals[tblLength]++;
+                        }
+                    }
+                    break;
             }
 
             table.push(filterRow(row));
@@ -638,13 +629,16 @@ function CSBase (visibleCols, visibleRows) {
 
 
     this.filter = function () {
+        table = [];
+        totals = PERIOD ? new Array(COLUMNS.length).fill(0) : [];
+
         if (PERIOD === 0) {
             var filteredCalls = that.filterByTime(START, END);
-            byDestination(filteredCalls);
-            // todo: merge three below into one
-            byQueue(filteredCalls, csOptions.get('queues'));
-            byAgent(filteredCalls, csOptions.get('agents'));
-            byPhone(filteredCalls, csOptions.get('phones'));
+            byDestType(filteredCalls);
+
+            byDestination(filteredCalls, 'queues');
+            byDestination(filteredCalls, 'agents');
+            byDestination(filteredCalls, 'phones');
         }
         else if (PERIOD > 0) {
             byTimePeriods(PERIOD)
@@ -658,15 +652,23 @@ function CSBase (visibleCols, visibleRows) {
             }
         }
 
-        this.sort();
-        percTable(table);
-        csTable.update(table);
+        this.sort(); 
+        csTable.update(this.percTable());
     };
 
 
     // constructor
     this.calculateColPos();
-    this.drop();
+    calculateRowPos();
+
+    calls = [];
+    queues = {};
+    agents = {};
+    phones = {};
+    this.minTime = Infinity;
+    this.maxTime = 0;
+
+    this.visibleCols = visibleCols;
 }
 
 function dirty() {
@@ -777,7 +779,8 @@ function CSPoll (onResponse) {
         password = csOptions.config('settings', 'password'),
         xhr,
         preloaderShown,
-        lastDate,
+        today,
+        lastToday,
         requestStart,
         requestEnd,
         firstPoll,
@@ -802,12 +805,11 @@ function CSPoll (onResponse) {
 
 
     function calcTimeFrame () {
-        var today = Math.floor(Date.now() / 1000);
-        today -= today % DAY;
+        today = lastToday = getToday();
 
         var startday = csOptions.getNumber('startday');
         if (startday === 1) {
-            START = new Date(csOptions.getNumber('start_year'), csOptions.getNumber('start_month'), csOptions.getNumber('start_day')).getTime() / 1000;
+            START = new Date(csOptions.getNumber('start_year'), csOptions.getNumber('start_month') - 1, csOptions.getNumber('start_day')).getTime() / 1000;
         }
         else {
             START = today + startday * DAY;
@@ -816,7 +818,7 @@ function CSPoll (onResponse) {
 
         var endday = csOptions.getNumber('endday');
         if (endday == 1) {
-            END = new Date(csOptions.getNumber('end_year'), csOptions.getNumber('end_month'), csOptions.getNumber('end_day')).getTime() / 1000;
+            END = new Date(csOptions.getNumber('end_year'), csOptions.getNumber('end_month') - 1, csOptions.getNumber('end_day')).getTime() / 1000;
         }
         else {
             END = today + endday * DAY;
@@ -824,8 +826,9 @@ function CSPoll (onResponse) {
         END += csOptions.getNumber('end_hour') * 3600 + csOptions.getNumber('end_minute') * 60 + csOptions.getNumber('end_second');
 
         if (START >= END) {
-            alert('Start time should be before end time');
-            throw 'start > end';
+            alert('Start time should be before end time. Please select another time.');
+            stopPolling();
+            throw 'start >= end';
         }
     }
 
@@ -852,19 +855,19 @@ function CSPoll (onResponse) {
         firstPoll = true;
 
         if (START >= csBase.minTime && END <= csBase.maxTime) {
-            onResponse(csBase.filterByTime(START, END));    //don't poll again
-            return;
+            onResponse();
+            return;    
         }
         //query what is missing
         else if (START < csBase.minTime && END >= csBase.minTime) {
-            onResponse(csBase.filterByTime(csBase.minTime, Math.min(csBase.maxTime, END)));  // return part from cache
+            onResponse();
             requestStart = START;
-            requestEnd = csBase.minTime - 1;
+            requestEnd = csBase.minTime;
         }
         //query what is missing
-        else if (START <= csBase.maxTime/* && END > csBase.maxTime*/) {
-            onResponse(csBase.filterByTime(START, csBase.maxTime/*Math.min(csBase.maxTime, END)*/));  // return part from cache
-            requestStart = csBase.maxTime + 1;
+        else if (START <= csBase.maxTime && END > csBase.maxTime) {
+            onResponse();
+            requestStart = csBase.maxTime;
             requestEnd = END;
         }
 
@@ -873,11 +876,8 @@ function CSPoll (onResponse) {
             requestEnd = END;
         }
 
-        clearTimeout(timeoutHandle);
-        if (xhr) {
-            xhr.abort();
-        }
-        if (!preloaderShown) {
+        stopPolling();
+        if (!preloaderShown && requestEnd - requestStart > DAY / 2) {
             showPreloader();
         }
       
@@ -891,12 +891,12 @@ function CSPoll (onResponse) {
         // break polling loop on error
         if (!update) {
             var error = response.getElementsByTagName('errors')[0];
-            if (error && !alertShown) {
+            if (error) {
                 alert(error.getElementsByTagName('error')[0].getAttribute('message'));
             }
         }
         else {
-            var updateEnd = +update.getAttribute('timestamp') - 1,
+            var updateEnd = +update.getAttribute('timestamp'),
                 updateNotEmpty = csBase.add(update, requestStart, Math.min(requestEnd, updateEnd));
 
             if (firstPoll || updateNotEmpty) {
@@ -907,7 +907,8 @@ function CSPoll (onResponse) {
             hidePreloader();
 
             // Handle the change of day at midnight. If the start or end day is not a specific date then the report period will change every day.
-            if (lastDate && lastDate !== (new Date()).getDay()) {
+            today = getToday();
+            if (today !== lastToday) {
                 if (byId('startday').value === '0') {
                     START += DAY;
                 }
@@ -915,7 +916,7 @@ function CSPoll (onResponse) {
                     END += DAY;
                 }
             }
-            lastDate = (new Date()).getDay();
+            lastToday = today;
 
             if (START >= END) {
                 alert('Because start time was set for "Today", it became greater than end time after midnight. Stopping.');
@@ -934,11 +935,16 @@ function CSPoll (onResponse) {
     }
 
 
-    function visibilityChange () {
+    function stopPolling () {
         clearTimeout(timeoutHandle);
         if (xhr) {
             xhr.abort();
         }
+    }
+
+
+    function visibilityChange () {
+        stopPolling();
         requestIfAllowed();
     }
 
@@ -978,7 +984,6 @@ function CSPoll (onResponse) {
 }
 function CSTable (container) {
     var that = this,
-        cachedData,
         table,
         theadTr,
         ths,
@@ -989,12 +994,12 @@ function CSTable (container) {
 
 
     function createTable () {
-        var str = '<table width="100%" border="0" cellpadding="0" cellspacing="0">' +
-                    '<thead><tr class="head">';
+        var str = '<table width="100%" border="0" cellpadding="0" cellspacing="0"><thead><tr class="head">',
+            timeZoneFormatted = new Date().toString().match(/([A-Z]+[\+-][0-9]+.*)/)[1];
 
-        str += that.createHeader(true) + '</tr></thead><tbody></tbody></table><br><br>' +
-            '<div id="line-chart" style="height: 500px"></div><br>' +
-            '<button id="csv">Download as CSV</button>';
+        str += that.createHeader(true) + '</tr></thead><tbody></tbody></table>' +
+        '<div class="foot"><span id="timezone">Your timezone: ' + timeZoneFormatted + '</span><button id="csv" class="universal secondary">Export as .csv</button></div>' +
+        '<div id="line-chart" style="height: 500px"></div>';
 
         container.innerHTML = str;
         table = container.children[0],
@@ -1063,12 +1068,12 @@ function CSTable (container) {
                 that.sortingOrder *= -1;
             }
             else {
-                that.sortingOrder = 1;
+                that.sortingOrder = -1;
             }
             that.sortingCol = startId;
             if (startId) {
                 csBase.sort();
-                that.update();
+                that.update(csBase.percTable());
             }
             else {
                 csBase.filter();
@@ -1094,13 +1099,13 @@ function CSTable (container) {
                 }
             }
 
+            var currId = parseInt(target.id);
+            if (!currId) {
+                return false;
+            }
+
             if (startTh !== target) {
                 target.style.opacity = 0.7;
-                var currId = parseInt(target.id);
-
-                if (!currId) {
-                    return false;
-                }
             }
             else {
                 return false;
@@ -1119,8 +1124,8 @@ function CSTable (container) {
 
             startTh.style.opacity = 1;
             if (startTh !== target) {
-                var id1 = currId - 1,
-                    id2 = startId - 1;
+                var id1 = REARRANGE.indexOf(currId - 1),
+                    id2 = REARRANGE.indexOf(startId - 1);
                 var temp = REARRANGE[id1];
                 REARRANGE[id1] = REARRANGE[id2];
                 REARRANGE[id2] = temp;
@@ -1150,17 +1155,21 @@ function CSTable (container) {
 
             for (var i in csBase.colPos) {
                 row.push(COLUMNS[csBase.colPos[i]]);
+                if (csBase.visibleCols[i] === 2) {
+                    row.push(COLUMNS[csBase.colPos[i]] + ' %');
+                }
             }
             encodeRow(row);
 
-            for (var j in cachedData) {
-                encodeRow(cachedData[j]);
+            var table = csBase.percTable(true);
+            for (var j in table) {
+                encodeRow(table[j]);
             }
             // end encode
 
 
             //start download
-            var fileName = (csOptions.get('name') || '') + '_voisonics_report.csv',
+            var fileName = (csOptions.get('name') || 'noname') + '.csv',
                 csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
 
             if (navigator.msSaveBlob) { // IE 10+
@@ -1184,9 +1193,6 @@ function CSTable (container) {
 
 
     this.update = function (data) {
-        if (!data) {
-            data = cachedData;
-        }
         var str = '';
 
         for (var i in data) {
@@ -1194,8 +1200,6 @@ function CSTable (container) {
         }
         tbody.innerHTML = str;
         csChart.create(data);
-        
-        cachedData = data;
     };
 
 
@@ -1205,6 +1209,51 @@ function CSTable (container) {
 }
 function byId (id) {
     return document.getElementById(id);
+}
+
+
+function getToday () {
+    return Math.floor(new Date().setHours(0,0,0,0) / 1000);
+}
+
+
+function pad (s) {
+    if (s < 10) {
+        s = '0' + s;
+    }
+    return s;
+}
+
+
+function formatDate (date, format) {
+    var yyyy = date.getFullYear();
+    var MM = date.getMonth() + 1;
+    var dd  = date.getDate();
+
+    switch (format) {
+        case 'YYYY-MM-DD':
+            return yyyy + '-' + pad(MM) + '-' + pad(dd);
+        case 'DD/MM/YYYY':
+            return pad(dd) + '/' + pad(MM) + '/' + yyyy;
+        case 'MM/DD/YYYY':
+            return pad(MM) + '/' + pad(dd) + '/' + yyyy;
+    }
+}
+
+
+function formatTime (time, format) {
+    var hh = time.getHours();
+    var mm = time.getMinutes();
+
+    if (format === '12') {
+        var ampm = hh >= 12 ? ' p.m.' : ' a.m.';
+        hh %= 12;
+        hh = hh ? hh : 12;
+        return pad(hh) + ':' + pad(mm) + ampm;
+    }
+    else {
+        return pad(hh) + ':' + pad(mm);
+    }
 }
 document.addEventListener("DOMContentLoaded", function() {
 

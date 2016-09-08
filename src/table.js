@@ -1,6 +1,5 @@
 function CSTable (container) {
     var that = this,
-        cachedData,
         table,
         theadTr,
         ths,
@@ -11,12 +10,12 @@ function CSTable (container) {
 
 
     function createTable () {
-        var str = '<table width="100%" border="0" cellpadding="0" cellspacing="0">' +
-                    '<thead><tr class="head">';
+        var str = '<table width="100%" border="0" cellpadding="0" cellspacing="0"><thead><tr class="head">',
+            timeZoneFormatted = new Date().toString().match(/([A-Z]+[\+-][0-9]+.*)/)[1];
 
-        str += that.createHeader(true) + '</tr></thead><tbody></tbody></table><br><br>' +
-            '<div id="line-chart" style="height: 500px"></div><br>' +
-            '<button id="csv">Download as CSV</button>';
+        str += that.createHeader(true) + '</tr></thead><tbody></tbody></table>' +
+        '<div class="foot"><span id="timezone">Your timezone: ' + timeZoneFormatted + '</span><button id="csv" class="universal secondary">Export as .csv</button></div>' +
+        '<div id="line-chart" style="height: 500px"></div>';
 
         container.innerHTML = str;
         table = container.children[0],
@@ -85,12 +84,12 @@ function CSTable (container) {
                 that.sortingOrder *= -1;
             }
             else {
-                that.sortingOrder = 1;
+                that.sortingOrder = -1;
             }
             that.sortingCol = startId;
-            if (startId && csBase.visibleCols !== 2) {
+            if (startId) {
                 csBase.sort();
-                that.update();
+                that.update(csBase.percTable());
             }
             else {
                 csBase.filter();
@@ -116,13 +115,13 @@ function CSTable (container) {
                 }
             }
 
+            var currId = parseInt(target.id);
+            if (!currId) {
+                return false;
+            }
+
             if (startTh !== target) {
                 target.style.opacity = 0.7;
-                var currId = parseInt(target.id);
-
-                if (!currId) {
-                    return false;
-                }
             }
             else {
                 return false;
@@ -172,17 +171,21 @@ function CSTable (container) {
 
             for (var i in csBase.colPos) {
                 row.push(COLUMNS[csBase.colPos[i]]);
+                if (csBase.visibleCols[i] === 2) {
+                    row.push(COLUMNS[csBase.colPos[i]] + ' %');
+                }
             }
             encodeRow(row);
 
-            for (var j in cachedData) {
-                encodeRow(cachedData[j]);
+            var table = csBase.percTable(true);
+            for (var j in table) {
+                encodeRow(table[j]);
             }
             // end encode
 
 
             //start download
-            var fileName = (csOptions.get('name') || '') + '_voisonics_report.csv',
+            var fileName = (csOptions.get('name') || 'noname') + '.csv',
                 csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
 
             if (navigator.msSaveBlob) { // IE 10+
@@ -206,9 +209,6 @@ function CSTable (container) {
 
 
     this.update = function (data) {
-        if (!data) {
-            data = cachedData;
-        }
         var str = '';
 
         for (var i in data) {
@@ -216,8 +216,6 @@ function CSTable (container) {
         }
         tbody.innerHTML = str;
         csChart.create(data);
-        
-        cachedData = data;
     };
 
 

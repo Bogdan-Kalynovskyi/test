@@ -85,7 +85,7 @@
 	padding: 0;
 	border: 0;
 }
-.results th {
+.results .head th {
 	padding-left: .4em;
 	padding-right: .4em;
 }
@@ -94,8 +94,8 @@
 	cursor: pointer;
 }
 
-th > b {
-	cursor: pointer;
+.results small {
+	color: #666666;
 }
 
 .results td {
@@ -104,4 +104,33 @@ th > b {
 
 .results tr:nth-child(2n) {
 	background: #e1ecfa;;
+}
+
+#timezone {
+	position: relative;
+	top: 3px;
+	color: #ffffff;
+}
+
+#csv {
+	padding: 5px 8px;
+}
+
+.foot {
+	margin-top: 3px;
+	border-top: 1px solid #005c97;
+	background: #3289c1;
+	padding: 6px 7px 8px 6px;
+	position: relative;
+	height: ;
+}
+
+.foot:after {
+	content: '';
+	position: absolute;
+	bottom: 0;
+	left: -3px;
+	right: -3px;
+	height: 1px;
+	background: #000;
 }
