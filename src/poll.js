@@ -51,13 +51,13 @@ function CSPoll (onResponse) {
         END += csOptions.getNumber('end_hour') * 3600 + csOptions.getNumber('end_minute') * 60 + csOptions.getNumber('end_second');
 
         if (START >= END) {
-            alert('Start time should be before end time. Please select another time.');
+            alert('Start time should be before end time.');
             stopPolling();
             throw 'start >= end';
         }
 
         else if (START > Date.now() / 1000) {
-            alert('Start time is after current moment. This request won\'t work');
+            alert('Start time should be before current moment.');
             stopPolling();
             throw 'start > now';
         }

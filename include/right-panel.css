@@ -120,17 +120,17 @@
 	margin-top: 3px;
 	border-top: 1px solid #005c97;
 	background: #3289c1;
-	padding: 6px 7px 8px 6px;
+	padding: 6px 7px 6px 6px;
 	position: relative;
-	height: ;
+	height: 23px;
 }
 
 .foot:after {
 	content: '';
 	position: absolute;
-	bottom: 0;
-	left: -3px;
-	right: -3px;
+	bottom: -1px;
+	left: -2px;
+	right: -2px;
 	height: 1px;
-	background: #000;
+	background: #444;
 }
