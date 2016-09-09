@@ -254,20 +254,13 @@ function CSBase (visibleCols, visibleRows) {
                 j1 = +j + 1;
             if (visibleCols[i1] === 2) {
                 for (var i in table) {
-                    var perc;
-                    if (PERIOD) {
-                        perc = totals[i1] || Infinity;
-                    }
-                    else {
-                        perc = totals[i] || Infinity;
-                    }
-                    perc = Math.round(table[i][j1] * 100 / perc);
+                    var perc = Math.round(table[i][j1] * 100 / (totals[i] || Infinity));
                     if (csv) {
                         response[i].push(table[i][j1]);
                         response[i].push(perc);
                     }
                     else {
-                        response[i][j1] += ' <small>(' + perc + '%)</small>';
+                        response[i][j1] += ' <small>(' + perc + '&thinsp;%)</small>';
                     }
                 }
             }
@@ -420,15 +413,6 @@ function CSBase (visibleCols, visibleRows) {
     };
 
 
-    function totalsCount (row) {
-        if (PERIOD) {
-            for (var i = 1, n = COLUMNS.length + 1; i < n; i++) {
-                totals[i - 1] += row[i];
-            }
-        }
-    }
-
-
     this.filterByTime = function (start, end) {
         calls.sort(byEnd);
         var startIndex,
@@ -469,7 +453,6 @@ function CSBase (visibleCols, visibleRows) {
         for (var j in filteredCalls) {
             row = new Array(COLUMNS.length + 1).fill(0);
             decode(filteredCalls[j], row, true);
-            totalsCount(row);
         }
     }
 
@@ -480,6 +463,7 @@ function CSBase (visibleCols, visibleRows) {
             calls,
             row,
             now = Date.now() / 1000,
+            dateChanged = (END - START > 2 * DAY) || (new Date(END * 1000).getDate() - new Date(START * 1000).getDate()),
             dateFormat = csOptions.config('settings', 'dateformat'),
             timeFormat = csOptions.config('settings', 'timeformat');
 
@@ -487,22 +471,28 @@ function CSBase (visibleCols, visibleRows) {
             alert('Too many data to display. Please set smaller period');
             throw 'too many rows to display';
         }
-        
+
+
         while (time < END && time < now) {
             calls = that.filterByTime(time, time + period);
             row = new Array(COLUMNS.length + 1).fill(0);
 
             timeObj = new Date(time * 1000);
-            row[0] = formatDate(timeObj, dateFormat);
-            if (period < DAY) {
-                row[0] += ' ' + formatTime(timeObj, timeFormat);
+            if (dateChanged) {
+                row[0] = formatDate(timeObj, dateFormat);
+                if (period < DAY) {
+                    row[0] += ' ' + formatTime(timeObj, timeFormat);
+                }
+            }
+            else {
+                row[0] = formatTime(timeObj, timeFormat);
             }
 
             for (var j in calls) {
                 decode(calls[j], row);
             }
             table.push(filterRow(row));
-            totalsCount(row);
+            totals.push(calls.length);
 
             time += period;
         }
@@ -530,7 +520,7 @@ function CSBase (visibleCols, visibleRows) {
                 decode(calls[j], row);
             }
             table.push(filterRow(row));
-            totalsCount(row);
+            totals.push(calls.length);
 
             day += DAY;
         }
@@ -573,7 +563,8 @@ function CSBase (visibleCols, visibleRows) {
             var call,
                 el = arr[ids[j]],
                 name = el.getAttribute('name'),
-                tblLength = table.length,
+                match,
+                totalsCount = 0,
                 row = new Array(COLUMNS.length + 1).fill(0);
 
             switch (subject) {
@@ -582,55 +573,46 @@ function CSBase (visibleCols, visibleRows) {
                     break;
                 case 'agents':
                     row[0] = 'Queue agent: ' + name;
-                    var dnumber = el.getAttribute('dnumber');
+                    var dnumber = el.getAttribute('dnumber'),
+                        dtype = el.getAttribute('dtype');
                     break;
                 case 'phones':
                     row[0] = 'Ext: ' + name;
                     break;
             }
 
-            totals.push(0);
+            for (i in filteredCalls) {
+                call = filteredCalls[i];
 
-            switch (subject) {
-                case 'queues':
-                    for (i in filteredCalls) {
-                        call = filteredCalls[i];
-                        if (call.getAttribute('dtype') === 'queue' || call.getAttribute('dnumber') === ids[j]) {
-                            decode(call, row);
-                            totals[tblLength]++;
-                        }
-                    }
-                    break;
+                switch (subject) {
+                    case 'queues':
+                        match = call.getAttribute('dtype') === 'queue' && call.getAttribute('dnumber') === ids[j];
+                        break;
 
-                case 'agents':
-                    for (i in filteredCalls) {
-                        call = filteredCalls[i];
-                        if (call.getAttribute('stype') === 'queue' && call.getAttribute('dnumber') === dnumber) {
-                            decode(call, row);
-                            totals[tblLength]++;
-                        }
-                    }
-                    break;
+                    case 'agents':
+                        match = call.getAttribute('stype') === 'queue' && call.getAttribute('dnumber') === dnumber && call.getAttribute('dtype') === dtype;
+                        break;
 
-                case 'phones':
-                    for (i in filteredCalls) {
-                        call = filteredCalls[i];
-                        if ((call.getAttribute('stype') === 'phone' && call.getAttribute('snumber') === name) || (call.getAttribute('dtype') === 'phone' && call.getAttribute('dnumber') === name)) {
-                            decode(filteredCalls[i], row);
-                            totals[tblLength]++;
-                        }
-                    }
-                    break;
+                    case 'phones':
+                        match = (call.getAttribute('stype') === 'phone' && call.getAttribute('snumber') === name) || (call.getAttribute('dtype') === 'phone' && call.getAttribute('dnumber') === name);
+                        break;
+                }
+
+                if (match) {
+                    decode(call, row);
+                    totalsCount++;
+                }
             }
 
             table.push(filterRow(row));
+            totals.push(totalsCount);
         }
     }
 
 
     this.filter = function () {
         table = [];
-        totals = PERIOD ? new Array(COLUMNS.length).fill(0) : [];
+        totals = [];
 
         if (PERIOD === 0) {
             var filteredCalls = that.filterByTime(START, END);
@@ -826,9 +808,15 @@ function CSPoll (onResponse) {
         END += csOptions.getNumber('end_hour') * 3600 + csOptions.getNumber('end_minute') * 60 + csOptions.getNumber('end_second');
 
         if (START >= END) {
-            alert('Start time should be before end time. Please select another time.');
+            alert('Start time should be before end time.');
             stopPolling();
             throw 'start >= end';
+        }
+
+        else if (START > Date.now() / 1000) {
+            alert('Start time should be before current moment.');
+            stopPolling();
+            throw 'start > now';
         }
     }
 
@@ -1246,7 +1234,7 @@ function formatTime (time, format) {
     var mm = time.getMinutes();
 
     if (format === '12') {
-        var ampm = hh >= 12 ? ' p.m.' : ' a.m.';
+        var ampm = hh >= 12 ? 'pm' : 'am';
         hh %= 12;
         hh = hh ? hh : 12;
         return pad(hh) + ':' + pad(mm) + ampm;

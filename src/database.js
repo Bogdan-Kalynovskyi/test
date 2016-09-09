@@ -6,6 +6,7 @@ function CSBase (visibleCols, visibleRows) {
         phones,
         rowPos,
         totals,
+        columnSum,
         table;
 
 
@@ -110,20 +111,13 @@ function CSBase (visibleCols, visibleRows) {
                 j1 = +j + 1;
             if (visibleCols[i1] === 2) {
                 for (var i in table) {
-                    var perc;
-                    if (PERIOD) {
-                        perc = totals[i1] || Infinity;
-                    }
-                    else {
-                        perc = totals[i] || Infinity;
-                    }
-                    perc = Math.round(table[i][j1] * 100 / perc);
+                    var perc = Math.round(table[i][j1] * 100 / (totals[i] || Infinity));
                     if (csv) {
                         response[i].push(table[i][j1]);
                         response[i].push(perc);
                     }
                     else {
-                        response[i][j1] += ' <small>(' + perc + '%)</small>';
+                        response[i][j1] += ' <small>(' + perc + '&#8198;%)</small>';
                     }
                 }
             }
@@ -133,6 +127,9 @@ function CSBase (visibleCols, visibleRows) {
                 }
             }
         }
+
+        columnSum.unshift('Total');
+        response.push(columnSum);
         return response;
     };
 
@@ -276,15 +273,6 @@ function CSBase (visibleCols, visibleRows) {
     };
 
 
-    function totalsCount (row) {
-        if (PERIOD) {
-            for (var i = 1, n = COLUMNS.length + 1; i < n; i++) {
-                totals[i - 1] += row[i];
-            }
-        }
-    }
-
-
     this.filterByTime = function (start, end) {
         calls.sort(byEnd);
         var startIndex,
@@ -335,6 +323,7 @@ function CSBase (visibleCols, visibleRows) {
             calls,
             row,
             now = Date.now() / 1000,
+            dateChanged = (END - START > 2 * DAY) || (new Date(END * 1000).getDate() - new Date(START * 1000).getDate()),
             dateFormat = csOptions.config('settings', 'dateformat'),
             timeFormat = csOptions.config('settings', 'timeformat');
 
@@ -342,22 +331,32 @@ function CSBase (visibleCols, visibleRows) {
             alert('Too many data to display. Please set smaller period');
             throw 'too many rows to display';
         }
-        
+
+        columnSum = new Array(that.colPos.length).fill(0);
+
         while (time < END && time < now) {
             calls = that.filterByTime(time, time + period);
             row = new Array(COLUMNS.length + 1).fill(0);
 
             timeObj = new Date(time * 1000);
-            row[0] = formatDate(timeObj, dateFormat);
-            if (period < DAY) {
-                row[0] += ' ' + formatTime(timeObj, timeFormat);
+            if (dateChanged) {
+                row[0] = formatDate(timeObj, dateFormat);
+                if (period < DAY) {
+                    row[0] += ' ' + formatTime(timeObj, timeFormat);
+                }
+            }
+            else {
+                row[0] = formatTime(timeObj, timeFormat);
             }
 
             for (var j in calls) {
                 decode(calls[j], row);
             }
             table.push(filterRow(row));
-            totalsCount(row);
+            totals.push(calls.length);
+            for (var i in row) {
+                columnSum[i] += row[i];
+            }
 
             time += period;
         }
@@ -365,27 +364,26 @@ function CSBase (visibleCols, visibleRows) {
 
 
     function byDaysOfWeek () {
-        // function getMonday (end) {
-        //     end = new Date(end * 1000);
-        //     var day = end.getDay(),
-        //         diff = end.getDate() - day + (day == 0 ? -6 : 1); // adjust when day is sunday
-        //     return new Date(end.setDate(diff));
-        // }
-
         var now = Date.now() / 1000,
             day = START,
             calls,
             row;
 
+        columnSum = new Array(that.colPos.length).fill(0);
+
         while (day < END && day < now) {
             row = new Array(COLUMNS.length + 1).fill(0);
             row[0] = daysOfWeek[new Date(day * 1000).getDay()];
             calls = that.filterByTime(day, day + DAY);
+
             for (var j in calls) {
                 decode(calls[j], row);
             }
             table.push(filterRow(row));
-            totalsCount(row);
+            totals.push(calls.length);
+            for (var i in row) {
+                columnSum[i] += row[i];
+            }
 
             day += DAY;
         }
@@ -428,7 +426,8 @@ function CSBase (visibleCols, visibleRows) {
             var call,
                 el = arr[ids[j]],
                 name = el.getAttribute('name'),
-                tblLength = table.length,
+                match,
+                totalsCount = 0,
                 row = new Array(COLUMNS.length + 1).fill(0);
 
             switch (subject) {
@@ -437,55 +436,46 @@ function CSBase (visibleCols, visibleRows) {
                     break;
                 case 'agents':
                     row[0] = 'Queue agent: ' + name;
-                    var dnumber = el.getAttribute('dnumber');
+                    var dnumber = el.getAttribute('dnumber'),
+                        dtype = el.getAttribute('dtype');
                     break;
                 case 'phones':
                     row[0] = 'Ext: ' + name;
                     break;
             }
 
-            totals.push(0);
+            for (i in filteredCalls) {
+                call = filteredCalls[i];
 
-            switch (subject) {
-                case 'queues':
-                    for (i in filteredCalls) {
-                        call = filteredCalls[i];
-                        if (call.getAttribute('dtype') === 'queue' || call.getAttribute('dnumber') === ids[j]) {
-                            decode(call, row);
-                            totals[tblLength]++;
-                        }
-                    }
-                    break;
+                switch (subject) {
+                    case 'queues':
+                        match = call.getAttribute('dtype') === 'queue' && call.getAttribute('dnumber') === ids[j];
+                        break;
 
-                case 'agents':
-                    for (i in filteredCalls) {
-                        call = filteredCalls[i];
-                        if (call.getAttribute('stype') === 'queue' && call.getAttribute('dnumber') === dnumber) {
-                            decode(call, row);
-                            totals[tblLength]++;
-                        }
-                    }
-                    break;
+                    case 'agents':
+                        match = call.getAttribute('stype') === 'queue' && call.getAttribute('dnumber') === dnumber && call.getAttribute('dtype') === dtype;
+                        break;
 
-                case 'phones':
-                    for (i in filteredCalls) {
-                        call = filteredCalls[i];
-                        if ((call.getAttribute('stype') === 'phone' && call.getAttribute('snumber') === name) || (call.getAttribute('dtype') === 'phone' && call.getAttribute('dnumber') === name)) {
-                            decode(filteredCalls[i], row);
-                            totals[tblLength]++;
-                        }
-                    }
-                    break;
+                    case 'phones':
+                        match = (call.getAttribute('stype') === 'phone' && call.getAttribute('snumber') === name) || (call.getAttribute('dtype') === 'phone' && call.getAttribute('dnumber') === name);
+                        break;
+                }
+
+                if (match) {
+                    decode(call, row);
+                    totalsCount++;
+                }
             }
 
             table.push(filterRow(row));
+            totals.push(totalsCount);
         }
     }
 
 
     this.filter = function () {
         table = [];
-        totals = PERIOD ? new Array(COLUMNS.length).fill(0) : [];
+        totals = [];
 
         if (PERIOD === 0) {
             var filteredCalls = that.filterByTime(START, END);

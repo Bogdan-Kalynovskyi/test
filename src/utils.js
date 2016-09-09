@@ -37,7 +37,7 @@ function formatTime (time, format) {
     var mm = time.getMinutes();
 
     if (format === '12') {
-        var ampm = hh >= 12 ? ' p.m.' : ' a.m.';
+        var ampm = hh >= 12 ? 'pm' : 'am';
         hh %= 12;
         hh = hh ? hh : 12;
         return pad(hh) + ':' + pad(mm) + ampm;

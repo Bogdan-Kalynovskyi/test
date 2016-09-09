@@ -117,10 +117,9 @@
 }
 
 .foot {
-	margin-top: 3px;
 	border-top: 1px solid #005c97;
 	background: #3289c1;
-	padding: 6px 7px 6px 6px;
+	padding: 6px;
 	position: relative;
 	height: 23px;
 }
