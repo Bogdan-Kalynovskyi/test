@@ -23,7 +23,7 @@ document.addEventListener("DOMContentLoaded", function() {
 (function () {
     var s = document.createElement('script');
     s.onload = function () {
-        google.charts.load('current', {'packages': ['corechart']});
+        google.charts.load('current', {'packages': ['line']});
     };
     s.src = '//www.gstatic.com/charts/loader.js';
     document.head.appendChild(s);

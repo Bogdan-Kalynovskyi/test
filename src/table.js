@@ -31,7 +31,7 @@ function CSTable (container) {
         
         function getSorting (i) {
             if (that.sortingCol === i) {
-                return that.sortingOrder === 1 ? ' ▼' : ' ▲';
+                return that.sortingOrder === 1 ? ' class="asc"' : ' class="desc"';
             }
             else {
                 return '';
@@ -170,9 +170,10 @@ function CSTable (container) {
             row.push((PERIOD === 0) ? 'Destination' : 'Time');
 
             for (var i in csBase.colPos) {
-                row.push(COLUMNS[csBase.colPos[i]]);
-                if (csBase.visibleCols[i] === 2) {
-                    row.push(COLUMNS[csBase.colPos[i]] + ' %');
+                var newI = csBase.colPos[i];
+                row.push(COLUMNS[newI]);
+                if (csBase.visibleCols[newI] === 2) {
+                    row.push(COLUMNS[newI] + ' %');
                 }
             }
             encodeRow(row);
@@ -215,7 +216,8 @@ function CSTable (container) {
             str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
         }
         tbody.innerHTML = str;
-        csChart.create(data);
+        csChart.create(csBase.getTable());
+        rightPanelEqHeight(); 
     };
 
 

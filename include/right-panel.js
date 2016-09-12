@@ -22,6 +22,8 @@
 		panel.style.height = maxHeight - 5 + 'px';
 	}
 
+	window.rightPanelEqHeight = eqHeight;
+
 
 	function expand () {
 		panel.classList.add('expanded');

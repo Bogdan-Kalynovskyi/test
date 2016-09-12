@@ -5,8 +5,8 @@ function CSBase (visibleCols, visibleRows) {
         agents,
         phones,
         rowPos,
-        totals,
         columnSum,
+        total,
         table;
 
 
@@ -84,18 +84,23 @@ function CSBase (visibleCols, visibleRows) {
     }
 
 
-    function filterRow (row) {
+    function reduceRow (row) {
         var result = [row[0]];
         for (var i in that.colPos) {
             result.push(row[that.colPos[i] + 1]);
         }
+
+        result.total = row.total;
+        total += row.total;
 
         return result;
     }
 
 
     this.percTable = function (csv) { 
-        var response = new Array(table.length);
+        var response = new Array(table.length),
+            columnSum1 = ['Total'],
+            i, j;
 
         for (i in table) {
             if (csv) {
@@ -105,19 +110,36 @@ function CSBase (visibleCols, visibleRows) {
                 response[i] = table[i].slice();
             }
         }
+
+        if (!csv) {
+            columnSum1 = columnSum1.concat(columnSum);
+        }
         
-        for (var j in this.colPos) {
+        for (j in this.colPos) {
             var i1 = this.colPos[j],
                 j1 = +j + 1;
             if (visibleCols[i1] === 2) {
-                for (var i in table) {
-                    var perc = Math.round(table[i][j1] * 100 / (totals[i] || Infinity));
+                for (i in table) {
+                    var row = table[i];
+                    var perc = Math.round(row[j1] * 100 / (row.total || Infinity));
                     if (csv) {
-                        response[i].push(table[i][j1]);
+                        response[i].push(row[j1]);
                         response[i].push(perc);
                     }
                     else {
                         response[i][j1] += ' <small>(' + perc + '&#8198;%)</small>';
+                    }
+                }
+
+                // colSum
+                perc = Math.round(columnSum[j] * 100 / (total || Infinity));
+                if (PERIOD) {
+                    if (csv) {
+                        columnSum1.push(columnSum[j]);
+                        columnSum1.push(perc);
+                    }
+                    else {
+                        columnSum1[j1] += ' <small>(' + perc + '&#8198;%)</small>';
                     }
                 }
             }
@@ -125,20 +147,35 @@ function CSBase (visibleCols, visibleRows) {
                 for (i in table) {
                     response[i].push(table[i][j1]);
                 }
+                if (PERIOD) {
+                    columnSum1.push(columnSum[j]);
+                }
             }
         }
 
-        columnSum.unshift('Total');
-        response.push(columnSum);
+        if (PERIOD) {
+            response.push(columnSum1);
+        }
         return response;
     };
 
 
+    this.getTable = function () {
+        return table;
+    };
+    
+    
+    function newRow () {
+        var row = new Array(COLUMNS.length + 1).fill(0);
+        row.total = 0;
+        return row;
+    }
+
+
     function addDestinationRow (display, row) {
         if (visibleRows[display]) {
-            row = filterRow(row);
             var pos = rowPos[display];
-            totals[pos]++;
+            table[pos].total++;
 
             for (var i = 1, n = row.length; i < n; i++) {
                 table[pos][i] += row[i];
@@ -299,31 +336,43 @@ function CSBase (visibleCols, visibleRows) {
             return [];
         }
     };
+
+
+    function reduceTable () {
+        var n = that.colPos.length + 1;
+        for (var i in table) {
+            var row = reduceRow(table[i]);
+            table[i] = row;
+            for (var j = 1; j < n; j++) {
+                columnSum[j - 1] += row[j];
+            }
+        }
+    }
     
     
     function byDestType (filteredCalls) {
         for (var i in DESTINATIONS) {
             if (visibleRows[i]) {
-                var row = filterRow(new Array(COLUMNS.length + 1).fill(0));
+                var row = newRow();
                 row[0] = DESTINATIONS[i];
                 table.push(row);
-                totals.push(0);
             }
         }
         for (var j in filteredCalls) {
-            row = new Array(COLUMNS.length + 1).fill(0);
+            row = newRow();
             decode(filteredCalls[j], row, true);
         }
+        reduceTable();
     }
 
 
-    function byTimePeriods (period, today) {
-        var time = today ? getToday() : START,
+    function byTimePeriods (period, normalize) {
+        var time = START,
+            endTime = START,
             timeObj,
             calls,
             row,
             now = Date.now() / 1000,
-            dateChanged = (END - START > 2 * DAY) || (new Date(END * 1000).getDate() - new Date(START * 1000).getDate()),
             dateFormat = csOptions.config('settings', 'dateformat'),
             timeFormat = csOptions.config('settings', 'timeformat');
 
@@ -332,61 +381,71 @@ function CSBase (visibleCols, visibleRows) {
             throw 'too many rows to display';
         }
 
-        columnSum = new Array(that.colPos.length).fill(0);
+        if (normalize) {
+            endTime -= START % period;
+        }
 
         while (time < END && time < now) {
-            calls = that.filterByTime(time, time + period);
-            row = new Array(COLUMNS.length + 1).fill(0);
+            endTime += period;
+            endTime = Math.min(endTime, END);
+
+            calls = that.filterByTime(time, endTime);
+            row = newRow();
 
             timeObj = new Date(time * 1000);
-            if (dateChanged) {
-                row[0] = formatDate(timeObj, dateFormat);
-                if (period < DAY) {
-                    row[0] += ' ' + formatTime(timeObj, timeFormat);
-                }
+            if (period < DAY) {
+                row[0] = formatDate(timeObj, dateFormat) + ' ' + formatTime(timeObj, timeFormat);
             }
             else {
-                row[0] = formatTime(timeObj, timeFormat);
+                row[0] = formatDate(timeObj, dateFormat);
             }
 
-            for (var j in calls) {
-                decode(calls[j], row);
+            for (var i in calls) {
+                decode(calls[i], row);
             }
-            table.push(filterRow(row));
-            totals.push(calls.length);
-            for (var i in row) {
-                columnSum[i] += row[i];
-            }
+            row.total = calls.length;
+            table.push(row);
 
-            time += period;
+            time = endTime;
         }
+
+        reduceTable();
     }
 
 
     function byDaysOfWeek () {
         var now = Date.now() / 1000,
-            day = START,
+            time = START,
+            endTime = START - START % DAY,
             calls,
-            row;
+            row,
+            dayOfWeek;
 
-        columnSum = new Array(that.colPos.length).fill(0);
-
-        while (day < END && day < now) {
-            row = new Array(COLUMNS.length + 1).fill(0);
-            row[0] = daysOfWeek[new Date(day * 1000).getDay()];
-            calls = that.filterByTime(day, day + DAY);
-
-            for (var j in calls) {
-                decode(calls[j], row);
-            }
-            table.push(filterRow(row));
-            totals.push(calls.length);
-            for (var i in row) {
-                columnSum[i] += row[i];
-            }
-
-            day += DAY;
+        for (var i = 0; i < 7; i++) {
+            table[i] = newRow();
+            table[i][0] = daysOfWeek[i];
         }
+
+        while (time < END && time < now) {
+            endTime += DAY;
+            endTime = Math.min(endTime, END);
+
+            dayOfWeek = new Date(time * 1000).getDay() - 1;  // Monday first
+            if (dayOfWeek < 0) {
+                dayOfWeek = 6;
+            }
+            calls = that.filterByTime(time, endTime);
+            row = table[dayOfWeek];
+
+            for (i in calls) {
+                decode(calls[i], row);
+            }
+            row.total += calls.length;
+
+            time = endTime;
+        }
+
+        reduceTable();
     }
 
 
@@ -428,7 +487,7 @@ function CSBase (visibleCols, visibleRows) {
                 name = el.getAttribute('name'),
                 match,
                 totalsCount = 0,
-                row = new Array(COLUMNS.length + 1).fill(0);
+                row = newRow();
 
             switch (subject) {
                 case 'queues':
@@ -467,15 +526,16 @@ function CSBase (visibleCols, visibleRows) {
                 }
             }
 
-            table.push(filterRow(row));
-            totals.push(totalsCount);
+            row.total = totalsCount;
+            table.push(reduceRow(row));
         }
     }
 
 
     this.filter = function () {
         table = [];
-        totals = [];
+        columnSum = new Array(that.colPos.length).fill(0);
+        total = 0;
 
         if (PERIOD === 0) {
             var filteredCalls = that.filterByTime(START, END);
