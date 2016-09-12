@@ -98,7 +98,7 @@
 }
 
 th.asc:after, th.desc:after {
-	margin-left: 0.3em;
+	margin-left: 0.41em;
 	cursor: pointer;
 }
 
@@ -112,6 +112,10 @@ th.desc:after {
 
 .results td {
 	padding: 3px 5px;
+}
+
+.results tr:hover {
+	outline: 1px solid rgba(255, 165, 0, 0.3);
 }
 
 .results tr:nth-child(2n) {

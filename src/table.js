@@ -39,11 +39,11 @@ function CSTable (container) {
         }
         
 
-        var str = '<th id="0col" align="left">' + (PERIOD === 0 ? 'Destination' : 'Time') + getSorting(0) + '</th>';
+        var str = '<th id="0col" align="left"' + getSorting(0) + '>' + (PERIOD ? 'Time' : 'Destination') + '</th>';
         
         for (var i in csBase.colPos) {
             var newI = csBase.colPos[i];
-            str += '<th id="' + (newI + 1) + 'col" draggable="true" ondragover="return false" align="left">' + COLUMNS[newI] + getSorting(newI + 1) + '</th>';
+            str += '<th id="' + (newI + 1) + 'col" draggable="true" ondragover="return false" align="left"' + getSorting(newI + 1) + '>' + COLUMNS[newI] + '</th>';
         }
         if (initial) {
             return str;
@@ -121,7 +121,7 @@ function CSTable (container) {
             }
 
             if (startTh !== target) {
-                target.style.opacity = 0.7;
+                target.style.opacity = 0.8;
             }
             else {
                 return false;
