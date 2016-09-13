@@ -242,7 +242,8 @@ function CSBase (visibleCols, visibleRows) {
 
 
     this.percTable = function (csv) { 
-        var response = new Array(table.length),
+        var showTotal = PERIOD && +csOptions.get('totalrow'),
+            response = new Array(table.length),
             columnSum1 = ['Total'],
             i, j, perc;
 
@@ -277,7 +278,7 @@ function CSBase (visibleCols, visibleRows) {
 
                 // column Sum
                 perc = total ? Math.round(columnSum[j] * 100 / total) : '';
-                if (PERIOD) {
+                if (showTotal) {
                     if (csv) {
                         columnSum1.push(columnSum[j]);
                         columnSum1.push(perc);
@@ -291,13 +292,13 @@ function CSBase (visibleCols, visibleRows) {
                 for (i in table) {
                     response[i].push(table[i][j1]);
                 }
-                if (PERIOD) {
+                if (showTotal) {
                     columnSum1.push(columnSum[j]);
                 }
             }
         }
 
-        if (PERIOD) {
+        if (showTotal) {
             response.push(columnSum1);
         }
         return response;
@@ -767,6 +768,11 @@ function dirty() {
 }
 
 
+function clean () {
+    dirty.state = false;
+}
+
+
 $('[name="submit"]').closest('form').on('submit', function () {
     dirty.state = false; 
 });
@@ -774,7 +780,7 @@ $('[name="submit"]').closest('form').on('submit', function () {
 
 window.onbeforeunload = function () {
     if (dirty.state) {
-        //return "You have not saved your settings. If you navigate away, your changes will be lost";
+        return "You have not saved your report options. If you navigate away, your changes will be lost";
     }
 };
 function CSOptions () {
@@ -820,6 +826,11 @@ function CSOptions () {
             PERIOD = +this.value;
             csTable.createHeader();
             csBase.filter();
+            dirty();
+        });
+
+        byId('totalrow').addEventListener('change', function () {
+            csTable.update(csBase.percTable());
             dirty();
         });
     }

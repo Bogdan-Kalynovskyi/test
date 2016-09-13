@@ -6,7 +6,6 @@ function CSOptions () {
         for (i in timeControls) {
             byId(timeControls[i]).addEventListener('change', function () {
                 csPoll.rePoll();
-                dirty();
             });
         }
         for (i in columnControls) {
@@ -14,26 +13,22 @@ function CSOptions () {
                 var pos = columnControls.indexOf(this.id);
                 csBase.setVisibleCols(pos, +this.value);
                 csTable.createHeader();
-                dirty();
             });
         }
         for (i in destControls) {
             byId(destControls[i]).addEventListener('change', function () {
                 var pos = destControls.indexOf(this.id);
                 csBase.setVisibleRows(pos, +this.value);
-                dirty();
             });
         }
         for (i in queueControls) {
             byId(queueControls[i]).addEventListener('change', function () {
                 csBase.filter();
-                dirty();
             });
         }
         for (i in filterByList) {
             byId(filterByList[i]).addEventListener('change', function () {
                 csBase.filter();
-                dirty();
             });
         }
 
@@ -41,7 +36,10 @@ function CSOptions () {
             PERIOD = +this.value;
             csTable.createHeader();
             csBase.filter();
-            dirty();
+        });
+
+        byId('totalrow').addEventListener('change', function () {
+            csTable.update(csBase.percTable());
         });
     }
 
@@ -84,4 +82,20 @@ function CSOptions () {
     PERIOD = +byId('period').value;
 
     setWatchers();
+    
+    var form = $('form:last-child'),
+        dirty = false;
+    
+    form.find('select, input').on('change', function () {
+        dirty = true;
+    });
+    form.find('submit').on('click', function () {
+        dirty = false;
+    });
+
+    window.onbeforeunload = function () {
+        if (dirty) {
+            return "You have not saved your report options. If you navigate away, your changes will be lost";
+        }
+    };
 }

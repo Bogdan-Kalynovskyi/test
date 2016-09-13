@@ -98,7 +98,8 @@ function CSBase (visibleCols, visibleRows) {
 
 
     this.percTable = function (csv) { 
-        var response = new Array(table.length),
+        var showTotal = PERIOD && +csOptions.get('totalrow'),
+            response = new Array(table.length),
             columnSum1 = ['Total'],
             i, j, perc;
 
@@ -133,7 +134,7 @@ function CSBase (visibleCols, visibleRows) {
 
                 // column Sum
                 perc = total ? Math.round(columnSum[j] * 100 / total) : '';
-                if (PERIOD) {
+                if (showTotal) {
                     if (csv) {
                         columnSum1.push(columnSum[j]);
                         columnSum1.push(perc);
@@ -147,13 +148,13 @@ function CSBase (visibleCols, visibleRows) {
                 for (i in table) {
                     response[i].push(table[i][j1]);
                 }
-                if (PERIOD) {
+                if (showTotal) {
                     columnSum1.push(columnSum[j]);
                 }
             }
         }
 
-        if (PERIOD) {
+        if (showTotal) {
             response.push(columnSum1);
         }
         return response;
