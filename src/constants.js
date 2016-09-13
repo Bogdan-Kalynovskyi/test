@@ -83,12 +83,12 @@ var START,
     ];
 
     daysOfWeek = [
+        'Sunday',
         'Monday',
         'Tuesday',
         'Wednesday',
         'Thursday',
         'Friday',
-        'Saturday',
-        'Sunday'
+        'Saturday'
     ];
 

@@ -8,6 +8,11 @@ function getToday () {
 }
 
 
+function getBeginningOfDay (date) {
+    return Math.floor(new Date(date * 1000).setHours(0,0,0,0) / 1000);
+}
+
+
 function pad (s) {
     if (s < 10) {
         s = '0' + s;

@@ -100,7 +100,7 @@ function CSBase (visibleCols, visibleRows) {
     this.percTable = function (csv) { 
         var response = new Array(table.length),
             columnSum1 = ['Total'],
-            i, j;
+            i, j, perc;
 
         for (i in table) {
             if (csv) {
@@ -121,25 +121,25 @@ function CSBase (visibleCols, visibleRows) {
             if (visibleCols[i1] === 2) {
                 for (i in table) {
                     var row = table[i];
-                    var perc = Math.round(row[j1] * 100 / (row.total || Infinity));
+                    perc = row.total ? Math.round(row[j1] * 100 / row.total) : '';
                     if (csv) {
                         response[i].push(row[j1]);
                         response[i].push(perc);
                     }
                     else {
-                        response[i][j1] += ' <small>(' + perc + '&#8198;%)</small>';
+                        response[i][j1] += ' <small>(' + perc + (row.total ? '&#8198;%' : '') + ')</small>';
                     }
                 }
 
-                // colSum
-                perc = Math.round(columnSum[j] * 100 / (total || Infinity));
+                // column Sum
+                perc = total ? Math.round(columnSum[j] * 100 / total) : '';
                 if (PERIOD) {
                     if (csv) {
                         columnSum1.push(columnSum[j]);
                         columnSum1.push(perc);
                     }
                     else {
-                        columnSum1[j1] += ' <small>(' + perc + '&#8198;%)</small>';
+                        columnSum1[j1] += ' <small>(' + perc + (total ? '&#8198;%' : '') + ')</small>';
                     }
                 }
             }
@@ -366,7 +366,7 @@ function CSBase (visibleCols, visibleRows) {
     }
 
 
-    function byTimePeriods (period, normalize) {
+    function byTimePeriods (period) {
         var time = START,
             endTime = START,
             timeObj,
@@ -379,10 +379,6 @@ function CSBase (visibleCols, visibleRows) {
         if ((END - START) / period > 10000) {
             alert('Too many data to display. Please set smaller period');
             throw 'too many rows to display';
-        }
-
-        if (normalize) {
-            endTime -= START % period;
         }
 
         while (time < END && time < now) {
@@ -413,29 +409,75 @@ function CSBase (visibleCols, visibleRows) {
     }
 
 
+    function byHours (period) {
+        var now = Date.now() / 1000,
+            time = START,
+            endTime = START - START % period,
+            calls,
+            row,
+            reportIndex,
+            date,
+            totalHours = DAY / period,
+            timeFormat = csOptions.config('settings', 'timeformat');
+
+        for (var i = 0; i < totalHours; i++) {
+            row = newRow();
+            date = new Date((i * period + endTime) * 1000);
+            row[0] = formatTime(date, timeFormat);
+            table[i] = row;
+        }
+
+        while (time < END && time < now) {
+            endTime += period;
+            endTime = Math.min(endTime, END);
+
+            reportIndex = Math.floor( ((time - START) % DAY) / period);
+            row = table[reportIndex];
+            calls = that.filterByTime(time, endTime);
+
+            for (i in calls) {
+                decode(calls[i], row);
+            }
+            row.total += calls.length;
+
+            time = endTime;
+        }
+
+        reduceTable();
+    }
+
+
     function byDaysOfWeek () {
         var now = Date.now() / 1000,
             time = START,
-            endTime = START - START % DAY,
+            endTime = getBeginningOfDay(START),
             calls,
             row,
-            dayOfWeek;
+            reportIndex,
+            dayOfWeek,
+            startDayOfWeek = new Date(START * 1000).getDay();
 
         for (var i = 0; i < 7; i++) {
-            table[i] = newRow();
-            table[i][0] = daysOfWeek[i];
+            row = newRow();
+            reportIndex = i + startDayOfWeek;  // start from startDayOfWeek
+            if (reportIndex >= 7) {
+                reportIndex -= 7;
+            }
+            row[0] = daysOfWeek[reportIndex];
+            table[i] = row;
         }
 
         while (time < END && time < now) {
             endTime += DAY;
             endTime = Math.min(endTime, END);
 
-            dayOfWeek = new Date(time * 1000).getDay() - 1;  // Monday first
-            if (dayOfWeek < 0) {
-                dayOfWeek = 6;
+            dayOfWeek = new Date(time * 1000).getDay();
+            reportIndex = dayOfWeek - startDayOfWeek;  // start from startDayOfWeek
+            if (reportIndex < 0) {
+                reportIndex += 7;
             }
+            row = table[reportIndex];
             calls = that.filterByTime(time, endTime);
-            row = table[dayOfWeek];
 
             for (i in calls) {
                 decode(calls[i], row);
@@ -550,7 +592,7 @@ function CSBase (visibleCols, visibleRows) {
         }
         else {
             if (PERIOD > -604800) {
-                byTimePeriods(-PERIOD, true);
+                byHours(-PERIOD);
             }
             else {
                 byDaysOfWeek()
