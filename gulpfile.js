@@ -9,9 +9,7 @@ var sourceDir = 'src/*.js',
 
 
 gulp.task('default', function() {
-    return gulp
-        .watch(sourceDir, { ignoreInitial: false })
-        .pipe(concat('qstatistics.js'))
-        .pipe(gulp.dest(compiledDir));
+    return watch(sourceDir, { ignoreInitial: false })
+          .pipe(concat('qstatistics.js'))
+          .pipe(gulp.dest(compiledDir));
 });
-
