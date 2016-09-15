@@ -1,5 +1,6 @@
-function CSTable (container) {
+function CSTable () {
     var that = this,
+        container,
         table,
         theadTr,
         ths,
@@ -9,22 +10,17 @@ function CSTable (container) {
     this.sortingOrder = 1;
 
 
-    function createTable () {
-        var str = '<table width="100%" border="0" cellpadding="0" cellspacing="0"><thead><tr class="head">',
-            timeZoneFormatted = new Date().toString().match(/([A-Z]+[\+-][0-9]+.*)/)[1];
-
-        str += that.createHeader(true) + '</tr></thead><tbody></tbody></table>' +
-        '<div class="foot"><span id="timezone">Your timezone: ' + timeZoneFormatted + '</span><button id="csv" class="universal secondary">Export as .csv</button></div>' +
-        '<div id="line-chart" style="height: 500px"></div>';
-
-        container.innerHTML = str;
-        table = container.children[0],
+    this.render = function (cont) {
+        container = cont;
+        cont.innerHTML = '<table cellpadding="0" cellspacing="0"><thead><tr class="head">' + that.createHeader(true) + '</tr></thead><tbody></tbody></table>';
+        
+        table = cont.children[0],
         theadTr = table.children[0].children[0],
         ths = theadTr.children;
         tbody = table.children[1];
 
         that.resizeHeader();
-    }
+    };
 
 
     this.createHeader = function (initial) {
@@ -153,60 +149,39 @@ function CSTable (container) {
     }
     
     
-    function assignCSVButtonClick () {
-        byId('csv').onclick = function () {
-
-            function encodeRow (row) {
-                for (var j = 0; j < row.length; j++) {
-                    str += (j > 0) ? (',' + row[j]) : row[j];
-                }
-                str += '\n';
+    this.downloadCSV = function () {
+        function encodeRow (row) {
+            for (var j = 0; j < row.length; j++) {
+                str += (j > 0) ? (',' + row[j]) : row[j];
             }
-
-            
-            var str = '',
-                row = [];
-            
-            row.push((PERIOD === 0) ? 'Destination' : 'Time');
-
-            for (var i in csBase.colPos) {
-                var newI = csBase.colPos[i];
-                row.push(COLUMNS[newI]);
-                if (csBase.visibleCols[newI] === 2) {
-                    row.push(COLUMNS[newI] + ' %');
-                }
-            }
-            encodeRow(row);
-
-            var table = csBase.percTable(true);
-            for (var j in table) {
-                encodeRow(table[j]);
-            }
-            // end encode
-
-
-            //start download
-            var fileName = (csOptions.get('name') || 'noname') + '.csv',
-                csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
-
-            if (navigator.msSaveBlob) { // IE 10+
-                navigator.msSaveBlob(csvBlob, fileName);
-            }
-            else {
-                var link = document.createElement("a"),
-                    url = URL.createObjectURL(csvBlob);
-                link.setAttribute('href', url);
-                link.setAttribute('download', fileName);
-                link.style.visibility = 'hidden';
-                document.body.appendChild(link);
-                link.click();
-                setTimeout(function () {
-                    document.body.removeChild(link);
-                }, 10000);
-            }
-            //end download
+            str += '\n';
         }
-    }
+
+        
+        var str = '',
+            row = [];
+        
+        row.push((PERIOD === 0) ? 'Destination' : 'Time');
+
+        for (var i in csBase.colPos) {
+            var newI = csBase.colPos[i];
+            row.push(COLUMNS[newI]);
+            if (csBase.visibleCols[newI] === 2) {
+                row.push(COLUMNS[newI] + ' %');
+            }
+        }
+        encodeRow(row);
+
+        var table = csBase.percTable(true);
+        for (var j in table) {
+            encodeRow(table[j]);
+        }
+        
+        var fileName = (csOptions.get('name') || 'noname') + '.csv',
+            csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
+        
+        downloadBlob(fileName, csvBlob);
+    };
 
 
     this.update = function (data) {
@@ -216,12 +191,10 @@ function CSTable (container) {
             str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
         }
         tbody.innerHTML = str;
-        csChart.create(csBase.getTable());
-        rightPanelEqHeight(); 
+        rightPanelEqHeight();
     };
 
 
     createTable();
     assignHeaderEvents();
-    assignCSVButtonClick();
 }

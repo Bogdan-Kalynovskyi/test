@@ -51,3 +51,22 @@ function formatTime (time, format) {
         return pad(hh) + ':' + pad(mm);
     }
 }
+
+
+function downloadBlob (fileName, blob) {
+    if (navigator.msSaveBlob) { // IE 10+
+        navigator.msSaveBlob(blob, fileName);
+    }
+    else {
+        var link = document.createElement('a'),
+            url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', fileName);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(function () {
+            document.body.removeChild(link);
+        }, 10000);
+    }
+}

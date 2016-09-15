@@ -1,32 +1,37 @@
 function CSChart (container) {
     var that = this,
-        gData,
         updateThrottle,
+        currentType,
+        gData,
         chart,
         options = {};
 
+    
+    function prepareData () {
+        var data = [],
+            row = [];
 
-    this.create = function (table) {
-        if (!window.google || !google.charts.Line || !google.visualization) {
+        row.push((PERIOD === 0) ? 'Destination' : 'Time');
+
+        for (var i in csBase.colPos) {
+            row.push(COLUMNS[csBase.colPos[i]]);
+        }
+        data.push(row);
+        data = data.concat(table);
+
+        gData = google.visualization.arrayToDataTable(data);
+    }
+    
+
+    this.render = function (table) {
+        if (!window.google || !google.visualization) {
             setTimeout(function () {
-                that.create(table);
+                that.render(table);
             }, 200);
         }
         else {
             google.charts.setOnLoadCallback(function () {
-                var data = [],
-                    row = [];
-
-                row.push((PERIOD === 0) ? 'Destination' : 'Time');
-
-                for (var i in csBase.colPos) {
-                    row.push(COLUMNS[csBase.colPos[i]]);
-                }
-                data.push(row);
-                data = data.concat(table);
-
-                gData = google.visualization.arrayToDataTable(data);
-
+    
                 if (!chart) {
                     chart = new google.charts.Line(container);
                 }
@@ -34,7 +39,7 @@ function CSChart (container) {
                 chart.draw(gData, options);
             });
         }
-    };
+    }; 
 
 
     this.resize = function () {
@@ -45,5 +50,20 @@ function CSChart (container) {
                 chart.draw(gData, options);
             }
         }, 100);
-    }
+    };
+
+
+    this.downloadPNG = function () {
+        var link = document.createElement('a'),
+            url = chart.getImageURI();
+
+        link.setAttribute('href', url);
+        link.setAttribute('download', (csOptions.get('name') || 'noname') + '.png');
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(function () {
+            document.body.removeChild(link);
+        }, 10000);
+    };
 }

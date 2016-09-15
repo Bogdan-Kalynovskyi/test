@@ -84,6 +84,12 @@
 	padding: 0;
 	border: 0;
 }
+
+.result table {
+	border: 0;
+	width: calc(100% - 30px);
+}
+
 .results .head th {
 	padding-left: .4em;
 	padding-right: .4em;

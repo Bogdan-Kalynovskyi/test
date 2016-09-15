@@ -7,7 +7,7 @@ function CSChart (container) {
 
 
     this.create = function (table) {
-        if (!window.google || !google.charts.Line || !google.visualization) {
+        if (!window.google || !google.visualization.LineChart || !google.visualization) {
             setTimeout(function () {
                 that.create(table);
             }, 200);
@@ -28,7 +28,7 @@ function CSChart (container) {
                 gData = google.visualization.arrayToDataTable(data);
 
                 if (!chart) {
-                    chart = new google.charts.Line(container);
+                    chart = new google.visualization.LineChart(container);
                 }
 
                 chart.draw(gData, options);
@@ -45,7 +45,22 @@ function CSChart (container) {
                 chart.draw(gData, options);
             }
         }, 100);
-    }
+    };
+
+
+    this.download = function () {
+        var link = document.createElement('a'),
+            url = chart.getImageURI();
+
+        link.setAttribute('href', url);
+        link.setAttribute('download', (csOptions.get('name') || 'noname') + '.png');
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(function () {
+            document.body.removeChild(link);
+        }, 10000);
+    };
 }
 
 var START,
@@ -763,26 +778,6 @@ function CSBase (visibleCols, visibleRows) {
     this.visibleCols = visibleCols;
 }
 
-function dirty() {
-    dirty.state = true;
-}
-
-
-function clean () {
-    dirty.state = false;
-}
-
-
-$('[name="submit"]').closest('form').on('submit', function () {
-    dirty.state = false; 
-});
-
-
-window.onbeforeunload = function () {
-    if (dirty.state) {
-        return "You have not saved your report options. If you navigate away, your changes will be lost";
-    }
-};
 function CSOptions () {
 
     function setWatchers() {
@@ -791,7 +786,6 @@ function CSOptions () {
         for (i in timeControls) {
             byId(timeControls[i]).addEventListener('change', function () {
                 csPoll.rePoll();
-                dirty();
             });
         }
         for (i in columnControls) {
@@ -799,26 +793,22 @@ function CSOptions () {
                 var pos = columnControls.indexOf(this.id);
                 csBase.setVisibleCols(pos, +this.value);
                 csTable.createHeader();
-                dirty();
             });
         }
         for (i in destControls) {
             byId(destControls[i]).addEventListener('change', function () {
                 var pos = destControls.indexOf(this.id);
                 csBase.setVisibleRows(pos, +this.value);
-                dirty();
             });
         }
         for (i in queueControls) {
             byId(queueControls[i]).addEventListener('change', function () {
                 csBase.filter();
-                dirty();
             });
         }
         for (i in filterByList) {
             byId(filterByList[i]).addEventListener('change', function () {
                 csBase.filter();
-                dirty();
             });
         }
 
@@ -826,12 +816,10 @@ function CSOptions () {
             PERIOD = +this.value;
             csTable.createHeader();
             csBase.filter();
-            dirty();
         });
 
         byId('totalrow').addEventListener('change', function () {
             csTable.update(csBase.percTable());
-            dirty();
         });
     }
 
@@ -874,6 +862,22 @@ function CSOptions () {
     PERIOD = +byId('period').value;
 
     setWatchers();
+    
+    var form = $('form:last-child'),
+        dirty = false;
+    
+    form.find('select, input').on('change', function () {
+        dirty = true;
+    });
+    form.find('submit').on('click', function () {
+        dirty = false;
+    });
+
+    window.onbeforeunload = function () {
+        if (dirty) {
+            return "You have not saved your report options. If you navigate away, your changes will be lost";
+        }
+    };
 }
 function CSPoll (onResponse) {
     var that = this,
@@ -1106,8 +1110,9 @@ function CSTable (container) {
             timeZoneFormatted = new Date().toString().match(/([A-Z]+[\+-][0-9]+.*)/)[1];
 
         str += that.createHeader(true) + '</tr></thead><tbody></tbody></table>' +
-        '<div class="foot"><span id="timezone">Your timezone: ' + timeZoneFormatted + '</span><button id="csv" class="universal secondary">Export as .csv</button></div>' +
-        '<div id="line-chart" style="height: 500px"></div>';
+            '<div class="foot"><span id="timezone">Your timezone: ' + timeZoneFormatted + '</span><button id="csv" class="universal secondary">Export as .csv</button></div>' +
+            '<section><div id="line-chart" style="height: 500px"></div></section>' +
+            '<section><button onclick="csChart.download()">Download as PNG</button></section>';
 
         container.innerHTML = str;
         table = container.children[0],
@@ -1274,29 +1279,11 @@ function CSTable (container) {
             for (var j in table) {
                 encodeRow(table[j]);
             }
-            // end encode
-
-
-            //start download
+            
             var fileName = (csOptions.get('name') || 'noname') + '.csv',
                 csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
-
-            if (navigator.msSaveBlob) { // IE 10+
-                navigator.msSaveBlob(csvBlob, fileName);
-            }
-            else {
-                var link = document.createElement("a"),
-                    url = URL.createObjectURL(csvBlob);
-                link.setAttribute('href', url);
-                link.setAttribute('download', fileName);
-                link.style.visibility = 'hidden';
-                document.body.appendChild(link);
-                link.click();
-                setTimeout(function () {
-                    document.body.removeChild(link);
-                }, 10000);
-            }
-            //end download
+            
+            downloadBlob(fileName, csvBlob);
         }
     }
 
@@ -1370,6 +1357,25 @@ function formatTime (time, format) {
         return pad(hh) + ':' + pad(mm);
     }
 }
+
+
+function downloadBlob (fileName, blob) {
+    if (navigator.msSaveBlob) { // IE 10+
+        navigator.msSaveBlob(blob, fileName);
+    }
+    else {
+        var link = document.createElement('a'),
+            url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', fileName);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(function () {
+            document.body.removeChild(link);
+        }, 10000);
+    }
+}
 document.addEventListener("DOMContentLoaded", function() {
 
     window.csOptions = new CSOptions();
@@ -1395,7 +1401,7 @@ document.addEventListener("DOMContentLoaded", function() {
 (function () {
     var s = document.createElement('script');
     s.onload = function () {
-        google.charts.load('current', {'packages': ['line']});
+        google.charts.load("current", {packages:['corechart']});
     };
     s.src = '//www.gstatic.com/charts/loader.js';
     document.head.appendChild(s);

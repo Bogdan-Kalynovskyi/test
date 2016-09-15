@@ -1,16 +1,12 @@
 document.addEventListener("DOMContentLoaded", function() {
 
     window.csOptions = new CSOptions();
+    window.csUI = new CSUI(byId('left-content'));
 
     window.csBase = new CSBase(csOptions.getColumns(), csOptions.getRows());
 
-    window.csTable = new CSTable(byId('left-content'));
-    window.csChart = new CSChart(byId('line-chart'));
-    
-    window.addEventListener('resize', function () {
-        csTable.resizeHeader();
-        csChart.resize();
-    });
+    window.csTable = new CSTable();
+    window.csChart = new CSChart();
 
     window.csPoll = new CSPoll(
         function () {
@@ -23,7 +19,7 @@ document.addEventListener("DOMContentLoaded", function() {
 (function () {
     var s = document.createElement('script');
     s.onload = function () {
-        google.charts.load('current', {'packages': ['line']});
+        google.charts.load('current', {packages: ['line', 'corechart']});
     };
     s.src = '//www.gstatic.com/charts/loader.js';
     document.head.appendChild(s);
