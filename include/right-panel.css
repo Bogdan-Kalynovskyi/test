@@ -15,7 +15,7 @@
 #right-panel {
 	position: absolute;
 	right: -510px;
-	top: 0;
+	top: 5px;
 	transition: right 0.3s;
 	width: 500px;
 	background: #e1ecfa;
@@ -28,26 +28,24 @@
 
 #panel-open-button {
 	position: absolute;
-	top: 4px;
-	right: 0;
-	width: 30px;
-	height: 30px;
+	top: 5px;
+	right: 13px;
+	width: 26.5px;
+	height: 26.5px;
 	cursor: pointer;
-	box-shadow: 0 0 6px 0 #000;
-	padding: 6px 5px 5px 6px;
+	padding: 4px;
 	background: linear-gradient(to bottom, rgba(0,54,88,1) 0%, rgba(0,90,150,1) 100%);
 	border-top-left-radius: 2px;
 	border-bottom-left-radius: 2px;
 }
 
 #options-heading {
-	height: 40px;
+	height: 37.5px;
 	font-family: Verdana, Arial, Helvetica, sans-serif;
 	text-align: center;
 	font-size: 8px;
 	color: #fff;
 	background: linear-gradient(to bottom, rgba(0,54,88,1) 0%, rgba(0,90,150,1) 100%);
-	text-align: center;
 	cursor: pointer;
 	-webkit-user-select: none;
 	-moz-user-select: none;
@@ -71,4 +69,79 @@
 
 .calendar {
 	z-index: 2000;
+}
+
+
+[draggable] {
+	cursor: move;
+	-ms-user-select: none;
+	-moz-user-select: none;
+	-webkit-user-select: none;
+	user-select: none
+}
+
+.results {
+	padding: 0;
+	border: 0;
+}
+
+.result table {
+	border: 0;
+	width: calc(100% - 30px);
+}
+
+.results .head th {
+	padding-left: .4em;
+	padding-right: .4em;
+}
+
+.results th:first-child {
+	cursor: pointer;
+}
+
+.results small {
+	color: #666666;
+}
+
+th.asc:after, th.desc:after {
+	margin-left: 0.41em;
+	cursor: pointer;
+}
+
+th.asc:after {
+	content: '▼';
+}
+
+th.desc:after {
+	content: '▲';
+}
+
+.results td {
+	padding: 3px 5px;
+}
+
+.results tr:hover {
+	outline: 1px solid rgba(255, 165, 0, 0.6);
+}
+
+.results tr:nth-child(2n) {
+	background: #e1ecfa;;
+}
+
+#timezone {
+	position: relative;
+	top: 3px;
+	color: #ffffff;
+}
+
+#csv {
+	padding: 5px 8px;
+}
+
+.foot {
+	border-top: 1px solid #005c97;
+	background: #3289c1;
+	padding: 6px;
+	margin-bottom: 16px;
+	overflow: hidden;
 }
