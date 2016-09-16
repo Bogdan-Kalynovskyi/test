@@ -8,18 +8,17 @@ document.addEventListener("DOMContentLoaded", function() {
     window.csTable = new CSTable();
     window.csChart = new CSChart();
 
-    window.csPoll = new CSPoll(
-        function () {
-            csBase.filter();
-        }
-    );
+    window.csPoll = new CSPoll(function () {
+        csBase.filter();
+        csUI.update();
+    });
 });
 
 
 (function () {
     var s = document.createElement('script');
     s.onload = function () {
-        google.charts.load('current', {packages: ['line', 'corechart']});
+        google.charts.load('current', {packages: ['corechart']});
     };
     s.src = '//www.gstatic.com/charts/loader.js';
     document.head.appendChild(s);

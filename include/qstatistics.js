@@ -1,66 +1,173 @@
-function CSChart (container) {
+function CSChart () {
     var that = this,
-        gData,
-        updateThrottle,
-        chart,
-        options = {};
+        resizeDebounce,
+        table,
+        dataTable,
+        pieDataTable,
+        charts = {},
+        options = {
+            line: {},
+            bar1: {
+                orientation: 'horizontal'
+            },
+            bar2: {
+                isStacked: true,
+                orientation: 'horizontal'
+            },
+            pie: {
+                is3D: true
+            }
+        },
+        pieFilter = {
+            by: 'column',
+            id: '0'
+        },
+        tableHeading = [PERIOD ? 'Time' : 'Destination'];
 
 
-    this.create = function (table) {
-        if (!window.google || !google.visualization.LineChart || !google.visualization) {
+    function pieChartChooser (container) {
+        var str = '<div id="pi-chooser">Display pie chart:<label>by column <select id="pie-by-column"><option>Choose column</option>';
+        for (var i in COLUMNS) {
+            str += '<option value="' + i + '">' + COLUMNS[i] + '</option>';
+        }
+        str += '</select></label><label>, or by row <select id="pie-by-row"><option>Choose row</option>';
+        for (i in table) {
+            if (table[i].total) {
+                str += '<option value="' + i + '">' + table[i][0] + '</option>';
+            }
+        }
+        str += '</select></label></div>';
+        container.insertAdjacentHTML('beforeend', str);
+
+        var byCol = byId('pie-by-column'),
+            byRow = byId('pie-by-row');
+
+        byCol.onchange = function () {
+            pieFilter = {
+                by: 'column',
+                id: this.value
+            };
+            if (pieFilter.id) {
+                pieDataTable = getPieDataTable();
+                charts.pie.draw(pieDataTable, options[csUI.slide]);
+                byRow.selectedIndex = 0;
+            }
+        };
+        byRow.onchange = function () {
+            pieFilter = {
+                by: 'row',
+                id: this.value
+            };
+            if (pieFilter.id) {
+                pieDataTable = getPieDataTable();
+                charts.pie.draw(pieDataTable, options[csUI.slide]);
+                byCol.selectedIndex = 0;
+            }
+        };
+        byCol.selectedIndex = 1;
+    }
+
+
+    function getPieDataTable () {
+        table = table || csBase.getTable();
+        var id = +pieFilter.id,
+            data;
+
+        if (pieFilter.by === 'column') {
+            data = [[PERIOD ? 'Time' : 'Destination', COLUMNS[id]]];
+            for (var i in table) {
+                data.push([table[i][0], table[i][id + 1]]);
+            }
+        }
+        else {
+            data = ['Type', table[id][0]];
+            for (i in tableHeading) {
+                data.push([tableHeading[i], table[id][i]]);
+            }
+        }
+
+        return google.visualization.arrayToDataTable(data);
+    }
+
+
+    function getDataTable () {
+        table = table || csBase.getTable();
+        var data = [tableHeading].concat(table);
+        return google.visualization.arrayToDataTable(data);
+    }
+    
+
+    this.render = function (container) {
+        if (!window.google || !google.visualization) {
             setTimeout(function () {
-                that.create(table);
+                that.render();
             }, 200);
         }
         else {
             google.charts.setOnLoadCallback(function () {
-                var data = [],
-                    row = [];
-
-                row.push((PERIOD === 0) ? 'Destination' : 'Time');
-
-                for (var i in csBase.colPos) {
-                    row.push(COLUMNS[csBase.colPos[i]]);
+                var type = csUI.slide;
+    
+                if (!charts[type]) {
+                    switch (type) {
+                        case 'line':
+                            charts[type] = new google.visualization.LineChart(container);
+                            break;
+                        case 'bar1':
+                            charts[type] = new google.visualization.BarChart(container);
+                            break;
+                        case 'bar2':
+                            charts[type] = new google.visualization.BarChart(container);
+                            break;
+                        case 'pie':
+                            charts[type] = new google.visualization.PieChart(container);
+                            break;
+                    }
                 }
-                data.push(row);
-                data = data.concat(table);
 
-                gData = google.visualization.arrayToDataTable(data);
-
-                if (!chart) {
-                    chart = new google.visualization.LineChart(container);
+                if (type !== 'pie') {
+                    dataTable = dataTable || getDataTable();
+                    charts[type].draw(dataTable, options[type]);
                 }
-
-                chart.draw(gData, options);
+                else if (pieFilter.id) {
+                    container.innerHTML = '';
+                    pieDataTable = pieDataTable || getPieDataTable();
+                    charts[type].draw(pieDataTable, options[type]);
+                    pieChartChooser(container);
+                }
             });
         }
     };
 
 
-    this.resize = function () {
-        clearTimeout(updateThrottle);
+    this.invalidate = function () {
+        table = dataTable = pieDataTable = undefined;
+    };
 
-        updateThrottle = setTimeout(function () {
-            if (chart) {
-                chart.draw(gData, options);
+
+    this.resize = function () {
+        clearTimeout(resizeDebounce);
+
+        resizeDebounce = setTimeout(function () {
+            var type = csUI.slide;
+            if (charts[type]) {
+                charts[type].draw(type === 'pie' ? pieDataTable : dataTable, options[type]);
             }
         }, 100);
     };
 
 
-    this.download = function () {
-        var link = document.createElement('a'),
-            url = chart.getImageURI();
-
-        link.setAttribute('href', url);
-        link.setAttribute('download', (csOptions.get('name') || 'noname') + '.png');
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        setTimeout(function () {
-            document.body.removeChild(link);
-        }, 10000);
+    this.downloadPNG = function () {
+        if (charts[csUI.slide]) {
+            var fileName = (csOptions.get('name') || 'noname') + '.png';
+            downloadUrl(charts[csUI.slide].getImageURI(), fileName);
+        }
     };
+
+
+
+    for (var i in csBase.colPos) {
+        tableHeading.push(COLUMNS[csBase.colPos[i]]);
+    }
 }
 
 var START,
@@ -72,7 +179,8 @@ var START,
         0,1,2,3,4,5,6,7,8,9,10,11
     ],
 
-    
+    SLIDES = ['table', 'line', 'bar1', 'bar2', 'pie'],
+
     DESTINATIONS = [
         'All calls',
         'External callers',
@@ -256,7 +364,7 @@ function CSBase (visibleCols, visibleRows) {
     }
 
 
-    this.percTable = function (csv) { 
+    this.percTable = function (csv) {
         var showTotal = PERIOD && +csOptions.get('totalrow'),
             response = new Array(table.length),
             columnSum1 = ['Total'],
@@ -323,8 +431,39 @@ function CSBase (visibleCols, visibleRows) {
     this.getTable = function () {
         return table;
     };
-    
-    
+
+
+    this.downloadCSV = function () {
+        if (!table) {
+            return;
+        }
+
+        var str = '',
+            row = [PERIOD ? 'Time' : 'Destination'];
+
+        for (var i in this.colPos) {
+            var newI = this.colPos[i];
+            row.push(COLUMNS[newI]);
+            if (visibleCols[newI] === 2) {
+                row.push(COLUMNS[newI] + ' %');
+            }
+        }
+        str += row.join(',') + '\n';
+
+        var data = csBase.percTable(true);
+        for (i in data) {
+            str += data[i].join(',') + '\n';
+        }
+
+        var fileName = (csOptions.get('name') || 'noname') + '.csv',
+            csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
+
+        downloadBlob(fileName, csvBlob);
+    };
+
+
+
+
     function newRow () {
         var row = new Array(COLUMNS.length + 1).fill(0);
         row.total = 0;
@@ -760,7 +899,6 @@ function CSBase (visibleCols, visibleRows) {
         }
 
         this.sort(); 
-        csTable.update(this.percTable());
     };
 
 
@@ -774,8 +912,6 @@ function CSBase (visibleCols, visibleRows) {
     phones = {};
     this.minTime = Infinity;
     this.maxTime = 0;
-
-    this.visibleCols = visibleCols;
 }
 
 function CSOptions () {
@@ -869,7 +1005,7 @@ function CSOptions () {
     form.find('select, input').on('change', function () {
         dirty = true;
     });
-    form.find('submit').on('click', function () {
+    form.find('input[type=submit]').on('click', function () {
         dirty = false;
     });
 
@@ -1094,8 +1230,9 @@ function CSPoll (onResponse) {
     document.addEventListener('visibilitychange', visibilityChange);
     this.rePoll();
 }
-function CSTable (container) {
+function CSTable () {
     var that = this,
+        container,
         table,
         theadTr,
         ths,
@@ -1105,27 +1242,38 @@ function CSTable (container) {
     this.sortingOrder = 1;
 
 
-    function createTable () {
-        var str = '<table width="100%" border="0" cellpadding="0" cellspacing="0"><thead><tr class="head">',
-            timeZoneFormatted = new Date().toString().match(/([A-Z]+[\+-][0-9]+.*)/)[1];
+    this.render = function (cont) {
+        var i,
+            str = '',
+            data = csBase.percTable();
 
-        str += that.createHeader(true) + '</tr></thead><tbody></tbody></table>' +
-            '<div class="foot"><span id="timezone">Your timezone: ' + timeZoneFormatted + '</span><button id="csv" class="universal secondary">Export as .csv</button></div>' +
-            '<section><div id="line-chart" style="height: 500px"></div></section>' +
-            '<section><button onclick="csChart.download()">Download as PNG</button></section>';
+        if (!table) {
+            container = cont;
+            if (data) {
+                for (i in data) {
+                    str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
+                }
+            }
+            cont.innerHTML = '<table cellpadding="0" cellspacing="0"><thead><tr class="head">' + that.createHeader(true) + '</tr></thead><tbody>' + str + '</tbody></table>';
 
-        container.innerHTML = str;
-        table = container.children[0],
-        theadTr = table.children[0].children[0],
-        ths = theadTr.children;
-        tbody = table.children[1];
+            table = cont.children[0];
+            theadTr = table.children[0].children[0];
+            ths = theadTr.children;
+            tbody = table.children[1];
 
-        that.resizeHeader();
-    }
+            that.resizeHeader();
+            assignHeaderEvents();
+        }
+        else if (data) {
+            for (i in data) {
+                str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
+            }
+            tbody.innerHTML = str;
+        }
+    };
 
 
     this.createHeader = function (initial) {
-        
         function getSorting (i) {
             if (that.sortingCol === i) {
                 return that.sortingOrder === 1 ? ' class="asc"' : ' class="desc"';
@@ -1186,11 +1334,11 @@ function CSTable (container) {
             that.sortingCol = startId;
             if (startId) {
                 csBase.sort();
-                that.update(csBase.percTable());
+                csUI.update();
             }
             else {
                 csBase.filter();
-                // sort and update are called by filter
+                csUI.update();
             }
             that.createHeader();
         });
@@ -1245,64 +1393,92 @@ function CSTable (container) {
                 csBase.calculateColPos();
                 that.createHeader();
                 csBase.filter();
+                csUI.update();
             }
         });
     }
-    
-    
-    function assignCSVButtonClick () {
-        byId('csv').onclick = function () {
 
-            function encodeRow (row) {
-                for (var j = 0; j < row.length; j++) {
-                    str += (j > 0) ? (',' + row[j]) : row[j];
-                }
-                str += '\n';
-            }
+}
+function CSUI (container) {
+    var that = this,
+        upToDate = [],
+        zIndex = 0;
 
-            
-            var str = '',
-                row = [];
-            
-            row.push((PERIOD === 0) ? 'Destination' : 'Time');
+    this.slide = 'table';
+    this.slideIndex = 0;
 
-            for (var i in csBase.colPos) {
-                var newI = csBase.colPos[i];
-                row.push(COLUMNS[newI]);
-                if (csBase.visibleCols[newI] === 2) {
-                    row.push(COLUMNS[newI] + ' %');
-                }
-            }
-            encodeRow(row);
 
-            var table = csBase.percTable(true);
-            for (var j in table) {
-                encodeRow(table[j]);
-            }
-            
-            var fileName = (csOptions.get('name') || 'noname') + '.csv',
-                csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
-            
-            downloadBlob(fileName, csvBlob);
-        }
+    var str = '';
+    for (var i in SLIDES) {
+        str += '<slide></slide>';
     }
 
+    container.innerHTML = str +
+        '<section id="right-menu"><button id="go-table" onclick="csUI.goTo(\'table\')">tbl</button><button id="go-line" onclick="csUI.goTo(\'line\')">line</button><button id="go-bar1" onclick="csUI.goTo(\'bar1\')">bar</button><button id="go-bar2" onclick="csUI.goTo(\'bar2\')">bar2</button><button id="go-pie" onclick="csUI.goTo(\'pie\')">pie</button><br><br><button onclick="csBase.downloadCSV()">CSV</button><button id="png" onclick="csChart.downloadPNG()">PNG</button></section>';
 
-    this.update = function (data) {
-        var str = '';
 
-        for (var i in data) {
-            str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
+    var elements = container.children;
+
+
+    this.goTo = function (slide) {
+        var el = elements[this.slideIndex],
+            nextSlideIndex = SLIDES.indexOf(slide),
+            nextEl = elements[nextSlideIndex];
+
+        this.slide = slide;
+
+        if (!upToDate[nextSlideIndex]) {
+            switch (slide) {
+                case 'table':
+                    csTable.render(nextEl);
+                    break;
+                default:
+                    csChart.render(nextEl);
+                    break;
+            }
         }
-        tbody.innerHTML = str;
-        csChart.create(csBase.getTable());
-        rightPanelEqHeight(); 
+        upToDate[nextSlideIndex] = true;
+
+        if (nextSlideIndex !== this.slideIndex) {
+            el.style.opacity = 0;
+            el.className = '';
+
+            if (nextSlideIndex > this.slideIndex) {
+                nextEl.style.left = '100%';
+            }
+            else {
+                nextEl.style.left = '-100%';
+            }
+
+            nextEl.className = 'transition-slide';
+            nextEl.style.zIndex = zIndex++;
+            nextEl.getBoundingClientRect();
+
+            nextEl.style.opacity = 1;
+            nextEl.style.left = '0';
+
+            this.slideIndex = nextSlideIndex;
+        }
+
+        rightPanelEqHeight();
     };
 
 
-    createTable();
-    assignHeaderEvents();
-    assignCSVButtonClick();
+    this.update = function () {
+        upToDate = [];
+        csChart.invalidate();
+        this.goTo(this.slide);
+    };
+
+    
+    window.addEventListener('resize', function () {
+        if (that.slide === 'table') {
+            csTable.resizeHeader();
+        }
+        else {
+            csChart.resize();
+        }
+    });
 }
 function byId (id) {
     return document.getElementById(id);
@@ -1364,44 +1540,43 @@ function downloadBlob (fileName, blob) {
         navigator.msSaveBlob(blob, fileName);
     }
     else {
-        var link = document.createElement('a'),
-            url = URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        link.setAttribute('download', fileName);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        setTimeout(function () {
-            document.body.removeChild(link);
-        }, 10000);
+        downloadUrl(URL.createObjectURL(blob), fileName);
     }
+}
+
+
+function downloadUrl (url, fileName) {
+    var link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', fileName);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(function () {
+        document.body.removeChild(link);
+    }, 10000);
 }
 document.addEventListener("DOMContentLoaded", function() {
 
     window.csOptions = new CSOptions();
+    window.csUI = new CSUI(byId('left-content'));
 
     window.csBase = new CSBase(csOptions.getColumns(), csOptions.getRows());
 
-    window.csTable = new CSTable(byId('left-content'));
-    window.csChart = new CSChart(byId('line-chart'));
-    
-    window.addEventListener('resize', function () {
-        csTable.resizeHeader();
-        csChart.resize();
-    });
+    window.csTable = new CSTable();
+    window.csChart = new CSChart();
 
-    window.csPoll = new CSPoll(
-        function () {
-            csBase.filter();
-        }
-    );
+    window.csPoll = new CSPoll(function () {
+        csBase.filter();
+        csUI.update();
+    });
 });
 
 
 (function () {
     var s = document.createElement('script');
     s.onload = function () {
-        google.charts.load("current", {packages:['corechart']});
+        google.charts.load('current', {packages: ['corechart']});
     };
     s.src = '//www.gstatic.com/charts/loader.js';
     document.head.appendChild(s);

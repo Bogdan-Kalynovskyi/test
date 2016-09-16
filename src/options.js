@@ -89,7 +89,7 @@ function CSOptions () {
     form.find('select, input').on('change', function () {
         dirty = true;
     });
-    form.find('submit').on('click', function () {
+    form.find('input[type=submit]').on('click', function () {
         dirty = false;
     });
 

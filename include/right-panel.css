@@ -15,11 +15,12 @@
 #right-panel {
 	position: absolute;
 	right: -510px;
-	top: 5px;
+	top: 0;
 	transition: right 0.3s;
 	width: 500px;
 	background: #e1ecfa;
 	box-shadow: 0 0 10px 0 rgba(0,0,0,0.5);
+	z-index: 1000000;
 }
 
 #right-panel.expanded {
@@ -28,8 +29,8 @@
 
 #panel-open-button {
 	position: absolute;
-	top: 5px;
-	right: 13px;
+	top: 0;
+	right: 0;
 	width: 26.5px;
 	height: 26.5px;
 	cursor: pointer;
@@ -40,7 +41,7 @@
 }
 
 #options-heading {
-	height: 37.5px;
+	height: 37px;
 	font-family: Verdana, Arial, Helvetica, sans-serif;
 	text-align: center;
 	font-size: 8px;
@@ -85,9 +86,9 @@
 	border: 0;
 }
 
-.result table {
+.results table {
 	border: 0;
-	width: calc(100% - 30px);
+	width: 100%;
 }
 
 .results .head th {
@@ -128,20 +129,26 @@ th.desc:after {
 	background: #e1ecfa;;
 }
 
-#timezone {
-	position: relative;
-	top: 3px;
-	color: #ffffff;
+slide {
+	width: calc(100% - 34px);
+	position: absolute;
+	top: 0;
+	left: 0;
+	height: 900px;
 }
 
-#csv {
-	padding: 5px 8px;
+#right-menu {
+	position: absolute;
+	right: 0;
+	top: 36px;
+	width: 32px;
+	z-index: 90000;
 }
 
-.foot {
-	border-top: 1px solid #005c97;
-	background: #3289c1;
-	padding: 6px;
-	margin-bottom: 16px;
-	overflow: hidden;
+#right-menu button {
+	cursor: pointer;
+}
+
+.transition-slide {
+	transition: left 0.3s, opacity 0.3s;
 }

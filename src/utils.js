@@ -58,15 +58,19 @@ function downloadBlob (fileName, blob) {
         navigator.msSaveBlob(blob, fileName);
     }
     else {
-        var link = document.createElement('a'),
-            url = URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        link.setAttribute('download', fileName);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        setTimeout(function () {
-            document.body.removeChild(link);
-        }, 10000);
+        downloadUrl(URL.createObjectURL(blob), fileName);
     }
+}
+
+
+function downloadUrl (url, fileName) {
+    var link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', fileName);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(function () {
+        document.body.removeChild(link);
+    }, 10000);
 }
