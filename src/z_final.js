@@ -10,7 +10,6 @@ document.addEventListener("DOMContentLoaded", function() {
 
     window.csPoll = new CSPoll(function () {
         csBase.filter();
-        csUI.update();
     });
 });
 

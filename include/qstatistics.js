@@ -5,6 +5,7 @@ function CSChart () {
         dataTable,
         pieDataTable,
         charts = {},
+        lastChart,
         options = {
             line: {},
             bar1: {
@@ -22,10 +23,10 @@ function CSChart () {
             by: 'column',
             id: '0'
         },
-        tableHeading = [PERIOD ? 'Time' : 'Destination'];
+        originalZoom;
 
 
-    function pieChartChooser (container) {
+    function pieChartChooser () {
         var str = '<div id="pi-chooser">Display pie chart:<label>by column <select id="pie-by-column"><option>Choose column</option>';
         for (var i in COLUMNS) {
             str += '<option value="' + i + '">' + COLUMNS[i] + '</option>';
@@ -37,7 +38,7 @@ function CSChart () {
             }
         }
         str += '</select></label></div>';
-        container.insertAdjacentHTML('beforeend', str);
+        byId('chart-chooser').innerHTML = str;
 
         var byCol = byId('pie-by-column'),
             byRow = byId('pie-by-row');
@@ -71,16 +72,16 @@ function CSChart () {
     function getPieDataTable () {
         table = table || csBase.getTable();
         var id = +pieFilter.id,
-            data;
+            data = [];
 
         if (pieFilter.by === 'column') {
-            data = [[PERIOD ? 'Time' : 'Destination', COLUMNS[id]]];
+            data.push([PERIOD ? 'Time' : 'Destination', COLUMNS[id]]);
             for (var i in table) {
                 data.push([table[i][0], table[i][id + 1]]);
             }
         }
         else {
-            data = ['Type', table[id][0]];
+            var tableHeading = getTableHeading();
             for (i in tableHeading) {
                 data.push([tableHeading[i], table[id][i]]);
             }
@@ -92,8 +93,31 @@ function CSChart () {
 
     function getDataTable () {
         table = table || csBase.getTable();
-        var data = [tableHeading].concat(table);
+        var data = [getTableHeading()].concat(table);
         return google.visualization.arrayToDataTable(data);
+    }
+
+    
+    function assignZoom (container) {
+        function zooming (evt) {
+            overlay.style.left = evt.pageX - left + 'px';
+        }
+
+        var overlay = byId('zooming'),
+            rect = container.getBoundingClientRect(),
+            left = rect.left;
+
+        container.onmousedown = function (evt) {
+            overlay.style.display = 'block';
+            overlay.style.left = evt.pageX - left + 'px';
+            overlay.style.right = rect.width - evt.pageX + left + 'px';
+            container.onmousemove = zooming;
+        };
+
+        container.onmouseup = container.mouseexit = function () {
+            overlay.style.display = 'none';
+            container.onmousemove = null;
+        }
     }
     
 
@@ -122,18 +146,26 @@ function CSChart () {
                             charts[type] = new google.visualization.PieChart(container);
                             break;
                     }
+                    if (type !== 'pie') {
+                        assignZoom(container);
+                    }
                 }
 
                 if (type !== 'pie') {
                     dataTable = dataTable || getDataTable();
                     charts[type].draw(dataTable, options[type]);
+                    byId('chart-chooser').innerHTML = '';
                 }
                 else if (pieFilter.id) {
-                    container.innerHTML = '';
                     pieDataTable = pieDataTable || getPieDataTable();
                     charts[type].draw(pieDataTable, options[type]);
-                    pieChartChooser(container);
+                    pieChartChooser();
                 }
+                originalZoom = {
+                    start: START,
+                    end: END
+                };
+                lastChart = charts[type];
             });
         }
     };
@@ -157,17 +189,17 @@ function CSChart () {
 
 
     this.downloadPNG = function () {
-        if (charts[csUI.slide]) {
+        if (lastChart) {
             var fileName = (csOptions.get('name') || 'noname') + '.png';
-            downloadUrl(charts[csUI.slide].getImageURI(), fileName);
+            downloadUrl(lastChart.getImageURI(), fileName);
         }
     };
 
 
-
-    for (var i in csBase.colPos) {
-        tableHeading.push(COLUMNS[csBase.colPos[i]]);
+    byId('reset-zoom').onclick = function () {
+        byId('overlay').style.display = 'none';
     }
+
 }
 
 var START,
@@ -898,7 +930,8 @@ function CSBase (visibleCols, visibleRows) {
             }
         }
 
-        this.sort(); 
+        this.sort();
+        csUI.update();
     };
 
 
@@ -955,14 +988,13 @@ function CSOptions () {
         });
 
         byId('totalrow').addEventListener('change', function () {
-            csTable.update(csBase.percTable());
+            csUI.update();
         });
     }
 
 
     this.getColumns = function () {
         var result = [];
-
         for (var i in columnControls) {
             result[i] = +byId(columnControls[i]).value;
         }
@@ -972,7 +1004,6 @@ function CSOptions () {
 
     this.getRows = function () {
         var result = [];
-
         for (var i in destControls) {
             result[i] = +byId(destControls[i]).value;
         }
@@ -1202,6 +1233,7 @@ function CSPoll (onResponse) {
         var img = document.createElement('IMG');
         img.setAttribute('style',
             'position: fixed;' +
+            'z-index: 90000;' +
             'top: 50%;' +
             'left: 50%;' +
             'width: 64px' +
@@ -1338,7 +1370,6 @@ function CSTable () {
             }
             else {
                 csBase.filter();
-                csUI.update();
             }
             that.createHeader();
         });
@@ -1393,7 +1424,6 @@ function CSTable () {
                 csBase.calculateColPos();
                 that.createHeader();
                 csBase.filter();
-                csUI.update();
             }
         });
     }
@@ -1402,7 +1432,7 @@ function CSTable () {
 function CSUI (container) {
     var that = this,
         upToDate = [],
-        zIndex = 0;
+        zIndex = 1;
 
     this.slide = 'table';
     this.slideIndex = 0;
@@ -1414,6 +1444,9 @@ function CSUI (container) {
     }
 
     container.innerHTML = str +
+        '<div id="chart-chooser"></div>' +
+        '<div id="zooming"></div>' +
+        '<button id="reset-zoom" class="universal">Reset zoom</button>' +
         '<section id="right-menu"><button id="go-table" onclick="csUI.goTo(\'table\')">tbl</button><button id="go-line" onclick="csUI.goTo(\'line\')">line</button><button id="go-bar1" onclick="csUI.goTo(\'bar1\')">bar</button><button id="go-bar2" onclick="csUI.goTo(\'bar2\')">bar2</button><button id="go-pie" onclick="csUI.goTo(\'pie\')">pie</button><br><br><button onclick="csBase.downloadCSV()">CSV</button><button id="png" onclick="csChart.downloadPNG()">PNG</button></section>';
 
 
@@ -1441,17 +1474,19 @@ function CSUI (container) {
 
         if (nextSlideIndex !== this.slideIndex) {
             el.style.opacity = 0;
+            var width = el.offsetWidth;
             el.className = '';
 
             if (nextSlideIndex > this.slideIndex) {
-                nextEl.style.left = '100%';
+                nextEl.style.left = width + 'px';
             }
             else {
-                nextEl.style.left = '-100%';
+                nextEl.style.left = -width + 'px';
             }
 
             nextEl.className = 'transition-slide';
             nextEl.style.zIndex = zIndex++;
+            nextEl.clientHeight;
             nextEl.getBoundingClientRect();
 
             nextEl.style.opacity = 1;
@@ -1556,6 +1591,17 @@ function downloadUrl (url, fileName) {
         document.body.removeChild(link);
     }, 10000);
 }
+
+
+function getTableHeading () {
+    var result = [PERIOD ? 'Time' : 'Destination'],
+        pos = csBase.colPos;
+    for (var i in pos) {
+        result.push(COLUMNS[pos[i]]);
+    }
+    return result;
+}
+
 document.addEventListener("DOMContentLoaded", function() {
 
     window.csOptions = new CSOptions();
@@ -1568,7 +1614,6 @@ document.addEventListener("DOMContentLoaded", function() {
 
     window.csPoll = new CSPoll(function () {
         csBase.filter();
-        csUI.update();
     });
 });
 

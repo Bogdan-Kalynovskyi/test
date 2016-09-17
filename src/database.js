@@ -631,7 +631,8 @@ function CSBase (visibleCols, visibleRows) {
             }
         }
 
-        this.sort(); 
+        this.sort();
+        csUI.update();
     };
 
 

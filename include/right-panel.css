@@ -46,7 +46,7 @@
 	text-align: center;
 	font-size: 8px;
 	color: #fff;
-	background: linear-gradient(to bottom, rgba(0,54,88,1) 0%, rgba(0,90,150,1) 100%);
+	background: linear-gradient(to bottom, rgb(0, 50, 81) 0%, rgb(0, 116, 195) 100%);
 	cursor: pointer;
 	-webkit-user-select: none;
 	-moz-user-select: none;
@@ -134,7 +134,32 @@ slide {
 	position: absolute;
 	top: 0;
 	left: 0;
-	height: 900px;
+	height: 560px;
+}
+
+#chart-chooser {
+    position: absolute;
+    left: 0;
+    top: 550px;
+    z-index: 89900;
+}
+
+#zooming {
+    display: none;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 1px solid saddlebrown;
+    border-right: 1px solid saddlebrown;
+    background: rgba(255, 255, 0, 0.2);
+    z-index: 90001;
+}
+
+#reset-zoom {
+    position: absolute;
+    top: 10px;
+    left: 16px;
+    z-index: 90002;
 }
 
 #right-menu {

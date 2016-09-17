@@ -1,7 +1,7 @@
 function CSUI (container) {
     var that = this,
         upToDate = [],
-        zIndex = 0;
+        zIndex = 1;
 
     this.slide = 'table';
     this.slideIndex = 0;
@@ -13,6 +13,9 @@ function CSUI (container) {
     }
 
     container.innerHTML = str +
+        '<div id="chart-chooser"></div>' +
+        '<div id="zooming"></div>' +
+        '<button id="reset-zoom" class="universal">Reset zoom</button>' +
         '<section id="right-menu"><button id="go-table" onclick="csUI.goTo(\'table\')">tbl</button><button id="go-line" onclick="csUI.goTo(\'line\')">line</button><button id="go-bar1" onclick="csUI.goTo(\'bar1\')">bar</button><button id="go-bar2" onclick="csUI.goTo(\'bar2\')">bar2</button><button id="go-pie" onclick="csUI.goTo(\'pie\')">pie</button><br><br><button onclick="csBase.downloadCSV()">CSV</button><button id="png" onclick="csChart.downloadPNG()">PNG</button></section>';
 
 
@@ -40,13 +43,14 @@ function CSUI (container) {
 
         if (nextSlideIndex !== this.slideIndex) {
             el.style.opacity = 0;
+            var width = el.offsetWidth;
             el.className = '';
 
             if (nextSlideIndex > this.slideIndex) {
-                nextEl.style.left = '100%';
+                nextEl.style.left = width + 'px';
             }
             else {
-                nextEl.style.left = '-100%';
+                nextEl.style.left = -width + 'px';
             }
 
             nextEl.className = 'transition-slide';

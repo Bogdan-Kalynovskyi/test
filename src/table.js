@@ -106,7 +106,6 @@ function CSTable () {
             }
             else {
                 csBase.filter();
-                csUI.update();
             }
             that.createHeader();
         });
@@ -161,7 +160,6 @@ function CSTable () {
                 csBase.calculateColPos();
                 that.createHeader();
                 csBase.filter();
-                csUI.update();
             }
         });
     }

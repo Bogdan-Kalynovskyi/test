@@ -39,14 +39,13 @@ function CSOptions () {
         });
 
         byId('totalrow').addEventListener('change', function () {
-            csTable.update(csBase.percTable());
+            csUI.update();
         });
     }
 
 
     this.getColumns = function () {
         var result = [];
-
         for (var i in columnControls) {
             result[i] = +byId(columnControls[i]).value;
         }
@@ -56,7 +55,6 @@ function CSOptions () {
 
     this.getRows = function () {
         var result = [];
-
         for (var i in destControls) {
             result[i] = +byId(destControls[i]).value;
         }

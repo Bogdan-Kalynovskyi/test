@@ -74,3 +74,13 @@ function downloadUrl (url, fileName) {
         document.body.removeChild(link);
     }, 10000);
 }
+
+
+function getTableHeading () {
+    var result = [PERIOD ? 'Time' : 'Destination'],
+        pos = csBase.colPos;
+    for (var i in pos) {
+        result.push(COLUMNS[pos[i]]);
+    }
+    return result;
+}

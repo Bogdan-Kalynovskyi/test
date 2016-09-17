@@ -23,10 +23,10 @@ function CSChart () {
             by: 'column',
             id: '0'
         },
-        tableHeading = [PERIOD ? 'Time' : 'Destination'];
+        originalZoom;
 
 
-    function pieChartChooser (container) {
+    function pieChartChooser () {
         var str = '<div id="pi-chooser">Display pie chart:<label>by column <select id="pie-by-column"><option>Choose column</option>';
         for (var i in COLUMNS) {
             str += '<option value="' + i + '">' + COLUMNS[i] + '</option>';
@@ -38,7 +38,7 @@ function CSChart () {
             }
         }
         str += '</select></label></div>';
-        container.insertAdjacentHTML('beforeend', str);
+        byId('chart-chooser').innerHTML = str;
 
         var byCol = byId('pie-by-column'),
             byRow = byId('pie-by-row');
@@ -72,16 +72,16 @@ function CSChart () {
     function getPieDataTable () {
         table = table || csBase.getTable();
         var id = +pieFilter.id,
-            data;
+            data = [];
 
         if (pieFilter.by === 'column') {
-            data = [[PERIOD ? 'Time' : 'Destination', COLUMNS[id]]];
+            data.push([PERIOD ? 'Time' : 'Destination', COLUMNS[id]]);
             for (var i in table) {
                 data.push([table[i][0], table[i][id + 1]]);
             }
         }
         else {
-            data = [['Type', table[id][0]]];
+            var tableHeading = getTableHeading();
             for (i in tableHeading) {
                 data.push([tableHeading[i], table[id][i]]);
             }
@@ -93,8 +93,31 @@ function CSChart () {
 
     function getDataTable () {
         table = table || csBase.getTable();
-        var data = [tableHeading].concat(table);
+        var data = [getTableHeading()].concat(table);
         return google.visualization.arrayToDataTable(data);
+    }
+
+    
+    function assignZoom (container) {
+        function zooming (evt) {
+            overlay.style.left = evt.pageX - left + 'px';
+        }
+
+        var overlay = byId('zooming'),
+            rect = container.getBoundingClientRect(),
+            left = rect.left;
+
+        container.onmousedown = function (evt) {
+            overlay.style.display = 'block';
+            overlay.style.left = evt.pageX - left + 'px';
+            overlay.style.right = rect.width - evt.pageX + left + 'px';
+            container.onmousemove = zooming;
+        };
+
+        container.onmouseup = container.mouseexit = function () {
+            overlay.style.display = 'none';
+            container.onmousemove = null;
+        }
     }
     
 
@@ -123,18 +146,25 @@ function CSChart () {
                             charts[type] = new google.visualization.PieChart(container);
                             break;
                     }
+                    if (type !== 'pie') {
+                        assignZoom(container);
+                    }
                 }
 
                 if (type !== 'pie') {
                     dataTable = dataTable || getDataTable();
                     charts[type].draw(dataTable, options[type]);
+                    byId('chart-chooser').innerHTML = '';
                 }
                 else if (pieFilter.id) {
-                    container.innerHTML = '';
                     pieDataTable = pieDataTable || getPieDataTable();
                     charts[type].draw(pieDataTable, options[type]);
-                    pieChartChooser(container);
+                    pieChartChooser();
                 }
+                originalZoom = {
+                    start: START,
+                    end: END
+                };
                 lastChart = charts[type];
             });
         }
@@ -166,8 +196,8 @@ function CSChart () {
     };
 
 
-
-    for (var i in csBase.colPos) {
-        tableHeading.push(COLUMNS[csBase.colPos[i]]);
+    byId('reset-zoom').onclick = function () {
+        byId('overlay').style.display = 'none';
     }
+
 }

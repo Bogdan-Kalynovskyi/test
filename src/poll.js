@@ -185,6 +185,7 @@ function CSPoll (onResponse) {
         var img = document.createElement('IMG');
         img.setAttribute('style',
             'position: fixed;' +
+            'z-index: 90000;' +
             'top: 50%;' +
             'left: 50%;' +
             'width: 64px' +
