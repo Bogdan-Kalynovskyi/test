@@ -1,66 +1,266 @@
 function CSChart (container) {
     var that = this,
-        gData,
-        updateThrottle,
-        chart,
-        options = {};
+        resizeDebounce,
+        table,
+        dataTable,
+        pieDataTable,
+        charts = {},
+        lastChart,
+        overlay = byId('zooming-overlay'),
+        resetZoom = byId('reset-zoom'),
+        svg_g, rectCon, rectSVG,
+        options = {
+            line: {},
+            bar: {
+                orientation: 'horizontal'
+            },
+            barstacked: {
+                isStacked: true,
+                orientation: 'horizontal'
+            },
+            pie: {
+                is3D: true
+            }
+        },
+        pieFilterSaved = byId('piesource');
+
+    if (pieFilterSaved) {
+        pieFilterSaved = pieFilterSaved.value.split('_');
+        this.pieFilter = {
+            by: pieFilterSaved[0],
+            id: pieFilterSaved[1]
+        };
+    }
+    else {
+        this.pieFilter = {
+            by: 'column',
+            id: '0'
+        };
+    }
 
 
-    this.create = function (table) {
-        if (!window.google || !google.visualization.LineChart || !google.visualization) {
+    this.pieSourceChooser = function () {
+        var str = 'Display:<label> column <select id="pie-by-column"><option>Choose column</option>';
+        for (var i in COLUMNS) {
+            if (csBase.colSum) {
+                str += '<option value="' + i + '">' + COLUMNS[i] + '</option>';
+            }
+        }
+        str += '</select></label><label>, or row <select id="pie-by-row"><option>Choose row</option>';
+        for (i in table) {
+            if (table[i].total) {
+                str += '<option value="' + i + '">' + table[i][0] + '</option>';
+            }
+        }
+        str += '</select></label>';
+        byId('pie-chooser').innerHTML = str;
+
+        var byCol = byId('pie-by-column'),
+            byRow = byId('pie-by-row');
+
+        byCol.onchange = function () {
+            that.pieFilter = {
+                by: 'column',
+                id: this.value
+            };
+            if (that.pieFilter.id) {
+                pieDataTable = getPieDataTable();
+                charts.pie.draw(pieDataTable, options[csUI.type]);
+                byRow.selectedIndex = 0;
+            }
+        };
+        byRow.onchange = function () {
+            that.pieFilter = {
+                by: 'row',
+                id: this.value
+            };
+            if (that.pieFilter.id) {
+                pieDataTable = getPieDataTable();
+                charts.pie.draw(pieDataTable, options[csUI.type]);
+                byCol.selectedIndex = 0;
+            }
+        };
+        byCol.selectedIndex = 1;
+    };
+
+
+    function getPieDataTable () {
+        table = table || csBase.getTable();
+        var id = +that.pieFilter.id,
+            data = [];
+
+        if (that.pieFilter.by === 'column') {
+            data.push([PERIOD ? 'Time' : 'Destination', COLUMNS[id]]);
+            for (var i in table) {
+                data.push([table[i][0], table[i][id + 1]]);
+            }
+        }
+        else {
+            var tableHeading = getTableHeading();
+            for (i in tableHeading) {
+                data.push([tableHeading[i], table[id][i]]);
+            }
+        }
+
+        return google.visualization.arrayToDataTable(data);
+    }
+
+
+    function getDataTable () {
+        table = table || csBase.getTable();
+        var data = [getTableHeading()].concat(table);
+        return google.visualization.arrayToDataTable(data);
+    }
+
+
+    function mousemove (evt) {
+        endX = evt.pageX;
+        if (endX >= startX) {
+           endX += 15;
+        }
+        overlay.style.top = rectSVG.top + 'px';
+        overlay.style.bottom = window.innerHeight - rectSVG.bottom + 'px';
+        overlay.style.left = Math.min(startX, endX) - window.scrollX + 'px';
+        overlay.style.right = window.innerWidth + window.scrollX - Math.max(startX, endX) + 'px';
+    }
+
+    function mousedown (evt) {
+        if (!svg_g.contains(evt.target)) {
+            skip = true;
+            return;
+        }
+        var tagName = evt.target.tagName.toUpperCase();
+        if (tagName === 'TEXT') {
+            skip = true;
+            return;
+        }
+        rectCon = container.getBoundingClientRect();
+        rectSVG = svg_g.getBoundingClientRect();
+        startX = evt.pageX + 1;
+        overlay.style.top = rectSVG.top + 'px';
+        overlay.style.bottom = window.innerHeight - rectSVG.bottom + 'px';
+        overlay.style.left = startX - window.scrollX + 'px';
+        overlay.style.right = window.innerWidth + window.scrollX - startX + 'px';
+        overlay.style.display = 'block';
+        container.onmousemove = mousemove;
+    }
+
+    function mouseup () {
+        if (skip) {
+            skip = false;
+            return;
+        }
+        overlay.style.display = 'none';
+        var max = Math.max(startX, endX),
+            min = Math.min(startX, endX);
+
+        START += (END - START) * (min - window.scrollX - rectSVG.left) / rectSVG.width * 0.7;
+        END -= (END - START) * (rectSVG.right + window.scrollX - max) / rectSVG.width * 1.6;
+
+        resetZoom.style.display = 'block';
+        csBase.filter();
+        csOptions.setTime();
+
+        container.onmousemove = null;
+    }
+
+    var startX,
+        endX,
+        skip;
+
+
+    this.assignZoom = function () {
+        container.addEventListener('mousedown', mousedown, true);
+        container.addEventListener('mouseup', mouseup, true);
+    };
+
+
+    this.unAsignZoom = function () {
+        overlay.style.display = 'none';
+        container.onmousemove = null;
+        container.removeEventListener('mousedown', mousedown, true);
+        container.removeEventListener('mouseup', mouseup, true);
+    };
+    
+
+    this.render = function (type, slide) {
+        if (!window.google || !google.visualization) {
             setTimeout(function () {
-                that.create(table);
+                that.render();
             }, 200);
         }
         else {
             google.charts.setOnLoadCallback(function () {
-                var data = [],
-                    row = [];
-
-                row.push((PERIOD === 0) ? 'Destination' : 'Time');
-
-                for (var i in csBase.colPos) {
-                    row.push(COLUMNS[csBase.colPos[i]]);
+                if (!charts[type]) {
+                    switch (type) {
+                        case 'line':
+                            charts[type] = new google.visualization.LineChart(slide);
+                            break;
+                        case 'bar':
+                            charts[type] = new google.visualization.BarChart(slide);
+                            break;
+                        case 'barstacked':
+                            charts[type] = new google.visualization.BarChart(slide);
+                            break;
+                        case 'pie':
+                            charts[type] = new google.visualization.PieChart(slide);
+                            break;
+                    }
                 }
-                data.push(row);
-                data = data.concat(table);
 
-                gData = google.visualization.arrayToDataTable(data);
-
-                if (!chart) {
-                    chart = new google.visualization.LineChart(container);
+                if (type !== 'pie') {
+                    dataTable = dataTable || getDataTable();
+                    charts[type].draw(dataTable, options[type]);
+                }
+                else if (that.pieFilter.id) {
+                    pieDataTable = pieDataTable || getPieDataTable();
+                    charts[type].draw(pieDataTable, options[type]);
+                    that.pieSourceChooser();
                 }
 
-                chart.draw(gData, options);
+                if (PERIOD && type !== 'pie') {
+                    svg_g = slide.getElementsByTagName('svg')[0].children[3];
+                    svg_g.style.cursor = 'col-resize';
+                }
+                lastChart = charts[type];
             });
         }
     };
 
 
-    this.resize = function () {
-        clearTimeout(updateThrottle);
+    this.invalidate = function () {
+        table = dataTable = pieDataTable = undefined;
+    };
 
-        updateThrottle = setTimeout(function () {
-            if (chart) {
-                chart.draw(gData, options);
+
+    this.resize = function () {
+        clearTimeout(resizeDebounce);
+
+        resizeDebounce = setTimeout(function () {
+            var type = csUI.type;
+            if (charts[type]) {
+                charts[type].draw(type === 'pie' ? pieDataTable : dataTable, options[type]);
             }
         }, 100);
     };
 
 
-    this.download = function () {
-        var link = document.createElement('a'),
-            url = chart.getImageURI();
-
-        link.setAttribute('href', url);
-        link.setAttribute('download', (csOptions.get('name') || 'noname') + '.png');
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        setTimeout(function () {
-            document.body.removeChild(link);
-        }, 10000);
+    this.downloadPNG = function () {
+        if (lastChart) {
+            var fileName = (csOptions.get('name') || 'noname') + '.png';
+            downloadUrl(lastChart.getImageURI(), fileName);
+        }
     };
+
+
+    this.resetZoom = function () {
+        byId('zooming-overlay').style.display = 'none';
+        START = qsPolling.originalZoom.start;
+        END = qsPolling.originalZoom.end;
+        resetZoom.style.display = 'none';
+        csBase.filter();
+    }
+
 }
 
 var START,
@@ -72,7 +272,8 @@ var START,
         0,1,2,3,4,5,6,7,8,9,10,11
     ],
 
-    
+    SLIDES = ['table', 'line', 'bar', 'barstacked', 'pie'],
+
     DESTINATIONS = [
         'All calls',
         'External callers',
@@ -114,8 +315,8 @@ var START,
     
     columnControls = [
         'totalcalls',
-        'answer',
-        'noanswer',
+        'answercalls',
+        'noanswercalls',
         'incalls',
         'inanswer',
         'innoanswer',
@@ -141,9 +342,9 @@ var START,
     ],
     
     filterByList = [
-        'queues_selected',
-        'agents_selected',
-        'phones_selected'
+        'queuesinclude',
+        'agentsinclude',
+        'phonesinclude'
     ];
 
     daysOfWeek = [
@@ -164,7 +365,6 @@ function CSBase (visibleCols, visibleRows) {
         agents,
         phones,
         rowPos,
-        columnSum,
         total,
         table;
 
@@ -256,10 +456,10 @@ function CSBase (visibleCols, visibleRows) {
     }
 
 
-    this.percTable = function (csv) { 
+    this.percTable = function (csv) {
         var showTotal = PERIOD && +csOptions.get('totalrow'),
             response = new Array(table.length),
-            columnSum1 = ['Total'],
+            totalRow = ['Total'],
             i, j, perc;
 
         for (i in table) {
@@ -271,8 +471,8 @@ function CSBase (visibleCols, visibleRows) {
             }
         }
 
-        if (!csv) {
-            columnSum1 = columnSum1.concat(columnSum);
+        if (showTotal && !csv) {
+            totalRow = totalRow.concat(this.colSum);
         }
         
         for (j in this.colPos) {
@@ -292,14 +492,14 @@ function CSBase (visibleCols, visibleRows) {
                 }
 
                 // column Sum
-                perc = total ? Math.round(columnSum[j] * 100 / total) : '';
+                perc = total ? Math.round(this.colSum[j] * 100 / total) : '';
                 if (showTotal) {
                     if (csv) {
-                        columnSum1.push(columnSum[j]);
-                        columnSum1.push(perc);
+                        totalRow.push(this.colSum[j]);
+                        totalRow.push(perc);
                     }
                     else {
-                        columnSum1[j1] += ' <small>(' + perc + (total ? '&#8198;%' : '') + ')</small>';
+                        totalRow[j1] += ' <small>(' + perc + (total ? '&#8198;%' : '') + ')</small>';
                     }
                 }
             }
@@ -308,13 +508,13 @@ function CSBase (visibleCols, visibleRows) {
                     response[i].push(table[i][j1]);
                 }
                 if (showTotal) {
-                    columnSum1.push(columnSum[j]);
+                    totalRow.push(this.colSum[j]);
                 }
             }
         }
 
         if (showTotal) {
-            response.push(columnSum1);
+            response.push(totalRow);
         }
         return response;
     };
@@ -323,8 +523,39 @@ function CSBase (visibleCols, visibleRows) {
     this.getTable = function () {
         return table;
     };
-    
-    
+
+
+    this.downloadCSV = function () {
+        if (!table) {
+            return;
+        }
+
+        var str = '',
+            row = [PERIOD ? 'Time' : 'Destination'];
+
+        for (var i in this.colPos) {
+            var newI = this.colPos[i];
+            row.push(COLUMNS[newI]);
+            if (visibleCols[newI] === 2) {
+                row.push(COLUMNS[newI] + ' %');
+            }
+        }
+        str += row.join(',') + '\n';
+
+        var data = csBase.percTable(true);
+        for (i in data) {
+            str += data[i].join(',') + '\n';
+        }
+
+        var fileName = (csOptions.get('name') || 'noname') + '.csv',
+            csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
+
+        downloadBlob(fileName, csvBlob);
+    };
+
+
+
+
     function newRow () {
         var row = new Array(COLUMNS.length + 1).fill(0);
         row.total = 0;
@@ -460,9 +691,10 @@ function CSBase (visibleCols, visibleRows) {
         }
 
         for (i = 0, n = _phones.length; i < n; i++) {
-            var phone = _phones[i];
-            if (!phones[phone.id]) {
-                phones[phone.id] = phone;
+            var phone = _phones[i],
+                name = phone.getAttribute('name');
+            if (!phones[name]) {
+                phones[name] = phone;
                 notEmpty = true;
             }
         }
@@ -490,7 +722,16 @@ function CSBase (visibleCols, visibleRows) {
         }
 
         if (startIndex && endIndex) {
-            return calls.slice(+startIndex, +endIndex + 1);
+            var slice = calls.slice(+startIndex, +endIndex + 1);
+            //if (PERIOD) {
+                var arr = ['queues', 'agents', 'phones'];
+                for (i = 0; i < arr.length; i++) {
+                    if (csOptions.get(arr[i]) !== 'all') {
+                        slice = byDestination(slice, arr[i], true);
+                    }
+                }
+            //}
+            return slice;
         }
         else {
             return [];
@@ -504,7 +745,7 @@ function CSBase (visibleCols, visibleRows) {
             var row = reduceRow(table[i]);
             table[i] = row;
             for (var j = 1; j < n; j++) {
-                columnSum[j - 1] += row[j];
+                that.colSum[j - 1] += row[j];
             }
         }
     }
@@ -651,11 +892,15 @@ function CSBase (visibleCols, visibleRows) {
     }
 
 
-    function byDestination (filteredCalls, subject) {
+    function byDestination (filteredCalls, subject, doFilter) {
         var ids = [],
             arr,
             settings = csOptions.get(subject),
             i, j, n;
+
+        if (doFilter) {
+            var result = [];
+        }
 
         switch (subject) {
             case 'queues':
@@ -670,7 +915,7 @@ function CSBase (visibleCols, visibleRows) {
         }
 
         if (settings === 'use_include') {
-            var options = byId(subject + '_selected').options;
+            var options = byId(subject + 'include_selected').options;
             for (i = 0, n = options.length; i < n; i++) {
                 ids.push(options[i].value);
             }
@@ -688,21 +933,22 @@ function CSBase (visibleCols, visibleRows) {
                 el = arr[ids[j]],
                 name = el.getAttribute('name'),
                 match,
-                totalsCount = 0,
-                row = newRow();
+                totalsCount = 0;
 
-            switch (subject) {
-                case 'queues':
-                    row[0] = 'Queue: ' + name;
-                    break;
-                case 'agents':
-                    row[0] = 'Queue agent: ' + name;
-                    var dnumber = el.getAttribute('dnumber'),
-                        dtype = el.getAttribute('dtype');
-                    break;
-                case 'phones':
-                    row[0] = 'Ext: ' + name;
-                    break;
+            if (!doFilter) {
+                var row = newRow();
+
+                switch (subject) {
+                    case 'queues':
+                        row[0] = 'Queue: ' + name;
+                        break;
+                    case 'agents':
+                        row[0] = 'Queue agent: ' + name;
+                        break;
+                    case 'phones':
+                        row[0] = 'Ext: ' + name;
+                        break;
+                }
             }
 
             for (i in filteredCalls) {
@@ -714,7 +960,7 @@ function CSBase (visibleCols, visibleRows) {
                         break;
 
                     case 'agents':
-                        match = call.getAttribute('stype') === 'queue' && call.getAttribute('dnumber') === dnumber && call.getAttribute('dtype') === dtype;
+                        match = call.getAttribute('stype') === 'queue' && call.getAttribute('dnumber') === el.getAttribute('dnumber') && call.getAttribute('dtype') === el.getAttribute('dtype');
                         break;
 
                     case 'phones':
@@ -723,20 +969,32 @@ function CSBase (visibleCols, visibleRows) {
                 }
 
                 if (match) {
-                    decode(call, row);
-                    totalsCount++;
+                    if (doFilter) {
+                        if (result.indexOf(call) === -1) {
+                            result.push(call);
+                        }
+                    }
+                    else {
+                        decode(call, row);
+                        totalsCount++;
+                    }
                 }
             }
 
-            row.total = totalsCount;
-            table.push(reduceRow(row));
+            if (!doFilter) {
+                row.total = totalsCount;
+                table.push(reduceRow(row));
+            }
+        }
+        if (doFilter) {
+            return result;
         }
     }
 
 
     this.filter = function () {
         table = [];
-        columnSum = new Array(that.colPos.length).fill(0);
+        this.colSum = new Array(that.colPos.length).fill(0);
         total = 0;
 
         if (PERIOD === 0) {
@@ -759,8 +1017,8 @@ function CSBase (visibleCols, visibleRows) {
             }
         }
 
-        this.sort(); 
-        csTable.update(this.percTable());
+        this.sort();
+        csUI.update();
     };
 
 
@@ -774,41 +1032,56 @@ function CSBase (visibleCols, visibleRows) {
     phones = {};
     this.minTime = Infinity;
     this.maxTime = 0;
-
-    this.visibleCols = visibleCols;
 }
 
 function CSOptions () {
+    var savedScrollX,
+        savedScrollY;
+
+    window.addEventListener('scroll', function () {
+        savedScrollX = window.scrollX;
+        savedScrollY = window.scrollY;
+    });
+
+
+    function preventScroll () {
+        window.scrollTo(savedScrollX, savedScrollY);
+    }
+
 
     function setWatchers() {
         var i;
 
         for (i in timeControls) {
             byId(timeControls[i]).addEventListener('change', function () {
-                csPoll.rePoll();
+                qsPolling.update();
+                preventScroll();
             });
         }
         for (i in columnControls) {
             byId(columnControls[i]).addEventListener('change', function () {
                 var pos = columnControls.indexOf(this.id);
                 csBase.setVisibleCols(pos, +this.value);
-                csTable.createHeader();
+                preventScroll();
             });
         }
         for (i in destControls) {
             byId(destControls[i]).addEventListener('change', function () {
                 var pos = destControls.indexOf(this.id);
                 csBase.setVisibleRows(pos, +this.value);
+                preventScroll();
             });
         }
         for (i in queueControls) {
             byId(queueControls[i]).addEventListener('change', function () {
                 csBase.filter();
+                preventScroll();
             });
         }
         for (i in filterByList) {
             byId(filterByList[i]).addEventListener('change', function () {
                 csBase.filter();
+                preventScroll();
             });
         }
 
@@ -816,17 +1089,23 @@ function CSOptions () {
             PERIOD = +this.value;
             csTable.createHeader();
             csBase.filter();
+            preventScroll();
         });
 
         byId('totalrow').addEventListener('change', function () {
-            csTable.update(csBase.percTable());
+            csUI.update();
+            preventScroll();
+        });
+
+        reportForm.find('input[type="button"]').on('click', function () {
+            csBase.filter();
+            preventScroll();
         });
     }
 
 
     this.getColumns = function () {
         var result = [];
-
         for (var i in columnControls) {
             result[i] = +byId(columnControls[i]).value;
         }
@@ -836,7 +1115,6 @@ function CSOptions () {
 
     this.getRows = function () {
         var result = [];
-
         for (var i in destControls) {
             result[i] = +byId(destControls[i]).value;
         }
@@ -861,17 +1139,94 @@ function CSOptions () {
 
     PERIOD = +byId('period').value;
 
-    setWatchers();
-    
-    var form = $('form:last-child'),
+    var reportForm = $('form').last(),
+//        settingsForm = document.getElementsByName('settings')[0],
+        inputs = reportForm.find('select, input'),
         dirty = false;
-    
-    form.find('select, input').on('change', function () {
+
+    setWatchers();
+
+    inputs.on('change', function () {
         dirty = true;
     });
-    form.find('submit').on('click', function () {
+
+    var appended;
+
+    reportForm.on('submit', function () {
+
+        function markAllOptions (mark) {
+            var arr = ['queues', 'agents', 'phones'];
+            for (var i = 0; i < arr.length; i++) {
+                if (csOptions.get(arr[i]) === 'use_include') {
+                    var options = byId(arr[i] + 'include_selected').options;
+                    for (var j = options.length - 1; j >= 0; j--) {
+                        options[j].selected = mark;
+                    }
+                }
+            }
+        }
+
+
+        if (!csOptions.get('name')) {
+            window.scrollTo(0, 0);
+            byId('name').focus();
+            alert('Please enter the report name.');
+            return false;
+        }
+
         dirty = false;
+
+        markAllOptions(true);
+        setTimeout(function () {
+            markAllOptions(false);
+        }, 100);
+
+        if (appended) {
+            for (var i = 0; i < 4; i++) {
+                reportForm.find('input').last().remove();
+            }
+        }
+        appended = true;
+
+        reportForm.append('<input type="hidden" name="startdate" value="' + START + '"/>' +
+                    '<input type="hidden" name="enddate" value="' + END + '"/>' +
+                    '<input type="hidden" name="starttime" value="' + (START - getBeginningOfDay(START)) + '"/>' +
+                    '<input type="hidden" name="endtime" value="' + (END - getBeginningOfDay(END)) + '"/>');
+
+        document.getElementsByName('piesource')[0].value = csChart.pieFilter.by + '_' + csChart.pieFilter.id;
+        document.getElementsByName('type')[0].value = csUI.type;
+
+        $.post(reportForm.attr('action'), reportForm.serialize(), function (response) {
+            document.getElementsByName('id').value = response.getElementsByTagName('return')[0].id;
+        });
+        return false;
     });
+
+
+    this.setTime = function () {
+        byId('startday').value = 1;
+        byId('endday').value = 1;
+        var start = new Date(START * 1000),
+            end = new Date(END * 1000),
+            y1,m1,d1,y2,m2,d2;
+        byId('startdate').style.display = '';
+        byId('enddate').style.display = '';
+        byId('start_year').value = y1 = 1900 + start.getYear();
+        byId('end_year').value = y2 = 1900 + end.getYear();
+        byId('start_month').value = m1 = start.getMonth() + 1;
+        byId('end_month').value = m2 = end.getMonth() + 1;
+        byId('start_day').value = d1 = start.getDate();
+        byId('end_day').value = d2 = end.getDate();
+        byId('start_hour').value = start.getHours();
+        byId('end_hour').value = end.getHours();
+        byId('start_minute').value = start.getMinutes();
+        byId('end_minute').value = end.getMinutes();
+        byId('start_second').value = start.getSeconds();
+        byId('end_second').value = end.getSeconds();
+        byId('start_buffer').value = y1 + '-' + m1 + '-' + d1;
+        byId('end_buffer').value = y2 + '-' + m2 + '-' + d2;
+    };
+
 
     window.onbeforeunload = function () {
         if (dirty) {
@@ -879,7 +1234,7 @@ function CSOptions () {
         }
     };
 }
-function CSPoll (onResponse) {
+function CSPolling (onResponse) {
     var that = this,
         username = csOptions.config('settings', 'username'),
         password = csOptions.config('settings', 'password'),
@@ -891,7 +1246,7 @@ function CSPoll (onResponse) {
         requestEnd,
         firstPoll,
         timeoutHandle,
-        pollDelay = 6000;
+        pollDelay = csOptions.getNumber('refresh');
 
 
     function ajaxGet (uri, success, failure) {
@@ -942,6 +1297,11 @@ function CSPoll (onResponse) {
             stopPolling();
             throw 'start > now';
         }
+
+        that.originalZoom = {
+            start: START,
+            end: END
+        };
     }
 
 
@@ -955,7 +1315,8 @@ function CSPoll (onResponse) {
     }
 
 
-    this.rePoll = function (start, end) {
+    this.update = function (start, end) {
+        byId('reset-zoom').style.display = 'none';
         if (start && end) {
             START = start;
             END = end;
@@ -1039,7 +1400,7 @@ function CSPoll (onResponse) {
                 return;
             }
 
-            requestStart = csBase.maxTime + 1;
+            requestStart = csBase.maxTime;
             requestEnd = END;
 
             timeoutHandle = setTimeout(requestIfAllowed, pollDelay);
@@ -1066,6 +1427,7 @@ function CSPoll (onResponse) {
         var img = document.createElement('IMG');
         img.setAttribute('style',
             'position: fixed;' +
+            'z-index: 90000;' +
             'top: 50%;' +
             'left: 50%;' +
             'width: 64px' +
@@ -1092,10 +1454,11 @@ function CSPoll (onResponse) {
 
 
     document.addEventListener('visibilitychange', visibilityChange);
-    this.rePoll();
+    this.update();
 }
-function CSTable (container) {
+function CSTable () {
     var that = this,
+        container,
         table,
         theadTr,
         ths,
@@ -1105,27 +1468,30 @@ function CSTable (container) {
     this.sortingOrder = 1;
 
 
-    function createTable () {
-        var str = '<table width="100%" border="0" cellpadding="0" cellspacing="0"><thead><tr class="head">',
-            timeZoneFormatted = new Date().toString().match(/([A-Z]+[\+-][0-9]+.*)/)[1];
+    this.render = function (slide) {
+        var i,
+            str = '',
+            data = csBase.percTable();
 
-        str += that.createHeader(true) + '</tr></thead><tbody></tbody></table>' +
-            '<div class="foot"><span id="timezone">Your timezone: ' + timeZoneFormatted + '</span><button id="csv" class="universal secondary">Export as .csv</button></div>' +
-            '<section><div id="line-chart" style="height: 500px"></div></section>' +
-            '<section><button onclick="csChart.download()">Download as PNG</button></section>';
+        container = slide;
+        if (data) {
+            for (i in data) {
+                str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
+            }
+        }
+        slide.innerHTML = '<table cellpadding="0" cellspacing="0"><thead><tr class="head">' + createHeader() + '</tr></thead><tbody>' + str + '</tbody></table>';
 
-        container.innerHTML = str;
-        table = container.children[0],
-        theadTr = table.children[0].children[0],
+        table = slide.children[0];
+        theadTr = table.children[0].children[0];
         ths = theadTr.children;
         tbody = table.children[1];
 
-        that.resizeHeader();
-    }
+        this.resizeHeader();
+        assignHeaderEvents();
+    };
 
 
-    this.createHeader = function (initial) {
-        
+    function createHeader () {
         function getSorting (i) {
             if (that.sortingCol === i) {
                 return that.sortingOrder === 1 ? ' class="asc"' : ' class="desc"';
@@ -1138,18 +1504,13 @@ function CSTable (container) {
 
         var str = '<th id="0col" align="left"' + getSorting(0) + '>' + (PERIOD ? 'Time' : 'Destination') + '</th>';
         
-        for (var i in csBase.colPos) {
-            var newI = csBase.colPos[i];
+        for (var i in that.colPos) {
+            var newI = that.colPos[i];
             str += '<th id="' + (newI + 1) + 'col" draggable="true" ondragover="return false" align="left"' + getSorting(newI + 1) + '>' + COLUMNS[newI] + '</th>';
         }
-        if (initial) {
-            return str;
-        }
-        
-        theadTr.innerHTML = str;
-        ths = theadTr.children;
-        this.resizeHeader();
-    };
+
+        return str;
+    }
 
 
     this.resizeHeader = function () {
@@ -1186,11 +1547,10 @@ function CSTable (container) {
             that.sortingCol = startId;
             if (startId) {
                 csBase.sort();
-                that.update(csBase.percTable());
+                csUI.update();
             }
             else {
                 csBase.filter();
-                // sort and update are called by filter
             }
             that.createHeader();
         });
@@ -1248,61 +1608,115 @@ function CSTable (container) {
             }
         });
     }
-    
-    
-    function assignCSVButtonClick () {
-        byId('csv').onclick = function () {
 
-            function encodeRow (row) {
-                for (var j = 0; j < row.length; j++) {
-                    str += (j > 0) ? (',' + row[j]) : row[j];
-                }
-                str += '\n';
-            }
+}
+function CSUI (container) {
+    this.type = (byId('type') && csOptions.get('type')) || 'table';
 
-            
-            var str = '',
-                row = [];
-            
-            row.push((PERIOD === 0) ? 'Destination' : 'Time');
+    var that = this,
+        upToDate = [],
+        zIndex = 1,
+        slideIndex = SLIDES.indexOf(this.type);
 
-            for (var i in csBase.colPos) {
-                var newI = csBase.colPos[i];
-                row.push(COLUMNS[newI]);
-                if (csBase.visibleCols[newI] === 2) {
-                    row.push(COLUMNS[newI] + ' %');
-                }
-            }
-            encodeRow(row);
 
-            var table = csBase.percTable(true);
-            for (var j in table) {
-                encodeRow(table[j]);
-            }
-            
-            var fileName = (csOptions.get('name') || 'noname') + '.csv',
-                csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
-            
-            downloadBlob(fileName, csvBlob);
-        }
+    var str = '';
+    for (var i in SLIDES) {
+        str += '<slide ondragstart="return false"></slide>';
     }
 
+    container.innerHTML = str +
+        '<div id="pie-chooser"></div>' +
+        '<div id="zooming-overlay" ondragstart="return false"></div>';
+    container.insertAdjacentHTML('afterend', '<section id="right-menu"><button id="go-table" onclick="csUI.goTo(\'table\')"></button><button id="go-line" onclick="csUI.goTo(\'line\')"></button><button id="go-bar" onclick="csUI.goTo(\'bar\')"></button><button id="go-barstacked" onclick="csUI.goTo(\'barstacked\')"></button><button id="go-pie" onclick="csUI.goTo(\'pie\')"></button><button id="go-csv" onclick="csBase.downloadCSV()"></button><button id="go-png" onclick="csChart.downloadPNG()"></button><button id="reset-zoom" onclick="csChart.resetZoom()"></button></section>');
 
-    this.update = function (data) {
-        var str = '';
+    var slides = container.children;
 
-        for (var i in data) {
-            str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
+
+    this.goTo = function (nextType) {
+        var slide = slides[slideIndex],
+            nextSlideIndex = SLIDES.indexOf(nextType),
+            nextSlide = slides[nextSlideIndex];
+
+        if (!upToDate[nextSlideIndex]) {
+            if (nextType === 'table') {
+                csTable.render(nextSlide);
+            }
+            else {
+                csChart.render(nextType, nextSlide);
+            }
         }
-        tbody.innerHTML = str;
-        csChart.create(csBase.getTable());
-        rightPanelEqHeight(); 
+        upToDate[nextSlideIndex] = true;
+
+        if (PERIOD && nextType !== 'pie' && nextType !== 'table') {
+            csChart.assignZoom();
+        }
+        else {
+            csChart.unAsignZoom();
+        }
+
+        var gpng = byId('go-png');
+        if (nextType === 'table') {
+            gpng.style.opacity = 0.4;
+            gpng.disabled = true;
+        }
+        else {
+            gpng.style.opacity = 1;
+            gpng.disabled = false;
+        }
+
+        if (nextType === 'pie') {
+            byId('pie-chooser').style.display = 'block';
+        }
+        else {
+            byId('pie-chooser').style.display = 'none';
+        }
+
+        if (nextSlideIndex !== slideIndex) {
+            slide.style.opacity = 0;
+            var width = slide.offsetWidth;
+            slide.className = '';
+
+            if (nextSlideIndex > slideIndex) {
+                nextSlide.style.left = width + 'px';
+            }
+            else {
+                nextSlide.style.left = -width + 'px';
+            }
+
+            nextSlide.className = 'transition-slide';
+            nextSlide.style.zIndex = zIndex++;
+            nextSlide.clientHeight;
+            nextSlide.getBoundingClientRect();
+
+            nextSlide.style.opacity = 1;
+            nextSlide.style.left = '0';
+            byId('go-' + this.type).className = '';
+
+            slideIndex = nextSlideIndex;
+            this.type = nextType;
+        }
+
+        byId('go-' + nextType).className = 'active';
+
+        rightPanelEqHeight();
     };
 
 
-    createTable();
-    assignHeaderEvents();
-    assignCSVButtonClick();
+    this.update = function () {
+        upToDate = [];
+        csChart.invalidate();
+        this.goTo(this.type);
+    };
+
+    
+    window.addEventListener('resize', function () {
+        if (that.type === 'table') {
+            csTable.resizeHeader();
+        }
+        else {
+            csChart.resize();
+        }
+    });
 }
 function byId (id) {
     return document.getElementById(id);
@@ -1318,6 +1732,11 @@ function getBeginningOfDay (date) {
     return Math.floor(new Date(date * 1000).setHours(0,0,0,0) / 1000);
 }
 
+
+// function getSSinceMidnight (unix) {
+//     var e = new Date(unix * 1000);
+//     return unix - Math.floor(e.setHours(0,0,0,0) / 1000);
+// }
 
 function pad (s) {
     if (s < 10) {
@@ -1364,56 +1783,65 @@ function downloadBlob (fileName, blob) {
         navigator.msSaveBlob(blob, fileName);
     }
     else {
-        var link = document.createElement('a'),
-            url = URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        link.setAttribute('download', fileName);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        setTimeout(function () {
-            document.body.removeChild(link);
-        }, 10000);
+        downloadUrl(URL.createObjectURL(blob), fileName);
     }
 }
+
+
+function downloadUrl (url, fileName) {
+    var link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', fileName);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(function () {
+        document.body.removeChild(link);
+    }, 10000);
+}
+
+
+function getTableHeading () {
+    var result = [PERIOD ? 'Time' : 'Destination'],
+        pos = csBase.colPos;
+    for (var i in pos) {
+        result.push(COLUMNS[pos[i]]);
+    }
+    return result;
+}
+
 document.addEventListener("DOMContentLoaded", function() {
 
     window.csOptions = new CSOptions();
+    window.csUI = new CSUI(byId('left-content'));
 
     window.csBase = new CSBase(csOptions.getColumns(), csOptions.getRows());
 
-    window.csTable = new CSTable(byId('left-content'));
-    window.csChart = new CSChart(byId('line-chart'));
-    
-    window.addEventListener('resize', function () {
-        csTable.resizeHeader();
-        csChart.resize();
+    window.csTable = new CSTable();
+    window.csChart = new CSChart(byId('left-content'));
+
+    window.qsPolling = new CSPolling(function () {
+        csBase.filter();
     });
 
-    window.csPoll = new CSPoll(
-        function () {
-            csBase.filter();
-        }
-    );
+    byId('panel-open-button').innerHTML = '';
+
+    // patch move_selected
+    var savedMoveselect = move_selects;
+    window.move_selects = function () {
+        savedMoveselect.apply(window, arguments);
+        csBase.filter();
+    };
 });
 
 
 (function () {
     var s = document.createElement('script');
     s.onload = function () {
-        google.charts.load("current", {packages:['corechart']});
+        google.charts.load('current', {packages: ['corechart']});
     };
     s.src = '//www.gstatic.com/charts/loader.js';
     document.head.appendChild(s);
-
-
-    // patch move_selected
-    var savedMoveselect = move_selects;
-    move_selects = function () {
-        savedMoveselect.apply(window, arguments);
-        csBase.filter();
-    }
-
 })();
 
 

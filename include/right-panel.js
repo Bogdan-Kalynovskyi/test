@@ -5,37 +5,39 @@
 		navbar = byId('nav_bar'),
 		content = byId('left-content'),
 		panel = byId('right-panel'),
-		panelHeight = parseFloat(window.getComputedStyle(panel).height),
+		panelHeight = panel.offsetHeight,
 		isExpanded = false;
 
 	panel.style.height = 'calc(100% - 5px)';
 
 
-	function eqHeight () {
-		content.style.height = '';
-		panel.style.height = '';
-		var contentHeight = parseFloat(window.getComputedStyle(content).height),
-			navbarHeight = parseFloat(window.getComputedStyle(navbar).height),
-			maxHeight = Math.max(contentHeight, navbarHeight, panelHeight + 5);
+	function eqHeight () { 
+		if (window.csUI) {
+			content.style.height = '';
+			panel.style.height = '';
+			var contentHeight = content.children[SLIDES.indexOf(csUI.type)].scrollHeight,
+				navbarHeight = navbar.offsetHeight,
+				maxHeight = Math.max(contentHeight, navbarHeight, isExpanded ? panelHeight : 0);
 
-		content.style.height = maxHeight + 'px';
-		panel.style.height = maxHeight - 5 + 'px';
+			content.style.height = maxHeight + 'px';
+			panel.style.height = maxHeight - 5 + 'px';
+		}
 	}
 
 	window.rightPanelEqHeight = eqHeight;
 
 
 	function expand () {
+		isExpanded = true;
 		panel.classList.add('expanded');
 		eqHeight();
-		isExpanded = true;
 	}
 
 
 	function collapse () {
-		panel.classList.remove('expanded');
-		content.style.height = '';
 		isExpanded = false;
+		panel.classList.remove('expanded');
+		eqHeight();
 	}
 
 
