@@ -5,7 +5,6 @@
 		navbar = byId('nav_bar'),
 		content = byId('left-content'),
 		panel = byId('right-panel'),
-		panelHeight = panel.offsetHeight,
 		isExpanded = false;
 
 	panel.style.height = 'calc(100% - 5px)';
@@ -17,7 +16,7 @@
 			panel.style.height = '';
 			var contentHeight = content.children[SLIDES.indexOf(csUI.type)].scrollHeight,
 				navbarHeight = navbar.offsetHeight,
-				maxHeight = Math.max(contentHeight, navbarHeight, isExpanded ? panelHeight : 0);
+				maxHeight = Math.max(contentHeight, navbarHeight, isExpanded ? panel.offsetHeight : 0);
 
 			content.style.height = maxHeight + 'px';
 			panel.style.height = maxHeight - 5 + 'px';

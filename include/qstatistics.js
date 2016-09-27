@@ -40,16 +40,31 @@ function CSChart (container) {
 
 
     this.pieSourceChooser = function () {
-        var str = 'Display:<label> column <select id="pie-by-column"><option>Choose column</option>';
+        var str = 'Display:<label> column <select id="pie-by-column"><option>Choose column</option>',
+            visibleCols = csOptions.getColumns(),
+            selected;
+        
         for (var i in COLUMNS) {
-            if (csBase.colSum) {
-                str += '<option value="' + i + '">' + COLUMNS[i] + '</option>';
+            if (csBase.colSum[i] && visibleCols[i]) {
+                if (this.pieFilter.by === 'column' && this.pieFilter.id === i) {
+                    selected = ' selected="selected"';
+                }
+                else {
+                    selected = '';
+                }
+                str += '<option value="' + i + '"' + selected + '>' + COLUMNS[i] + '</option>';
             }
         }
         str += '</select></label><label>, or row <select id="pie-by-row"><option>Choose row</option>';
         for (i in table) {
             if (table[i].total) {
-                str += '<option value="' + i + '">' + table[i][0] + '</option>';
+                if (this.pieFilter.by === 'row' && this.pieFilter.id === i) {
+                    selected = ' selected="selected"';
+                }
+                else {
+                    selected = '';
+                }
+                str += '<option value="' + i + '"' + selected + '>' + table[i][0] + '</option>';
             }
         }
         str += '</select></label>';
@@ -218,7 +233,7 @@ function CSChart (container) {
                     that.pieSourceChooser();
                 }
 
-                if (PERIOD && type !== 'pie') {
+                if (PERIOD > 0 && type !== 'pie') {
                     svg_g = slide.getElementsByTagName('svg')[0].children[3];
                     svg_g.style.cursor = 'col-resize';
                 }
@@ -774,8 +789,8 @@ function CSBase (visibleCols, visibleRows) {
             calls,
             row,
             now = Date.now() / 1000,
-            dateFormat = csOptions.config('settings', 'dateformat'),
-            timeFormat = csOptions.config('settings', 'timeformat');
+            dateFormat = csOptions.config('dateformat'),
+            timeFormat = csOptions.config('timeformat');
 
         if ((END - START) / period > 10000) {
             alert('Too many data to display. Please set smaller period');
@@ -819,7 +834,7 @@ function CSBase (visibleCols, visibleRows) {
             reportIndex,
             date,
             totalHours = DAY / period,
-            timeFormat = csOptions.config('settings', 'timeformat');
+            timeFormat = csOptions.config('timeformat');
 
         for (var i = 0; i < totalHours; i++) {
             row = newRow();
@@ -1087,7 +1102,6 @@ function CSOptions () {
 
         byId('period').addEventListener('change', function () {
             PERIOD = +this.value;
-            csTable.createHeader();
             csBase.filter();
             preventScroll();
         });
@@ -1097,7 +1111,7 @@ function CSOptions () {
             preventScroll();
         });
 
-        reportForm.find('input[type="button"]').on('click', function () {
+        form.find('input[type="button"]').on('click', function () {
             csBase.filter();
             preventScroll();
         });
@@ -1122,10 +1136,8 @@ function CSOptions () {
     };
 
     
-    this.config = function (form, field) {
-        if (document[form][field]) {
-            return document[form][field].value;
-        }
+    this.config = function (field) {
+        return document['settings'][field].value;
     };
 
 
@@ -1137,22 +1149,32 @@ function CSOptions () {
     };
 
 
-    PERIOD = +byId('period').value;
+    PERIOD = this.getNumber('period');
 
-    var reportForm = $('form').last(),
-//        settingsForm = document.getElementsByName('settings')[0],
-        inputs = reportForm.find('select, input'),
-        dirty = false;
+    
+    var form = $('form').last(),
+        inputs = form.find('select, input'),
+        submitBtn = form.find('input[type="submit"]'),
+        dirty = false,
+        appended;
 
     setWatchers();
+////////////////////////
+
+    function onChangesSaved () {
+        submitBtn.disabled = true;
+        submitBtn.value = 'Saved';
+    }
+    onChangesSaved();
+    
 
     inputs.on('change', function () {
         dirty = true;
+        submitBtn.disabled = false;
+        submitBtn.value = 'Save';
     });
 
-    var appended;
-
-    reportForm.on('submit', function () {
+    form.on('submit', function () {
 
         function markAllOptions (mark) {
             var arr = ['queues', 'agents', 'phones'];
@@ -1175,30 +1197,29 @@ function CSOptions () {
         }
 
         dirty = false;
-
+        onChangesSaved();
+        
         markAllOptions(true);
-        setTimeout(function () {
-            markAllOptions(false);
-        }, 100);
 
         if (appended) {
             for (var i = 0; i < 4; i++) {
-                reportForm.find('input').last().remove();
+                form.find('input').last().remove();
             }
         }
         appended = true;
 
-        reportForm.append('<input type="hidden" name="startdate" value="' + START + '"/>' +
+        form.append('<input type="hidden" name="startdate" value="' + START + '"/>' +
                     '<input type="hidden" name="enddate" value="' + END + '"/>' +
                     '<input type="hidden" name="starttime" value="' + (START - getBeginningOfDay(START)) + '"/>' +
                     '<input type="hidden" name="endtime" value="' + (END - getBeginningOfDay(END)) + '"/>');
 
-        document.getElementsByName('piesource')[0].value = csChart.pieFilter.by + '_' + csChart.pieFilter.id;
-        document.getElementsByName('type')[0].value = csUI.type;
+        form[0]['piesource'].value = csChart.pieFilter.by + '_' + csChart.pieFilter.id;
+        form[0]['type'].value = csUI.type;
 
-        $.post(reportForm.attr('action'), reportForm.serialize(), function (response) {
-            document.getElementsByName('id').value = response.getElementsByTagName('return')[0].id;
+        $.post(form.attr('action'), form.serialize(), function (response) {
+            form[0]['id'].value = response.getElementsByTagName('return')[0].id;
         });
+        markAllOptions(false);
         return false;
     });
 
@@ -1236,8 +1257,8 @@ function CSOptions () {
 }
 function CSPolling (onResponse) {
     var that = this,
-        username = csOptions.config('settings', 'username'),
-        password = csOptions.config('settings', 'password'),
+        username = csOptions.config('username'),
+        password = csOptions.config('password'),
         xhr,
         preloaderShown,
         today,
@@ -1246,7 +1267,7 @@ function CSPolling (onResponse) {
         requestEnd,
         firstPoll,
         timeoutHandle,
-        pollDelay = csOptions.getNumber('refresh');
+        pollDelay = +csOptions.config('refresh');
 
 
     function ajaxGet (uri, success, failure) {
@@ -1504,8 +1525,8 @@ function CSTable () {
 
         var str = '<th id="0col" align="left"' + getSorting(0) + '>' + (PERIOD ? 'Time' : 'Destination') + '</th>';
         
-        for (var i in that.colPos) {
-            var newI = that.colPos[i];
+        for (var i in csBase.colPos) {
+            var newI = csBase.colPos[i];
             str += '<th id="' + (newI + 1) + 'col" draggable="true" ondragover="return false" align="left"' + getSorting(newI + 1) + '>' + COLUMNS[newI] + '</th>';
         }
 
@@ -1552,7 +1573,6 @@ function CSTable () {
             else {
                 csBase.filter();
             }
-            that.createHeader();
         });
         
         tr.addEventListener('dragstart', function (evt) {
@@ -1647,7 +1667,7 @@ function CSUI (container) {
         }
         upToDate[nextSlideIndex] = true;
 
-        if (PERIOD && nextType !== 'pie' && nextType !== 'table') {
+        if (PERIOD > 0 && nextType !== 'pie' && nextType !== 'table') {
             csChart.assignZoom();
         }
         else {
