@@ -97,7 +97,7 @@ function CSBase (visibleCols, visibleRows) {
     }
 
 
-    this.percTable = function (csv) { 
+    this.percTable = function (csv) {
         var showTotal = PERIOD && +csOptions.get('totalrow'),
             response = new Array(table.length),
             columnSum1 = ['Total'],
@@ -164,8 +164,39 @@ function CSBase (visibleCols, visibleRows) {
     this.getTable = function () {
         return table;
     };
-    
-    
+
+
+    this.downloadCSV = function () {
+        if (!table) {
+            return;
+        }
+
+        var str = '',
+            row = [PERIOD ? 'Time' : 'Destination'];
+
+        for (var i in this.colPos) {
+            var newI = this.colPos[i];
+            row.push(COLUMNS[newI]);
+            if (visibleCols[newI] === 2) {
+                row.push(COLUMNS[newI] + ' %');
+            }
+        }
+        str += row.join(',') + '\n';
+
+        var data = csBase.percTable(true);
+        for (i in data) {
+            str += data[i].join(',') + '\n';
+        }
+
+        var fileName = (csOptions.get('name') || 'noname') + '.csv',
+            csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
+
+        downloadBlob(fileName, csvBlob);
+    };
+
+
+
+
     function newRow () {
         var row = new Array(COLUMNS.length + 1).fill(0);
         row.total = 0;
@@ -600,8 +631,8 @@ function CSBase (visibleCols, visibleRows) {
             }
         }
 
-        this.sort(); 
-        csTable.update(this.percTable());
+        this.sort();
+        csUI.update();
     };
 
 
@@ -615,6 +646,4 @@ function CSBase (visibleCols, visibleRows) {
     phones = {};
     this.minTime = Infinity;
     this.maxTime = 0;
-
-    this.visibleCols = visibleCols;
 }

@@ -11,20 +11,37 @@ function CSTable () {
 
 
     this.render = function (cont) {
-        container = cont;
-        cont.innerHTML = '<table cellpadding="0" cellspacing="0"><thead><tr class="head">' + that.createHeader(true) + '</tr></thead><tbody></tbody></table>';
-        
-        table = cont.children[0],
-        theadTr = table.children[0].children[0],
-        ths = theadTr.children;
-        tbody = table.children[1];
+        var i,
+            str = '',
+            data = csBase.percTable();
 
-        that.resizeHeader();
+        if (!table) {
+            container = cont;
+            if (data) {
+                for (i in data) {
+                    str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
+                }
+            }
+            cont.innerHTML = '<table cellpadding="0" cellspacing="0"><thead><tr class="head">' + that.createHeader(true) + '</tr></thead><tbody>' + str + '</tbody></table>';
+
+            table = cont.children[0];
+            theadTr = table.children[0].children[0];
+            ths = theadTr.children;
+            tbody = table.children[1];
+
+            that.resizeHeader();
+            assignHeaderEvents();
+        }
+        else if (data) {
+            for (i in data) {
+                str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
+            }
+            tbody.innerHTML = str;
+        }
     };
 
 
     this.createHeader = function (initial) {
-        
         function getSorting (i) {
             if (that.sortingCol === i) {
                 return that.sortingOrder === 1 ? ' class="asc"' : ' class="desc"';
@@ -85,11 +102,10 @@ function CSTable () {
             that.sortingCol = startId;
             if (startId) {
                 csBase.sort();
-                that.update(csBase.percTable());
+                csUI.update();
             }
             else {
                 csBase.filter();
-                // sort and update are called by filter
             }
             that.createHeader();
         });
@@ -147,54 +163,5 @@ function CSTable () {
             }
         });
     }
-    
-    
-    this.downloadCSV = function () {
-        function encodeRow (row) {
-            for (var j = 0; j < row.length; j++) {
-                str += (j > 0) ? (',' + row[j]) : row[j];
-            }
-            str += '\n';
-        }
 
-        
-        var str = '',
-            row = [];
-        
-        row.push((PERIOD === 0) ? 'Destination' : 'Time');
-
-        for (var i in csBase.colPos) {
-            var newI = csBase.colPos[i];
-            row.push(COLUMNS[newI]);
-            if (csBase.visibleCols[newI] === 2) {
-                row.push(COLUMNS[newI] + ' %');
-            }
-        }
-        encodeRow(row);
-
-        var table = csBase.percTable(true);
-        for (var j in table) {
-            encodeRow(table[j]);
-        }
-        
-        var fileName = (csOptions.get('name') || 'noname') + '.csv',
-            csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
-        
-        downloadBlob(fileName, csvBlob);
-    };
-
-
-    this.update = function (data) {
-        var str = '';
-
-        for (var i in data) {
-            str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
-        }
-        tbody.innerHTML = str;
-        rightPanelEqHeight();
-    };
-
-
-    createTable();
-    assignHeaderEvents();
 }

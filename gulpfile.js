@@ -1,5 +1,5 @@
 var gulp = require('gulp'),
-    //watch = require('gulp-watch'),
+    watch = require('gulp-watch'),
     concat = require('gulp-concat');
 
 
@@ -9,10 +9,8 @@ var sourceDir = 'src/*.js',
 
 
 gulp.task('default', function() {
-    return gulp
-        .src(sourceDir)
-        // .pipe(watch(sourceDir))// todo: compiles on start
-        .pipe(concat('qstatistics.js'))
-        .pipe(gulp.dest(compiledDir));
+    return gulp.src(sourceDir)
+        // .pipe(watch(sourceDir, { ignoreInitial: false })
+          .pipe(concat('qstatistics.js'))
+          .pipe(gulp.dest(compiledDir));
 });
-

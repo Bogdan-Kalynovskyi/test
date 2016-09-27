@@ -1,71 +1,86 @@
 function CSUI (container) {
-    var rendered,
-        currSlide = 'table',
-        currSlideIndex = 0;
+    var that = this,
+        upToDate = [],
+        zIndex = 1;
+
+    this.slide = 'table';
+    this.slideIndex = 0;
+
 
     var str = '';
     for (var i in SLIDES) {
-        str += '<slide id="slide' + i + '"></slide>';
+        str += '<slide></slide>';
     }
 
     container.innerHTML = str +
-        '<section id="right-menu"><button onclick="csIU.goTo(\'table\')">tbl</button><button onclick="csIU.goTo(\'line\')">line</button><button onclick="csIU.goTo(\'bar1\')">bar</button><button onclick="csIU.goTo(\'bar2\')">bar2</button><button onclick="csIU.goTo(\'pie\')">pie</button><br><br><button onclick="csTable.downloadCSV()">CSV</button><button onclick="csChart.downloadPNG()">PNG</button></section>';
+        '<div id="chart-chooser"></div>' +
+        '<div id="zooming"></div>' +
+        '<button id="reset-zoom" class="universal">Reset zoom</button>' +
+        '<section id="right-menu"><button id="go-table" onclick="csUI.goTo(\'table\')">tbl</button><button id="go-line" onclick="csUI.goTo(\'line\')">line</button><button id="go-bar1" onclick="csUI.goTo(\'bar1\')">bar</button><button id="go-bar2" onclick="csUI.goTo(\'bar2\')">bar2</button><button id="go-pie" onclick="csUI.goTo(\'pie\')">pie</button><br><br><button onclick="csBase.downloadCSV()">CSV</button><button id="png" onclick="csChart.downloadPNG()">PNG</button></section>';
 
 
     var elements = container.children;
 
 
     this.goTo = function (slide) {
-        var index = SLIDES.indexOf(slide);
+        var el = elements[this.slideIndex],
+            nextSlideIndex = SLIDES.indexOf(slide),
+            nextEl = elements[nextSlideIndex];
 
-        if (index !== currSlideIndex) {
-            var nextEl = elements[index];
+        this.slide = slide;
 
-            if (!rendered[index]) {
-                switch (slide) {
-                    case 'table':
-                        csTable.render(nextEl);
-                        break;
-                    default:
-                        csChart.render(nextEl);
-                        break;
-                }
+        if (!upToDate[nextSlideIndex]) {
+            switch (slide) {
+                case 'table':
+                    csTable.render(nextEl);
+                    break;
+                default:
+                    csChart.render(nextEl);
+                    break;
             }
+        }
+        upToDate[nextSlideIndex] = true;
 
-            if (index > currSlideIndex) {
-                nextEl.style.left = '100%';
+        if (nextSlideIndex !== this.slideIndex) {
+            el.style.opacity = 0;
+            var width = el.offsetWidth;
+            el.className = '';
+
+            if (nextSlideIndex > this.slideIndex) {
+                nextEl.style.left = width + 'px';
             }
             else {
-                nextEl.style.left = '-100%';
+                nextEl.style.left = -width + 'px';
             }
 
             nextEl.className = 'transition-slide';
+            nextEl.style.zIndex = zIndex++;
+            nextEl.clientHeight;
+            nextEl.getBoundingClientRect();
+
+            nextEl.style.opacity = 1;
             nextEl.style.left = '0';
 
-            setTimeout(function () {
-                nextEl.className = '';
-            }, 300);
-
-            currSlideIndex = index;
+            this.slideIndex = nextSlideIndex;
         }
+
+        rightPanelEqHeight();
     };
 
 
-    this.changed = function () {
-        rendered = new Array(slides.length).fill(false);
+    this.update = function () {
+        upToDate = [];
+        csChart.invalidate();
+        this.goTo(this.slide);
     };
-
-
-    this.changed();
-    rendered[0] = true;
 
     
     window.addEventListener('resize', function () {
-        if (currSlide === 'table') {
+        if (that.slide === 'table') {
             csTable.resizeHeader();
         }
         else {
-            csChart.resize(currSlide);
+            csChart.resize();
         }
     });
 }
