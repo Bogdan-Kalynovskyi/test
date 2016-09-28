@@ -7,7 +7,7 @@ function CSChart (container) {
         charts = {},
         lastChart,
         overlay = byId('zooming-overlay'),
-        resetZoom = byId('reset-zoom'),
+        resetZoom = byId('zoom-out'),
         svg_g, rectCon, rectSVG,
         options = {
             line: {},
@@ -1154,25 +1154,30 @@ function CSOptions () {
     
     var form = $('form').last(),
         inputs = form.find('select, input'),
-        submitBtn = form.find('input[type="submit"]'),
-        dirty = false,
+        submitBtn = form.find('input[type="submit"]')[0],
+        settingsForm = $('[name="settings"]'),
+        dirty,
         appended;
 
     setWatchers();
 ////////////////////////
 
-    function onChangesSaved () {
-        submitBtn.disabled = true;
-        submitBtn.value = 'Saved';
-    }
-    onChangesSaved();
-    
-
-    inputs.on('change', function () {
+    this.onFormDirty = function () {
         dirty = true;
         submitBtn.disabled = false;
         submitBtn.value = 'Save';
-    });
+    };
+    
+    
+    function onFormClean () {
+        submitBtn.disabled = true;
+        submitBtn.value = 'Saved';
+        dirty = false;
+    }
+    onFormClean();
+    
+
+    inputs.on('change', this.onFormDirty);
 
     form.on('submit', function () {
 
@@ -1197,8 +1202,7 @@ function CSOptions () {
         }
 
         dirty = false;
-        onChangesSaved();
-        
+
         markAllOptions(true);
 
         if (appended) {
@@ -1213,11 +1217,14 @@ function CSOptions () {
                     '<input type="hidden" name="starttime" value="' + (START - getBeginningOfDay(START)) + '"/>' +
                     '<input type="hidden" name="endtime" value="' + (END - getBeginningOfDay(END)) + '"/>');
 
+        settingsForm.append('<input type="hidden" name="recursive"/>');
+
         form[0]['piesource'].value = csChart.pieFilter.by + '_' + csChart.pieFilter.id;
         form[0]['type'].value = csUI.type;
 
         $.post(form.attr('action'), form.serialize(), function (response) {
             form[0]['id'].value = response.getElementsByTagName('return')[0].id;
+            onFormClean();
         });
         markAllOptions(false);
         return false;
@@ -1337,7 +1344,7 @@ function CSPolling (onResponse) {
 
 
     this.update = function (start, end) {
-        byId('reset-zoom').style.display = 'none';
+        byId('zoom-out').style.display = 'none';
         if (start && end) {
             START = start;
             END = end;
@@ -1647,7 +1654,7 @@ function CSUI (container) {
     container.innerHTML = str +
         '<div id="pie-chooser"></div>' +
         '<div id="zooming-overlay" ondragstart="return false"></div>';
-    container.insertAdjacentHTML('afterend', '<section id="right-menu"><button id="go-table" onclick="csUI.goTo(\'table\')"></button><button id="go-line" onclick="csUI.goTo(\'line\')"></button><button id="go-bar" onclick="csUI.goTo(\'bar\')"></button><button id="go-barstacked" onclick="csUI.goTo(\'barstacked\')"></button><button id="go-pie" onclick="csUI.goTo(\'pie\')"></button><button id="go-csv" onclick="csBase.downloadCSV()"></button><button id="go-png" onclick="csChart.downloadPNG()"></button><button id="reset-zoom" onclick="csChart.resetZoom()"></button></section>');
+    container.insertAdjacentHTML('afterend', '<section id="right-menu"><button id="go-table" onclick="csUI.goTo(\'table\')"></button><button id="go-line" onclick="csUI.goTo(\'line\')"></button><button id="go-bar" onclick="csUI.goTo(\'bar\')"></button><button id="go-barstacked" onclick="csUI.goTo(\'barstacked\')"></button><button id="go-pie" onclick="csUI.goTo(\'pie\')"></button><button id="go-csv" onclick="csBase.downloadCSV()"></button><button id="go-png" onclick="csChart.downloadPNG()"></button><button id="zoom-out" onclick="csChart.resetZoom()" style="display: none"></button></section>');
 
     var slides = container.children;
 
@@ -1674,14 +1681,11 @@ function CSUI (container) {
             csChart.unAsignZoom();
         }
 
-        var gpng = byId('go-png');
         if (nextType === 'table') {
-            gpng.style.opacity = 0.4;
-            gpng.disabled = true;
+            byId('go-png').disabled = true;
         }
         else {
-            gpng.style.opacity = 1;
-            gpng.disabled = false;
+            byId('go-png').disabled = false;
         }
 
         if (nextType === 'pie') {
@@ -1714,6 +1718,7 @@ function CSUI (container) {
 
             slideIndex = nextSlideIndex;
             this.type = nextType;
+            csOptions.onFormDirty();
         }
 
         byId('go-' + nextType).className = 'active';
