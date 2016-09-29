@@ -22,8 +22,7 @@ function CSChart () {
         pieFilter = {
             by: 'column',
             id: '0'
-        },
-        originalZoom;
+        };
 
 
     function pieChartChooser () {
@@ -161,10 +160,6 @@ function CSChart () {
                     charts[type].draw(pieDataTable, options[type]);
                     pieChartChooser();
                 }
-                originalZoom = {
-                    start: START,
-                    end: END
-                };
                 lastChart = charts[type];
             });
         }

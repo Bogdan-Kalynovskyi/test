@@ -7,8 +7,6 @@
 		panel = byId('right-panel'),
 		isExpanded = false;
 
-	panel.style.height = 'calc(100% - 5px)';
-
 
 	function eqHeight () { 
 		if (window.csUI) {
@@ -16,36 +14,35 @@
 			panel.style.height = '';
 			var contentHeight = content.children[SLIDES.indexOf(csUI.type)].scrollHeight,
 				navbarHeight = navbar.offsetHeight,
-				maxHeight = Math.max(contentHeight, navbarHeight, isExpanded ? panel.offsetHeight : 0);
+				maxHeight = Math.max(contentHeight, navbarHeight, isExpanded ? panel.scrollHeight : 0);
 
 			content.style.height = maxHeight + 'px';
-			panel.style.height = maxHeight - 5 + 'px';
 		}
 	}
 
 	window.rightPanelEqHeight = eqHeight;
 
 
-	function expand () {
-		isExpanded = true;
-		panel.classList.add('expanded');
+	function toggle () {
+		isExpanded = !isExpanded;
+		if (isExpanded) {
+			panel.classList.add('expanded');
+			openBtn.classList.add('expanded');
+		}
+		else {
+			panel.classList.remove('expanded');
+			openBtn.classList.remove('expanded');
+		}
 		eqHeight();
 	}
-
-
-	function collapse () {
-		isExpanded = false;
-		panel.classList.remove('expanded');
-		eqHeight();
-	}
-
+ 
 
 	if (panel.classList.contains('expanded')) {
-		expand();
+		toggle();
 	}
 
-	openBtn.addEventListener('click', expand);
-	heading.addEventListener('click', collapse);
+	openBtn.addEventListener('click', toggle);
+	heading.addEventListener('click', toggle);
 
 	window.addEventListener('resize', function () {
 		if (isExpanded) {

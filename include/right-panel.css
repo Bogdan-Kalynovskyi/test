@@ -18,9 +18,10 @@
 	top: 0;
 	transition: right 0.3s;
 	width: 500px;
+	height: 100%;
 	background: #e1ecfa;
 	box-shadow: 0 0 10px 0 rgba(0,0,0,0.5);
-	z-index: 1000000;
+	z-index: 100;
 }
 
 #right-panel.expanded {
@@ -58,11 +59,11 @@
 }
 
 .calendar {
-	z-index: 20000000;
+	z-index: 2000;
 }
 
 [disabled] {
-	cursor: not-allowed;
+	cursor: default!important;
 	opacity: 0.4;
 }
 
@@ -154,15 +155,26 @@ text {
     border-left: 1px solid saddlebrown;
     border-right: 1px solid saddlebrown;
     background: rgba(255, 255, 0, 0.2);
-    z-index: 90001;
+    z-index: 1010;
+}
+
+#zoom-out {
+	display: none;
+	position: absolute;
+	top: 4px;
+	left: 50%;
+	margin-left: -50px;
+	height: 30px;
+	z-index: 10;
 }
 
 #pie-chooser {
 	position: absolute;
 	top: 0;
 	left: 0;
-	right: 440px;
-	z-index: 1000;
+	right: 0;
+	z-index: 100;
+	text-align: center;
 }
 
 #right-menu {
@@ -170,25 +182,27 @@ text {
 	right: 0;
 	top: 40px;
 	width: 40px;
-	z-index: 1100000;
+	z-index: 1100;
 }
 
 #right-menu button,
 #panel-open-button {
 	cursor: pointer;
-	background: linear-gradient(to bottom, rgba(0,54,88,1) 0%, rgb(0, 101, 168) 100%);
+	background: linear-gradient(to bottom, rgb(0, 50, 81) 0%, rgb(0, 114, 192) 100%);
 	height: 40px;
 	width: 40px;
 	border-radius: 0;
 	margin: 0;
 	padding: 0;
 	border: 0;
+	outline: 0!important;
 }
 
 #panel-open-button {
 	position: absolute;
 	top: 0;
 	right: 0;
+	z-index: 1000;
 }
 
 #right-menu button {
@@ -236,9 +250,6 @@ text {
 #go-png:after {
 	background-image: url('/local/bohdan/include/img/png.png');
 }
-#zoom-out:after {
-	background-image: url('/local/bohdan/include/img/zoom-out.png');
-}
 
 #panel-open-button:hover:before {
 	content: 'Open settings'!important;
@@ -264,8 +275,12 @@ text {
 #go-png:hover:before {
 	content: 'Download chart as PNG'!important;
 }
-#zoom-out:hover:before {
-	content: 'Zoom out'!important;
+
+#panel-open-button.expanded:after {
+	opacity: 0.4;
+}
+#panel-open-button.expanded:before {
+	content: 'Close settings'!important;
 }
 
 #panel-open-button:before,
