@@ -22,6 +22,7 @@ function CSChart (container) {
             },
             pie: {
                 is3D: true,
+                pieSliceText: 'label',
                 sliceVisibilityThreshold: 0
             }
         },
@@ -119,17 +120,22 @@ function CSChart (container) {
         var id = +that.pieFilter.id,
             data = [];
 
-        if (that.pieFilter.by === 'column') {
-            data.push([PERIOD ? 'Time' : 'Destination', COLUMNS[id]]);
-            // in Destination mode, don't show "All calls" in chart 
-            for (var i = (PERIOD ? 0 : 1), n = table.length; i < n; i++) {
-                data.push([table[i][0], table[i][id + 1]]);
-            }
+        if (that.pieFilter.id === -1) {
+            data = ['No calls', 1];
         }
         else {
-            var tableHeading = getTableHeading();
-            for (i in tableHeading) {
-                data.push([tableHeading[i], table[id][i]]);
+            if (that.pieFilter.by === 'column') {
+                data.push([PERIOD ? 'Time' : 'Destination', COLUMNS[id]]);
+                // in Destination mode, don't show "All calls" in chart 
+                for (var i = (PERIOD ? 0 : 1), n = table.length; i < n; i++) {
+                    data.push([table[i][0], table[i][id + 1]]);
+                }
+            }
+            else {
+                var tableHeading = getTableHeading();
+                for (i in tableHeading) {
+                    data.push([tableHeading[i], table[id][i]]);
+                }
             }
         }
 
