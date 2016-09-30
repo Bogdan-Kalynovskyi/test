@@ -40,7 +40,7 @@
 	-moz-user-select: none;
 	-ms-user-select: none;
 	user-select: none;
-	box-shadow: 1px 0 7px 0 rgba(0,0,0,0.9);
+	box-shadow: 2px 0 7px 0 rgba(0,0,0,0.8);
 }
 
 #panel-items {
@@ -49,7 +49,6 @@
 
 #close-arrow {
 	position: relative;
-	top: -1px;
 	float: left;
 }
 
@@ -129,10 +128,7 @@ slide {
 	top: 0;
 	left: 0;
 	height: 560px;
-}
-
-.transition-slide {
-	transition: left 0.3s, opacity 0.3s;
+	transition: opacity 0.3s;
 }
 
 text {
@@ -164,8 +160,10 @@ text {
 	top: 4px;
 	left: 50%;
 	margin-left: -50px;
-	height: 30px;
+	height: 27px;
+    background: rgb(0, 114, 192);
 	z-index: 10;
+	box-shadow: 0 0 4px rgba(0,0,0,0.2);
 }
 
 #pie-chooser {
@@ -227,6 +225,7 @@ text {
 }
 
 #panel-open-button:after {
+	top: 1px;
 	background-image: url('/local/bohdan/include/img/cog2.png');
 }
 #go-table:after {
@@ -252,7 +251,7 @@ text {
 }
 
 #panel-open-button:hover:before {
-	content: 'Open settings'!important;
+	content: 'Open options'!important;
 }
 #go-table:hover:before {
 	content: 'Table'!important;
@@ -280,7 +279,7 @@ text {
 	opacity: 0.4;
 }
 #panel-open-button.expanded:before {
-	content: 'Close settings'!important;
+	content: 'Close options'!important;
 }
 
 #panel-open-button:before,

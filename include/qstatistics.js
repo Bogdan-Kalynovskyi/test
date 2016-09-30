@@ -1,14 +1,14 @@
 function CSChart (container) {
     var that = this,
-        resizeDebounce,
         table,
         dataTable,
         pieDataTable,
         charts = {},
         lastChart,
+        currentSlide,
         overlay = byId('zooming-overlay'),
         resetZoom = byId('zoom-out'),
-        svg_g, rectCon, rectSVG,
+        svg_g, rectSVG,
         options = {
             line: {},
             bar: {
@@ -44,7 +44,7 @@ function CSChart (container) {
 
     function centerPieSource () {
         if (csUI.type === 'pie') {
-            var g = document.querySelectorAll('svg > g'),
+            var g = currentSlide.querySelectorAll('svg > g'),
                 left = Infinity,
                 right = 0;
 
@@ -65,30 +65,21 @@ function CSChart (container) {
     this.pieSourceChooser = function () {
         var str = 'Display:<label> column <select id="pie-by-column"><option>Choose column</option>',
             visibleCols = csOptions.getColumns(),
+            value,
             selected;
         
         for (var i in COLUMNS) {
-            if (csBase.colSum[i] && visibleCols[i]) {
-                if (this.pieFilter.by === 'column' && this.pieFilter.id === i) {
-                    selected = ' selected="selected"';
-                }
-                else {
-                    selected = '';
-                }
-                str += '<option value="' + i + '"' + selected + '>' + COLUMNS[i] + '</option>';
+            if (visibleCols[i]) {
+                selected = (this.pieFilter.by === 'column' && this.pieFilter.id === i) ? ' selected="selected"' : '';
+                value = csBase.colSum[i] ? i : -1;
+                str += '<option value="' + value + '"' + selected + '>' + COLUMNS[i] + '</option>';
             }
         }
         str += '</select></label><label>, or row <select id="pie-by-row"><option>Choose row</option>';
         for (i in table) {
-            if (table[i].total) {
-                if (this.pieFilter.by === 'row' && this.pieFilter.id === i) {
-                    selected = ' selected="selected"';
-                }
-                else {
-                    selected = '';
-                }
-                str += '<option value="' + i + '"' + selected + '>' + table[i][0] + '</option>';
-            }
+            selected = (this.pieFilter.by === 'row' && this.pieFilter.id === i) ? ' selected="selected"' : '';
+            value = table[i].total ? i : -1;
+            str += '<option value="' + value + '"' + selected + '>' + table[i][0] + '</option>';
         }
         str += '</select></label>';
         byId('pie-chooser').innerHTML = str;
@@ -153,10 +144,15 @@ function CSChart (container) {
     }
 
 
+    var startX,
+        endX,
+        skip;
+
+
     function mousemove (evt) {
         endX = evt.pageX;
         if (endX >= startX) {
-           endX += 15;
+            endX += 15;
         }
         overlay.style.top = rectSVG.top + 'px';
         overlay.style.bottom = window.innerHeight - rectSVG.bottom + 'px';
@@ -164,17 +160,12 @@ function CSChart (container) {
         overlay.style.right = window.innerWidth + window.scrollX - Math.max(startX, endX) + 'px';
     }
 
+
     function mousedown (evt) {
-        if (!svg_g.contains(evt.target)) {
+        if (!(svg_g === evt.target || svg_g.contains(evt.target)) || evt.target.tagName.toUpperCase() === 'TEXT') {
             skip = true;
             return;
         }
-        var tagName = evt.target.tagName.toUpperCase();
-        if (tagName === 'TEXT') {
-            skip = true;
-            return;
-        }
-        rectCon = container.getBoundingClientRect();
         rectSVG = svg_g.getBoundingClientRect();
         startX = evt.pageX + 1;
         overlay.style.top = rectSVG.top + 'px';
@@ -203,6 +194,9 @@ function CSChart (container) {
 
         START += (END - START) * (min - window.scrollX - rectSVG.left) / rectSVG.width * 0.7;
         END -= (END - START) * (rectSVG.right + window.scrollX - max) / rectSVG.width * 1.6;
+        var temp = Math.min(START, END);
+        END = Math.max(START, END);
+        START = temp;
 
         resetZoom.style.display = 'block';
         csBase.filter();
@@ -210,20 +204,14 @@ function CSChart (container) {
         container.onmousemove = null;
     }
 
-    var startX,
-        endX,
-        skip;
-
-
+    
     this.assignZoom = function () {
         container.addEventListener('mousedown', mousedown, true);
         container.addEventListener('mouseup', mouseup, true);
     };
 
-
-    this.unAsignZoom = function () {
-        overlay.style.display = 'none';
-        container.onmousemove = null;
+    
+    this.unassignZoom = function () {
         container.removeEventListener('mousedown', mousedown, true);
         container.removeEventListener('mouseup', mouseup, true);
     };
@@ -252,7 +240,8 @@ function CSChart (container) {
                             charts[type] = new google.visualization.PieChart(slide);
                             break;
                     }
-                }
+                } 
+                currentSlide = slide;
 
                 if (type !== 'pie') {
                     dataTable = dataTable || getDataTable();
@@ -264,9 +253,11 @@ function CSChart (container) {
                     that.pieSourceChooser();
                 }
 
+                that.unassignZoom();
                 if (PERIOD > 0 && type !== 'pie') {
                     svg_g = slide.getElementsByTagName('svg')[0].children[3];
                     svg_g.style.cursor = 'col-resize';
+                    that.assignZoom();
                 }
                 lastChart = charts[type];
             });
@@ -280,14 +271,10 @@ function CSChart (container) {
 
 
     this.resize = function () {
-        clearTimeout(resizeDebounce);
-
-        resizeDebounce = setTimeout(function () {
-            var type = csUI.type;
-            if (charts[type]) {
-                charts[type].draw(type === 'pie' ? pieDataTable : dataTable, options[type]);
-            }
-        }, 100);
+        var type = csUI.type;
+        if (charts[type]) {
+            charts[type].draw(type === 'pie' ? pieDataTable : dataTable, options[type]);
+        }
     };
 
 
@@ -823,7 +810,7 @@ function CSBase (visibleCols, visibleRows) {
             dateFormat = csOptions.config('dateformat'),
             timeFormat = csOptions.config('timeformat');
 
-        if ((END - START) / period > 10000) {
+        if ((END - START) / period > 2000) {
             alert('Too many data to display. Please set smaller period');
             throw 'too many rows to display';
         }
@@ -1662,7 +1649,19 @@ function CSUI (container) {
             nextSlideIndex = SLIDES.indexOf(nextType),
             nextSlide = slides[nextSlideIndex];
 
+        if (nextSlideIndex !== slideIndex) {
+            slide.style.opacity = 0;
+            nextSlide.style.zIndex = zIndex++;
+            nextSlide.style.opacity = 1;
+            byId('go-' + this.type).className = '';
+
+            csOptions.onFormDirty();
+        }
+
         if (csChart.originalZoom && slideIndex !== nextSlideIndex) {
+            slideIndex = nextSlideIndex;
+            this.type = nextType;
+       
             csChart.resetZoom();
             csBase.filter();
             return; // because filter will call goTo again
@@ -1678,55 +1677,13 @@ function CSUI (container) {
         }
         upToDate[nextSlideIndex] = true;
 
-        if (PERIOD > 0 && nextType !== 'pie' && nextType !== 'table') {
-            csChart.assignZoom();
-        }
-        else {
-            csChart.unAsignZoom();
-        }
-
-        if (nextType === 'table') {
-            byId('go-png').disabled = true;
-        }
-        else {
-            byId('go-png').disabled = false;
-        }
-
-        if (nextType === 'pie') {
-            byId('pie-chooser').style.display = 'block';
-        }
-        else {
-            byId('pie-chooser').style.display = 'none';
-        }
-
-        if (nextSlideIndex !== slideIndex) {
-            slide.style.opacity = 0;
-            var width = slide.offsetWidth;
-            slide.className = '';
-
-            if (nextSlideIndex > slideIndex) {
-                nextSlide.style.left = width + 'px';
-            }
-            else {
-                nextSlide.style.left = -width + 'px';
-            }
-
-            nextSlide.className = 'transition-slide';
-            nextSlide.style.zIndex = zIndex++;
-            nextSlide.clientHeight;
-            nextSlide.getBoundingClientRect();
-
-            nextSlide.style.opacity = 1;
-            nextSlide.style.left = '0';
-            byId('go-' + this.type).className = '';
-
-            slideIndex = nextSlideIndex;
-            this.type = nextType;
-            csOptions.onFormDirty();
-        }
-
+        byId('go-png').disabled = (nextType === 'table');
+        byId('pie-chooser').style.display = nextType === 'pie' ? 'block' : 'none';
         byId('go-' + nextType).className = 'active';
 
+        slideIndex = nextSlideIndex;
+        this.type = nextType;
+        
         rightPanelEqHeight();
     };
 
