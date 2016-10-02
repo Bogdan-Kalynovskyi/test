@@ -8,17 +8,23 @@ function CSChart (container) {
         currentSlide,
         overlay = byId('zooming-overlay'),
         resetZoom = byId('zoom-out'),
-        svg_g, rectSVG,
+        svg_r,
+        rectSVG,
+        startX,
+        endX,
+        skip,
         options = {
-            line: {},
-            bar: {
-                orientation: 'horizontal',
+            line: {
                 sliceVisibilityThreshold: 0
+            },
+            bar: {
+                sliceVisibilityThreshold: 0,
+                bar: {groupWidth: "90%"}
             },
             barstacked: {
                 isStacked: true,
-                orientation: 'horizontal',
-                sliceVisibilityThreshold: 0
+                sliceVisibilityThreshold: 0,
+                bar: {groupWidth: "90%"}
             },
             pie: {
                 is3D: true,
@@ -72,15 +78,17 @@ function CSChart (container) {
         for (var i in COLUMNS) {
             if (visibleCols[i]) {
                 selected = (this.pieFilter.by === 'column' && this.pieFilter.id === i) ? ' selected="selected"' : '';
-                value = csBase.colSum[i] ? i : -1;
+                value = csBase.colSum[csBase.colPos[i]] ? i : -1;
                 str += '<option value="' + value + '"' + selected + '>' + COLUMNS[i] + '</option>';
             }
         }
         str += '</select></label><label>, or row <select id="pie-by-row"><option>Choose row</option>';
         for (i in table) {
-            selected = (this.pieFilter.by === 'row' && this.pieFilter.id === i) ? ' selected="selected"' : '';
-            value = table[i].total ? i : -1;
-            str += '<option value="' + value + '"' + selected + '>' + table[i][0] + '</option>';
+            if (!PERIOD || table[i].total) {
+                selected = (this.pieFilter.by === 'row' && this.pieFilter.id === i) ? ' selected="selected"' : '';
+                value = table[i].total ? i : -1;
+                str += '<option value="' + value + '"' + selected + '>' + table[i][0] + '</option>';
+            }
         }
         str += '</select></label>';
         byId('pie-chooser').innerHTML = str;
@@ -120,15 +128,15 @@ function CSChart (container) {
         var id = +that.pieFilter.id,
             data = [];
 
-        if (that.pieFilter.id === -1) {
-            data = ['No calls', 1];
+        if (that.pieFilter.id === '-1') {
+            data = [['', ''], ['No calls', 1]];
         }
         else {
             if (that.pieFilter.by === 'column') {
                 data.push([PERIOD ? 'Time' : 'Destination', COLUMNS[id]]);
-                // in Destination mode, don't show "All calls" in chart 
+                // in Destination mode, don't show "All calls" in chart
                 for (var i = (PERIOD ? 0 : 1), n = table.length; i < n; i++) {
-                    data.push([table[i][0], table[i][id + 1]]);
+                    data.push([table[i][0], table[i][csBase.colPos[id] + 1]]);
                 }
             }
             else {
@@ -150,16 +158,8 @@ function CSChart (container) {
     }
 
 
-    var startX,
-        endX,
-        skip;
-
-
     function mousemove (evt) {
         endX = evt.pageX;
-        if (endX >= startX) {
-            endX += 15;
-        }
         overlay.style.top = rectSVG.top + 'px';
         overlay.style.bottom = window.innerHeight - rectSVG.bottom + 'px';
         overlay.style.left = Math.min(startX, endX) - window.scrollX + 'px';
@@ -168,11 +168,11 @@ function CSChart (container) {
 
 
     function mousedown (evt) {
-        if (!(svg_g === evt.target || svg_g.contains(evt.target)) || evt.target.tagName.toUpperCase() === 'TEXT') {
+        if (!(svg_r === evt.target || svg_r.contains(evt.target)) || evt.target.tagName.toUpperCase() === 'TEXT') {
             skip = true;
             return;
         }
-        rectSVG = svg_g.getBoundingClientRect();
+        rectSVG = svg_r.getBoundingClientRect();
         startX = evt.pageX + 1;
         overlay.style.top = rectSVG.top + 'px';
         overlay.style.bottom = window.innerHeight - rectSVG.bottom + 'px';
@@ -191,6 +191,10 @@ function CSChart (container) {
         var max = Math.max(startX, endX),
             min = Math.min(startX, endX);
 
+        if (max - min < 4) {
+            return;
+        }
+
         if (!that.originalZoom) {
             that.originalZoom = {
                 start: START,
@@ -198,11 +202,8 @@ function CSChart (container) {
             };
         }
 
-        START += (END - START) * (min - window.scrollX - rectSVG.left) / rectSVG.width * 0.7;
-        END -= (END - START) * (rectSVG.right + window.scrollX - max) / rectSVG.width * 1.6;
-        var temp = Math.min(START, END);
-        END = Math.max(START, END);
-        START = temp;
+        START += (END - START) * (min - window.scrollX - rectSVG.left - 16) / rectSVG.width;
+        END -= (END - START) * (rectSVG.right + window.scrollX - max) / rectSVG.width;
 
         resetZoom.style.display = 'block';
         csBase.filter();
@@ -237,10 +238,10 @@ function CSChart (container) {
                             charts[type] = new google.visualization.LineChart(slide);
                             break;
                         case 'bar':
-                            charts[type] = new google.visualization.BarChart(slide);
+                            charts[type] = new google.visualization.ColumnChart(slide);
                             break;
                         case 'barstacked':
-                            charts[type] = new google.visualization.BarChart(slide);
+                            charts[type] = new google.visualization.ColumnChart(slide);
                             break;
                         case 'pie':
                             charts[type] = new google.visualization.PieChart(slide);
@@ -261,8 +262,8 @@ function CSChart (container) {
 
                 that.unassignZoom();
                 if (PERIOD > 0 && type !== 'pie') {
-                    svg_g = slide.getElementsByTagName('svg')[0].children[3];
-                    svg_g.style.cursor = 'col-resize';
+                    svg_r = slide.getElementsByTagName('svg')[0].children[3].children[0];
+                    svg_r.style.cursor = 'col-resize';
                     that.assignZoom();
                 }
                 lastChart = charts[type];
@@ -280,6 +281,11 @@ function CSChart (container) {
         var type = csUI.type;
         if (charts[type]) {
             charts[type].draw(type === 'pie' ? pieDataTable : dataTable, options[type]);
+
+            if (PERIOD > 0 && type !== 'pie') {
+                svg_r = currentSlide.getElementsByTagName('svg')[0].children[3].children[0];
+                svg_r.style.cursor = 'col-resize';
+            }
         }
     };
 
@@ -602,19 +608,33 @@ function CSBase (visibleCols, visibleRows) {
     }
 
 
-    function addDestinationRow (display, row) {
-        if (visibleRows[display]) {
-            var pos = rowPos[display];
-            table[pos].total++;
+    function addMultiRow (row, multiRow) {
+        for (var i = 1, n = row.length; i < n; i++) {
+            multiRow[i] += row[i];
+        }
+        multiRow.total += row.total;
+    }
 
-            for (var i = 1, n = row.length; i < n; i++) {
-                table[pos][i] += row[i];
+
+    function addDestinationRow (display, row, multiRow) {
+        if (visibleRows[display]) {
+            if (multiRow) {
+                addMultiRow(row, multiRow);
+                multiRow.total++;
+            }
+            else {
+                var tblRow = table[rowPos[display]];
+                
+                tblRow.total++;
+                for (var i = 1, n = row.length; i < n; i++) {
+                    tblRow[i] += row[i];
+                }
             }
         }
     }
 
 
-    function decode (call, row, destination) {
+    function decode (call, multiRow) {
         var stype = call.getAttribute('stype'),
             dtype = call.getAttribute('dtype'),
             snumber = call.getAttribute('snumber'),
@@ -624,7 +644,8 @@ function CSBase (visibleCols, visibleRows) {
             local = 'local',
             isInbound,
             isInternal,
-            isOutbound;
+            isOutbound,
+            row = newRow();
 
         // total calls
         row[1]++;
@@ -676,21 +697,19 @@ function CSBase (visibleCols, visibleRows) {
             row[12]++;
         }
 
-        if (destination) {
-            //total
-            addDestinationRow(0, row);
-            // external callers
-            if (stype === external || stype === local) {
-                addDestinationRow(1, row);
-            }
-            // internal callers
-            if (stype !== external && stype !== local && dtype != external && dtype !== local) {
-                addDestinationRow(2, row);
-            }
-            // external destinations
-            if (dtype === external || dtype === local) {
-                addDestinationRow(3, row);
-            }
+        //total
+        addDestinationRow(0, row, multiRow);
+        // external callers
+        if (stype === external || stype === local) {
+            addDestinationRow(1, row, multiRow);
+        }
+        // internal callers
+        if (stype !== external && stype !== local && dtype != external && dtype !== local) {
+            addDestinationRow(2, row, multiRow);
+        }
+        // external destinations
+        if (dtype === external || dtype === local) {
+            addDestinationRow(3, row, multiRow);
         }
     }
 
@@ -761,16 +780,7 @@ function CSBase (visibleCols, visibleRows) {
         }
 
         if (startIndex && endIndex) {
-            var slice = calls.slice(+startIndex, +endIndex + 1);
-            if (PERIOD) {
-                var arr = ['queues', 'agents', 'phones'];
-                for (i = 0; i < arr.length; i++) {
-                    if (csOptions.get(arr[i]) !== 'all') {
-                        slice = byDestination(slice, arr[i], true);
-                    }
-                }
-            }
-            return slice;
+            return calls.slice(+startIndex, +endIndex + 1);
         }
         else {
             return [];
@@ -788,6 +798,11 @@ function CSBase (visibleCols, visibleRows) {
             }
         }
     }
+
+
+    function mapCalls () {
+
+    }
     
     
     function byDestType (filteredCalls) {
@@ -799,8 +814,7 @@ function CSBase (visibleCols, visibleRows) {
             }
         }
         for (var j in filteredCalls) {
-            row = newRow();
-            decode(filteredCalls[j], row, true);
+            decode(filteredCalls[j]);
         }
         reduceTable();
     }
@@ -837,9 +851,9 @@ function CSBase (visibleCols, visibleRows) {
             }
 
             for (var i in calls) {
-                decode(calls[i], row);
+                decode(calls[i], row); 
             }
-            row.total = calls.length;
+            byDestination(calls, row);
             table.push(row);
 
             time = endTime;
@@ -878,7 +892,7 @@ function CSBase (visibleCols, visibleRows) {
             for (i in calls) {
                 decode(calls[i], row);
             }
-            row.total += calls.length;
+            byDestination(calls, row);
 
             time = endTime;
         }
@@ -921,8 +935,8 @@ function CSBase (visibleCols, visibleRows) {
 
             for (i in calls) {
                 decode(calls[i], row);
-            }
-            row.total += calls.length;
+            } 
+            byDestination(calls, row);
 
             time = endTime;
         }
@@ -931,51 +945,48 @@ function CSBase (visibleCols, visibleRows) {
     }
 
 
-    function byDestination (filteredCalls, subject, doFilter) {
-        var ids = [],
-            arr,
-            settings = csOptions.get(subject),
-            i, j, n;
+    function byDestination (filteredCalls, multiRow) {
+        var destinations = ['queues', 'agents', 'phones'];
+        for (var dest in destinations) {
+            
+            var subject = destinations[dest],
+                ids = [],
+                arr,
+                settings = csOptions.get(subject),
+                i, j, n;
 
-        if (doFilter) {
-            var result = [];
-        }
-
-        switch (subject) {
-            case 'queues':
-                arr = queues;
-                break;
-            case 'agents':
-                arr = agents;
-                break;
-            case 'phones':
-                arr = phones;
-                break;
-        }
-
-        if (settings === 'use_include') {
-            var options = byId(subject + 'include_selected').options;
-            for (i = 0, n = options.length; i < n; i++) {
-                ids.push(options[i].value);
+            switch (subject) {
+                case 'queues':
+                    arr = queues;
+                    break;
+                case 'agents':
+                    arr = agents;
+                    break;
+                case 'phones':
+                    arr = phones;
+                    break;
             }
-        }
-        else {
-            for (i in arr) {
-                if (settings !== 'use_control_panel' || arr[i].getAttribute('panel') === '1') {
-                    ids.push(i);
+
+            if (settings === 'use_include') {
+                var options = byId(subject + 'include_selected').options;
+                for (i = 0, n = options.length; i < n; i++) {
+                    ids.push(options[i].value);
                 }
             }
-        }
+            else {
+                for (i in arr) {
+                    if (settings !== 'use_control_panel' || arr[i].getAttribute('panel') === '1') {
+                        ids.push(i);
+                    }
+                }
+            }
 
-        for (j in ids) {
-            var call,
-                el = arr[ids[j]],
-                name = el.getAttribute('name'),
-                match,
-                totalsCount = 0;
-
-            if (!doFilter) {
-                var row = newRow();
+            for (j in ids) {
+                var call,
+                    el = arr[ids[j]],
+                    name = el.getAttribute('name'),
+                    match,
+                    row = newRow();
 
                 switch (subject) {
                     case 'queues':
@@ -988,45 +999,36 @@ function CSBase (visibleCols, visibleRows) {
                         row[0] = 'Ext: ' + name;
                         break;
                 }
-            }
 
-            for (i in filteredCalls) {
-                call = filteredCalls[i];
+                for (i in filteredCalls) {
+                    call = filteredCalls[i];
 
-                switch (subject) {
-                    case 'queues':
-                        match = call.getAttribute('dtype') === 'queue' && call.getAttribute('dnumber') === ids[j];
-                        break;
+                    switch (subject) {
+                        case 'queues':
+                            match = call.getAttribute('dtype') === 'queue' && call.getAttribute('dnumber') === ids[j];
+                            break;
 
-                    case 'agents':
-                        match = call.getAttribute('stype') === 'queue' && call.getAttribute('dnumber') === el.getAttribute('dnumber') && call.getAttribute('dtype') === el.getAttribute('dtype');
-                        break;
+                        case 'agents':
+                            match = call.getAttribute('stype') === 'queue' && call.getAttribute('dnumber') === el.getAttribute('dnumber') && call.getAttribute('dtype') === el.getAttribute('dtype');
+                            break;
 
-                    case 'phones':
-                        match = (call.getAttribute('stype') === 'phone' && call.getAttribute('snumber') === name) || (call.getAttribute('dtype') === 'phone' && call.getAttribute('dnumber') === name);
-                        break;
-                }
-
-                if (match) {
-                    if (doFilter) {
-                        if (result.indexOf(call) === -1) {
-                            result.push(call);
-                        }
+                        case 'phones':
+                            match = (call.getAttribute('stype') === 'phone' && call.getAttribute('snumber') === name) || (call.getAttribute('dtype') === 'phone' && call.getAttribute('dnumber') === name);
+                            break;
                     }
-                    else {
+
+                    if (match) {
                         decode(call, row);
-                        totalsCount++;
                     }
                 }
-            }
 
-            if (!doFilter) {
-                row.total = totalsCount;
-                table.push(reduceRow(row));
+                if (multiRow) {
+                    addMultiRow(row, multiRow);
+                }
+                else {
+                    table.push(reduceRow(row));
+                }
             }
-        }
-        if (doFilter) {
-            return result;
         }
     }
 
@@ -1039,10 +1041,7 @@ function CSBase (visibleCols, visibleRows) {
         if (PERIOD === 0) {
             var filteredCalls = that.filterByTime(START, END);
             byDestType(filteredCalls);
-
-            byDestination(filteredCalls, 'queues');
-            byDestination(filteredCalls, 'agents');
-            byDestination(filteredCalls, 'phones');
+            byDestination(filteredCalls);
         }
         else if (PERIOD > 0) {
             byTimePeriods(PERIOD)
@@ -1126,6 +1125,7 @@ function CSOptions () {
 
         byId('period').addEventListener('change', function () {
             PERIOD = +this.value;
+            byId('heading_rows').innerHTML = PERIOD ? 'Sum of destinations:' : 'Display destinations:';
             csBase.filter();
             preventScroll();
         });
@@ -1207,7 +1207,7 @@ function CSOptions () {
 
         function markAllOptions (mark) {
             var arr = ['queues', 'agents', 'phones'];
-            for (var i = 0; i < arr.length; i++) {
+            for (var i in arr) {
                 if (csOptions.get(arr[i]) === 'use_include') {
                     var options = byId(arr[i] + 'include_selected').options;
                     for (var j = options.length - 1; j >= 0; j--) {
@@ -1331,7 +1331,7 @@ function CSPolling (onResponse) {
 
     function requestIfAllowed () {
         if (!document.hidden) {
-            var request = '?_username=' + username + ';_password=' + password + ';start=' + requestStart + ';end=' + requestEnd;
+            var request = '?_username=' + username + ';_password=' + password + ';start=' + requestStart + ';end=' + requestEnd + '?recursive=';
             ajaxGet(request, response, function () {    // on error, poll again
                 timeoutHandle = setTimeout(requestIfAllowed, pollDelay);
             });

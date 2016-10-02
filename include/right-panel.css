@@ -161,7 +161,7 @@ text {
 	left: 50%;
 	margin-left: -50px;
 	height: 27px;
-    background: rgb(0, 114, 192);
+	background: linear-gradient(to bottom, rgb(0, 109, 177) 0%, rgb(0, 116, 195) 100%);
 	z-index: 10;
 	box-shadow: 0 0 4px rgba(0,0,0,0.2);
 }
