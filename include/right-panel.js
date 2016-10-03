@@ -12,9 +12,9 @@
 		if (window.csUI) {
 			content.style.height = '';
 			panel.style.height = '';
-			var contentHeight = content.children[SLIDES.indexOf(csUI.type)].scrollHeight,
+			var contentHeight = content.children[TYPES.indexOf(csUI.type)].scrollHeight,
 				navbarHeight = navbar.offsetHeight,
-				maxHeight = Math.max(contentHeight, navbarHeight, isExpanded ? panel.scrollHeight : 0);
+				maxHeight = Math.max(contentHeight, navbarHeight, isExpanded ? (panel.scrollHeight - 10) : 0);
 
 			content.style.height = maxHeight + 'px';
 		}

@@ -4,15 +4,12 @@ function CSChart (container) {
         dataTable,
         pieDataTable,
         charts = {},
-        lastChart,
-        currentSlide,
         overlay = byId('zooming-overlay'),
         resetZoom = byId('zoom-out'),
-        svg_r,
         rectSVG,
         startX,
         endX,
-        skip,
+        goodEvt,
         options = {
             line: {
                 sliceVisibilityThreshold: 0
@@ -32,7 +29,7 @@ function CSChart (container) {
                 sliceVisibilityThreshold: 0
             }
         },
-        pieFilterSaved = byId('piesource');
+        pieFilterSaved = document.getElementsByName('piesource')[0];
 
     if (pieFilterSaved) {
         pieFilterSaved = pieFilterSaved.value.split('_');
@@ -51,7 +48,7 @@ function CSChart (container) {
 
     function centerPieSource () {
         if (csUI.type === 'pie') {
-            var g = currentSlide.querySelectorAll('svg > g'),
+            var g = SLIDES[csUI.type].querySelectorAll('svg > g'),
                 left = Infinity,
                 right = 0;
 
@@ -66,11 +63,15 @@ function CSChart (container) {
         }
     }
 
+
     onWindowResize.throttle(centerPieSource);
+
+    container.addEventListener('mousedown', mousedown, true);
+    container.addEventListener('mouseup', mouseup, true);
 
 
     this.pieSourceChooser = function () {
-        var str = 'Display:<label> column <select id="pie-by-column"><option>Choose column</option>',
+        var str = 'Display:<label> column <select id="pie-by-column"><option value="">Choose column</option>',
             visibleCols = csOptions.getColumns(),
             value,
             selected;
@@ -78,16 +79,14 @@ function CSChart (container) {
         for (var i in COLUMNS) {
             if (visibleCols[i]) {
                 selected = (this.pieFilter.by === 'column' && this.pieFilter.id === i) ? ' selected="selected"' : '';
-                value = csBase.colSum[csBase.colPos[i]] ? i : -1;
-                str += '<option value="' + value + '"' + selected + '>' + COLUMNS[i] + '</option>';
+                str += '<option value="' + i + '"' + selected + '>' + COLUMNS[i] + '</option>';
             }
         }
-        str += '</select></label><label>, or row <select id="pie-by-row"><option>Choose row</option>';
+        str += '</select></label><label>&#8198;, or row <select id="pie-by-row"><option value="">Choose row</option>';
         for (i in table) {
             if (!PERIOD || table[i].total) {
                 selected = (this.pieFilter.by === 'row' && this.pieFilter.id === i) ? ' selected="selected"' : '';
-                value = table[i].total ? i : -1;
-                str += '<option value="' + value + '"' + selected + '>' + table[i][0] + '</option>';
+                str += '<option value="' + i + '"' + selected + '>' + table[i][0] + '</option>';
             }
         }
         str += '</select></label>';
@@ -102,9 +101,9 @@ function CSChart (container) {
                 id: this.value
             };
             if (that.pieFilter.id) {
+                byRow.selectedIndex = 0;
                 pieDataTable = getPieDataTable();
                 charts.pie.draw(pieDataTable, options[csUI.type]);
-                byRow.selectedIndex = 0;
             }
         };
         byRow.onchange = function () {
@@ -113,9 +112,9 @@ function CSChart (container) {
                 id: this.value
             };
             if (that.pieFilter.id) {
+                byCol.selectedIndex = 0;
                 pieDataTable = getPieDataTable();
                 charts.pie.draw(pieDataTable, options[csUI.type]);
-                byCol.selectedIndex = 0;
             }
         };
         byCol.selectedIndex = 1;
@@ -124,26 +123,36 @@ function CSChart (container) {
 
 
     function getPieDataTable () {
-        table = table || csBase.getTable();
-        var id = +that.pieFilter.id,
-            data = [];
-
-        if (that.pieFilter.id === '-1') {
-            data = [['', ''], ['No calls', 1]];
+        that.pieFilter.id = csOptions.get('pie-by-column');
+        that.pieFilter.by = 'column';
+        if (!that.pieFilter.id) {
+            that.pieFilter.id = csOptions.get('pie-by-row');
+            that.pieFilter.by = 'row';
         }
-        else {
-            if (that.pieFilter.by === 'column') {
-                data.push([PERIOD ? 'Time' : 'Destination', COLUMNS[id]]);
+        var id = +that.pieFilter.id,
+            data = [['', '']];
+
+        if (that.pieFilter.by === 'column') {
+            var pos = csBase.colPos[id];
+            if (csBase.colSum[pos]) {
                 // in Destination mode, don't show "All calls" in chart
                 for (var i = (PERIOD ? 0 : 1), n = table.length; i < n; i++) {
-                    data.push([table[i][0], table[i][csBase.colPos[id] + 1]]);
+                    data.push([table[i][0], table[i][pos + 1]]);
                 }
             }
             else {
+                data.push(['No calls', 1]);
+            }
+        }
+        else {
+            if (table[id].total) {
                 var tableHeading = getTableHeading();
-                for (i in tableHeading) {
+                for (i = 1; i < tableHeading.length; i++) {
                     data.push([tableHeading[i], table[id][i]]);
                 }
+            }
+            else {
+                data.push(['No calls', 1]);
             }
         }
 
@@ -152,7 +161,6 @@ function CSChart (container) {
 
 
     function getDataTable () {
-        table = table || csBase.getTable();
         var data = [getTableHeading()].concat(table);
         return google.visualization.arrayToDataTable(data);
     }
@@ -168,60 +176,56 @@ function CSChart (container) {
 
 
     function mousedown (evt) {
-        if (!(svg_r === evt.target || svg_r.contains(evt.target)) || evt.target.tagName.toUpperCase() === 'TEXT') {
-            skip = true;
-            return;
+        var svgr = charts[csUI.type] && charts[csUI.type].svgr;
+        goodEvt = svgr && (svgr === evt.target || svgr.contains(evt.target) && evt.target.tagName.toUpperCase() !== 'TEXT');
+        
+        if (goodEvt) {
+            rectSVG = svgr.getBoundingClientRect();
+            startX = evt.pageX;
+            overlay.style.top = rectSVG.top + 'px';
+            overlay.style.bottom = window.innerHeight - rectSVG.bottom + 'px';
+            overlay.style.left = startX - window.scrollX + 'px';
+            overlay.style.right = window.innerWidth + window.scrollX - startX + 'px';
+            overlay.style.display = 'block';
+            container.onmousemove = mousemove;
         }
-        rectSVG = svg_r.getBoundingClientRect();
-        startX = evt.pageX + 1;
-        overlay.style.top = rectSVG.top + 'px';
-        overlay.style.bottom = window.innerHeight - rectSVG.bottom + 'px';
-        overlay.style.left = startX - window.scrollX + 'px';
-        overlay.style.right = window.innerWidth + window.scrollX - startX + 'px';
-        overlay.style.display = 'block';
-        container.onmousemove = mousemove;
     }
 
     function mouseup () {
-        if (skip) {
-            skip = false;
-            return;
+        if (goodEvt) {
+            overlay.style.display = 'none';
+            var max = Math.max(startX, endX),
+                min = Math.min(startX, endX);
+
+            if (max - min < 6) {
+                return;
+            }
+
+            if (!that.originalZoom) {
+                that.originalZoom = {
+                    start: START,
+                    end: END
+                };
+            }
+
+            START += (END - START) * (min - window.scrollX - rectSVG.left - 33) / rectSVG.width;
+            END -= (END - START) * (rectSVG.right + window.scrollX - max) / rectSVG.width;
+
+            resetZoom.style.display = 'block';
+            csBase.filter();
+
+            container.onmousemove = null;
         }
-        overlay.style.display = 'none';
-        var max = Math.max(startX, endX),
-            min = Math.min(startX, endX);
-
-        if (max - min < 4) {
-            return;
-        }
-
-        if (!that.originalZoom) {
-            that.originalZoom = {
-                start: START,
-                end: END
-            };
-        }
-
-        START += (END - START) * (min - window.scrollX - rectSVG.left - 16) / rectSVG.width;
-        END -= (END - START) * (rectSVG.right + window.scrollX - max) / rectSVG.width;
-
-        resetZoom.style.display = 'block';
-        csBase.filter();
-
-        container.onmousemove = null;
     }
 
-    
-    this.assignZoom = function () {
-        container.addEventListener('mousedown', mousedown, true);
-        container.addEventListener('mouseup', mouseup, true);
-    };
 
-    
-    this.unassignZoom = function () {
-        container.removeEventListener('mousedown', mousedown, true);
-        container.removeEventListener('mouseup', mouseup, true);
-    };
+    function assignZoom (type, slide) {
+        if (PERIOD > 0 && type !== 'pie') {
+            var svgr = slide.getElementsByTagName('svg')[0].children[3].children[0];
+            svgr.style.cursor = 'col-resize';
+            charts[type].svgr = svgr;
+        }
+    }
     
 
     this.render = function (type, slide) {
@@ -238,8 +242,6 @@ function CSChart (container) {
                             charts[type] = new google.visualization.LineChart(slide);
                             break;
                         case 'bar':
-                            charts[type] = new google.visualization.ColumnChart(slide);
-                            break;
                         case 'barstacked':
                             charts[type] = new google.visualization.ColumnChart(slide);
                             break;
@@ -248,25 +250,18 @@ function CSChart (container) {
                             break;
                     }
                 } 
-                currentSlide = slide;
+                table = csBase.getTable();
 
                 if (type !== 'pie') {
                     dataTable = dataTable || getDataTable();
                     charts[type].draw(dataTable, options[type]);
+                    assignZoom(type, slide);
                 }
                 else {
+                    that.pieSourceChooser();
                     pieDataTable = pieDataTable || getPieDataTable();
                     charts[type].draw(pieDataTable, options[type]);
-                    that.pieSourceChooser();
                 }
-
-                that.unassignZoom();
-                if (PERIOD > 0 && type !== 'pie') {
-                    svg_r = slide.getElementsByTagName('svg')[0].children[3].children[0];
-                    svg_r.style.cursor = 'col-resize';
-                    that.assignZoom();
-                }
-                lastChart = charts[type];
             });
         }
     };
@@ -281,20 +276,14 @@ function CSChart (container) {
         var type = csUI.type;
         if (charts[type]) {
             charts[type].draw(type === 'pie' ? pieDataTable : dataTable, options[type]);
-
-            if (PERIOD > 0 && type !== 'pie') {
-                svg_r = currentSlide.getElementsByTagName('svg')[0].children[3].children[0];
-                svg_r.style.cursor = 'col-resize';
-            }
+            assignZoom(type, SLIDES[type]);
         }
     };
 
 
     this.downloadPNG = function () {
-        if (lastChart) {
-            var fileName = (csOptions.get('name') || 'noname') + '.png';
-            downloadUrl(lastChart.getImageURI(), fileName);
-        }
+        var fileName = (csOptions.get('name') || 'noname') + '.png';
+        downloadUrl(charts[csUI.type].getImageURI(), fileName);
     };
 
 
@@ -317,7 +306,8 @@ var START,
         0,1,2,3,4,5,6,7,8,9,10,11
     ],
 
-    SLIDES = ['table', 'line', 'bar', 'barstacked', 'pie'],
+    TYPES = ['table', 'line', 'bar', 'barstacked', 'pie'],
+    SLIDES = {},
 
     DESTINATIONS = [
         'All calls',
@@ -830,8 +820,8 @@ function CSBase (visibleCols, visibleRows) {
             dateFormat = csOptions.config('dateformat'),
             timeFormat = csOptions.config('timeformat');
 
-        if ((END - START) / period > 2000) {
-            alert('Too many data to display. Please set smaller period');
+        if ((END - START) / period > 1000) {
+            alert('Too many rows to display. Please set bigger time period');
             throw 'too many rows to display';
         }
 
@@ -1178,7 +1168,7 @@ function CSOptions () {
     
     var form = $('form').last(),
         inputs = form.find('select, input'),
-        submitBtn = form.find('input[type="submit"]')[0],
+        submitBtn = form.find('input[type="submit"]').css('margin-top', '10px')[0],
         settingsForm = $('[name="settings"]'),
         dirty,
         appended;
@@ -1331,7 +1321,7 @@ function CSPolling (onResponse) {
 
     function requestIfAllowed () {
         if (!document.hidden) {
-            var request = '?_username=' + username + ';_password=' + password + ';start=' + requestStart + ';end=' + requestEnd + '?recursive=';
+            var request = '?_username=' + username + ';_password=' + password + ';start=' + requestStart + ';end=' + requestEnd + '?recursive=1';
             ajaxGet(request, response, function () {    // on error, poll again
                 timeoutHandle = setTimeout(requestIfAllowed, pollDelay);
             });
@@ -1576,7 +1566,8 @@ function CSTable () {
         tr.addEventListener('dragstart', function (evt) {
             startTh = evt.target;
             startId = parseInt(startTh.id);
-            startTh.style.opacity = 0.6;
+            startTh.style.opacity = 0.55;
+            startTh.style.outline = '1px dashed black';
             evt.dataTransfer.effectAllowed = 'move';
             evt.dataTransfer.dropEffect = 'move';
         });
@@ -1585,8 +1576,9 @@ function CSTable () {
             var target = evt.target;
 
             for (var i = 0, n = ths.length; i < n; i++) {
-                if (ths[i] !== startTh && ths[i] !== target) {
-                    ths[i].style.opacity = '';
+                var el = ths[i];
+                if (el !== startTh && el !== target) {
+                    el.style.opacity = '';
                 }
             }
 
@@ -1596,7 +1588,7 @@ function CSTable () {
             }
 
             if (startTh !== target) {
-                target.style.opacity = 0.8;
+                target.style.opacity = 0.77;
             }
             else {
                 return false;
@@ -1606,6 +1598,7 @@ function CSTable () {
         tr.addEventListener('dragend', function () {
             for (var i = 0, n = ths.length; i < n; i++) {
                 ths[i].style.opacity = '';
+                startTh.style.outline = '';
             }
         });
 
@@ -1621,7 +1614,6 @@ function CSTable () {
                 REARRANGE[id1] = REARRANGE[id2];
                 REARRANGE[id2] = temp;
                 csBase.calculateColPos();
-                that.createHeader();
                 csBase.filter();
             }
         });
@@ -1633,13 +1625,13 @@ function CSUI (container) {
 
     var that = this,
         upToDate = [],
-        zIndex = 1,
-        slideIndex = SLIDES.indexOf(this.type);
+        zIndex = 2,
+        slideIndex = TYPES.indexOf(this.type);
 
 
     var str = '';
-    for (var i in SLIDES) {
-        str += '<slide ondragstart="return false"></slide>';
+    for (var i in TYPES) {
+        str += '<slide' + (i !== '0' ? ' ondragstart="return false"' : ' style="z-index: 1"') + '></slide>';
     }
 
     container.innerHTML = str +
@@ -1652,9 +1644,11 @@ function CSUI (container) {
 
     this.goTo = function (nextType) {
         var slide = slides[slideIndex],
-            nextSlideIndex = SLIDES.indexOf(nextType),
+            nextSlideIndex = TYPES.indexOf(nextType),
             nextSlide = slides[nextSlideIndex];
 
+        SLIDES[nextType] = nextSlide;
+        
         if (nextSlideIndex !== slideIndex) {
             slide.style.opacity = 0;
             nextSlide.style.zIndex = zIndex++;
@@ -1699,17 +1693,9 @@ function CSUI (container) {
         csChart.invalidate();
         this.goTo(this.type);
     };
-
-    
-    onWindowResize.throttle(function () {
-        if (that.type === 'table') {
-            csTable.resizeHeader();
-        }
-        else {
-            csChart.resize();
-        }
-    });
 }
+
+
 var onWindowResize = {
     hndlr: 0,
     list: [],
@@ -1727,6 +1713,15 @@ window.addEventListener('resize', function () {
             }
             o.hndlr = 0;
         }, 100);
+    }
+});
+
+onWindowResize.throttle(function () {
+    if (csUI.type === 'table') {
+        csTable.resizeHeader();
+    }
+    else {
+        csChart.resize();
     }
 });
 
