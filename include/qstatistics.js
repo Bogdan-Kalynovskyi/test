@@ -219,10 +219,10 @@ function QChart (container) {
         }
         else if (goodEvt) {
             overlay.style.display = 'none';
-            var max = Math.max(startX, endX),
-                min = Math.min(startX, endX);
+            var maxX = Math.max(startX, endX),
+                minX = Math.min(startX, endX);
 
-            if (max - min < 6) {
+            if (maxX - minX < 6) {
                 return;
             }
 
@@ -231,13 +231,16 @@ function QChart (container) {
                     start: START,
                     end: END,
                     startOpt: qOptions.get('startday'), 
-                    endOpt: qOptions.get('endday') 
+                    endOpt: qOptions.get('endday'),
+                    period: PERIOD
                 };
             }
-            var now = Date.now() / 1000;
+            var leftEdge = START,
+                rightEdge = Math.min(Date.now() / 1000, END);
 
-            START += (now - START) * (min - window.scrollX - rectSVG.left) / rectSVG.width;
-            END = now - (now - START) * (rectSVG.right + window.scrollX - max + 32) / rectSVG.width;
+            START += (rightEdge - leftEdge) * (minX - window.scrollX - rectSVG.left) / rectSVG.width;
+            END = rightEdge - (rightEdge - leftEdge) * (rectSVG.right + window.scrollX - maxX) / rectSVG.width;
+            PERIOD *= Math.sqrt((maxX - minX) / rectSVG.width);       // don't scale so much
 
             resetZoom.style.display = 'block';
             qOptions.showNewTime();
@@ -324,6 +327,7 @@ function QChart (container) {
         var orig = this.originalZoom;
         START = orig.start;
         END = orig.end;
+        PERIOD = orig.period;
         qOptions.showNewTime();
         byId('startday').value = orig.startOpt;
         byId('endday').value = orig.endOpt;
