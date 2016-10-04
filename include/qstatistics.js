@@ -150,8 +150,10 @@ function QChart (container) {
         if (that.pieFilter.by === 'column') {
             var pos = qBase.colPos.indexOf(id);
             if (qBase.colSum[pos]) {
-                // in Destination mode, don't show "All calls" in chart
-                for (var i = ((!PERIOD && qOptions.get('allcalls') === '1') ? 1 : 0), n = table.length; i < n; i++) { 
+                var i = (PERIOD || qOptions.get('allcalls') === '0') ? 0 : 1,       // in Destination mode, don't show "All calls" in chart
+                    n = table.length - (PERIOD ? 1 : 0);                            // in Time mode, don't show "Total" row
+                
+                for (; i < n; i++) { 
                     var row = table[i];
                     if (row.total) {
                         data.push([row[0], row[pos + 1]]);
@@ -596,10 +598,20 @@ function QBase (visibleCols, visibleRows) {
 
 
     this.getTable = function () {
+        var result;
         if (!table.length) {
-            table = new Array(this.colPos.length).fill(0).unshift('');
+            result = new Array(this.colPos.length).fill(0).unshift('');
         }
-        return table;
+        if (PERIOD) {
+            var rowsum = ['Total'].concat(this.colSum);
+            rowsum.total = total;
+            result = table.concat([rowsum]);
+        }
+        else {
+            result = table;
+        }
+        
+        return result;
     };
 
 
