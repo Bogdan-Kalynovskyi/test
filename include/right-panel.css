@@ -57,7 +57,7 @@ input[type="submit"] {
 
 button:active,
 input[type="submit"]:active {
-	transform: translate3d(1px, 1px, 0);
+	transform: translate3d(0, 1px, 0);
 }
 
 #close-arrow {
@@ -128,7 +128,7 @@ th.desc:after {
 }
 
 .results tr:hover {
-	outline: 1px solid rgba(255, 180, 1, 0.6);
+	outline: 1px solid rgba(255, 165, 0, 0.7);
 }
 
 .results tr:nth-child(2n) {
@@ -148,13 +148,20 @@ text {
 	cursor: text;
 }
 
-[aria-label="A chart."] {
-	-webkit-user-select: none;
-	-moz-user-select: none;
-	-ms-user-select: none;
-	user-select: none;
-	cursor: default;
+slide:nth-child(2) > svg,
+slide:nth-child(3) > svg,
+slide:nth-child(4) > svg {
+	position: relative;
+	left: -40px;
 }
+
+/*[aria-label="A chart."] {*/
+	/*-webkit-user-select: none;*/
+	/*-moz-user-select: none;*/
+	/*-ms-user-select: none;*/
+	/*user-select: none;*/
+	/*cursor: default;*/
+/*}*/
 
 #zooming-overlay {
     display: none;
@@ -172,7 +179,7 @@ text {
 	position: absolute;
 	top: 7px;
 	left: 50%;
-	margin-left: -50px;
+	margin-left: -80px;
 	height: 27px;
 	background: linear-gradient(to bottom, rgb(0, 101, 163) 0%, rgb(0, 126, 212) 100%);
 	box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.33);
@@ -225,7 +232,7 @@ text {
 }
 
 #right-menu button.active {
-	box-shadow: 0 0 4px 3px orange inset, 0 0 10px 10px #003658 inset;
+	box-shadow: 0 0 5px 2px orange inset, 0 0 10px 10px #003658 inset;
 }
 
 #right-menu button:after,
@@ -309,12 +316,12 @@ text {
 	border-radius: 18px;
 	white-space: nowrap;
 	color: #fff;
-	background: rgba(0, 0, 0, 0.8);
-	box-shadow: 1px 1px 10px rgba(0, 0, 0, 0.66);
+	background: rgba(0, 0, 0, 0.77);
+	box-shadow: 1px 1px 12px rgba(0, 0, 0, 0.7);
 	transition: opacity 0.3s;
 }
 #panel-open-button:before {
-	top: 7px;
+	top: 6px;
 }
 
 #panel-open-button:hover:before,

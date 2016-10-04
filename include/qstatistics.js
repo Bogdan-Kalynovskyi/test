@@ -1,4 +1,4 @@
-function CSChart (container) {
+function QChart (container) {
     var that = this,
         table,
         dataTable,
@@ -28,27 +28,12 @@ function CSChart (container) {
                 pieSliceText: 'label',
                 sliceVisibilityThreshold: 0
             }
-        },
-        pieFilterSaved = document.getElementsByName('piesource')[0];
-
-    if (pieFilterSaved) {
-        pieFilterSaved = pieFilterSaved.value.split('_');
-        this.pieFilter = {
-            by: pieFilterSaved[0],
-            id: pieFilterSaved[1]
         };
-    }
-    else {
-        this.pieFilter = {
-            by: 'column',
-            id: '0'
-        };
-    }
 
 
     function centerPieSource () {
-        if (csUI.type === 'pie') {
-            var g = SLIDES[csUI.type].querySelectorAll('svg > g'),
+        if (qMenu.type === 'pie') {
+            var g = SLIDES[qMenu.type].querySelectorAll('svg > g'),
                 left = Infinity,
                 right = 0;
 
@@ -70,22 +55,39 @@ function CSChart (container) {
     container.addEventListener('mouseup', mouseup, true);
 
 
-    this.pieSourceChooser = function () {
+    function pieSourceChooser () {
+        if (!that.pieFilter) {
+            var pieFilterSaved = document.getElementsByName('piesource')[0];
+            if (pieFilterSaved && pieFilterSaved.value) {
+                pieFilterSaved = pieFilterSaved.value.split('_');
+                that.pieFilter = {
+                    by: pieFilterSaved[0],
+                    id: pieFilterSaved[1]
+                };
+            }
+            else {
+                that.pieFilter = {
+                    by: 'column',
+                    id: '0'
+                };
+            }
+        }
+        
         var str = 'Display:<label> column <select id="pie-by-column"><option value="">Choose column</option>',
-            visibleCols = csOptions.getColumns(),
+            visibleCols = qOptions.getColumns(),
             value,
             selected;
         
         for (var i in COLUMNS) {
             if (visibleCols[i]) {
-                selected = (this.pieFilter.by === 'column' && this.pieFilter.id === i) ? ' selected="selected"' : '';
+                selected = (that.pieFilter.by === 'column' && that.pieFilter.id === i) ? ' selected="selected"' : '';
                 str += '<option value="' + i + '"' + selected + '>' + COLUMNS[i] + '</option>';
             }
         }
         str += '</select></label><label>&#8198;, or row <select id="pie-by-row"><option value="">Choose row</option>';
         for (i in table) {
-            if (!PERIOD || table[i].total) {
-                selected = (this.pieFilter.by === 'row' && this.pieFilter.id === i) ? ' selected="selected"' : '';
+            if (table[i].total) {
+                selected = (that.pieFilter.by === 'row' && that.pieFilter.id === i) ? ' selected="selected"' : '';
                 str += '<option value="' + i + '"' + selected + '>' + table[i][0] + '</option>';
             }
         }
@@ -96,48 +98,64 @@ function CSChart (container) {
             byRow = byId('pie-by-row');
 
         byCol.onchange = function () {
-            that.pieFilter = {
-                by: 'column',
-                id: this.value
-            };
-            if (that.pieFilter.id) {
-                byRow.selectedIndex = 0;
+            if (this.value) {
+                that.pieFilter = {
+                    by: 'column',
+                    id: this.value
+                };
+                byRow.value = '';
                 pieDataTable = getPieDataTable();
-                charts.pie.draw(pieDataTable, options[csUI.type]);
+                charts.pie.draw(pieDataTable, options.pie);
             }
         };
         byRow.onchange = function () {
-            that.pieFilter = {
-                by: 'row',
-                id: this.value
-            };
-            if (that.pieFilter.id) {
-                byCol.selectedIndex = 0;
+            if (this.value) {
+                that.pieFilter = {
+                    by: 'row',
+                    id: this.value
+                };
+                byCol.value = '';
                 pieDataTable = getPieDataTable();
-                charts.pie.draw(pieDataTable, options[csUI.type]);
+                charts.pie.draw(pieDataTable, options.pie);
             }
         };
-        byCol.selectedIndex = 1;
+        if (that.pieFilter.by === 'column') {
+            byCol.value = that.pieFilter.id;
+            if (byCol.selectedIndex === -1) {
+                byCol.selectedIndex = 1;
+            }
+            byRow.value = '';
+        }
+        else {
+            byRow.value = that.pieFilter.id;
+            if (byRow.selectedIndex === -1) {
+                byRow.selectedIndex = 1;
+            }
+            byCol.value = '';
+        }
         setTimeout(centerPieSource, 0);
-    };
+    }
 
 
     function getPieDataTable () {
-        that.pieFilter.id = csOptions.get('pie-by-column');
+        that.pieFilter.id = qOptions.get('pie-by-column');
         that.pieFilter.by = 'column';
         if (!that.pieFilter.id) {
-            that.pieFilter.id = csOptions.get('pie-by-row');
+            that.pieFilter.id = qOptions.get('pie-by-row');
             that.pieFilter.by = 'row';
         }
         var id = +that.pieFilter.id,
             data = [['', '']];
 
         if (that.pieFilter.by === 'column') {
-            var pos = csBase.colPos[id];
-            if (csBase.colSum[pos]) {
+            var pos = qBase.colPos.indexOf(id);
+            if (qBase.colSum[pos]) {
                 // in Destination mode, don't show "All calls" in chart
-                for (var i = (PERIOD ? 0 : 1), n = table.length; i < n; i++) {
-                    data.push([table[i][0], table[i][pos + 1]]);
+                for (var i = ((!PERIOD && qOptions.get('allcalls') === '1') ? 1 : 0), n = table.length; i < n; i++) { 
+                    var row = table[i];
+                    if (row.total) {
+                        data.push([row[0], row[pos + 1]]);
+                    }
                 }
             }
             else {
@@ -146,9 +164,13 @@ function CSChart (container) {
         }
         else {
             if (table[id].total) {
-                var tableHeading = getTableHeading();
+                var tableHeading = getTableHeading(),
+                    totalCallsPos = qBase.colPos.indexOf(0) + 1;
+                
                 for (i = 1; i < tableHeading.length; i++) {
-                    data.push([tableHeading[i], table[id][i]]);
+                    if (i !== totalCallsPos) {
+                        data.push([tableHeading[i], table[id][i]]);
+                    }
                 }
             }
             else {
@@ -176,8 +198,8 @@ function CSChart (container) {
 
 
     function mousedown (evt) {
-        var svgr = charts[csUI.type] && charts[csUI.type].svgr;
-        goodEvt = svgr && (svgr === evt.target || svgr.contains(evt.target) && evt.target.tagName.toUpperCase() !== 'TEXT');
+        var svgr = charts[qMenu.type] && charts[qMenu.type].svgr;
+        goodEvt = svgr && (svgr === evt.target || svgr.contains(evt.target));
         
         if (goodEvt) {
             rectSVG = svgr.getBoundingClientRect();
@@ -192,7 +214,10 @@ function CSChart (container) {
     }
 
     function mouseup () {
-        if (goodEvt) {
+        if (endX === undefined) {
+            overlay.style.display = 'none';
+        }
+        else if (goodEvt) {
             overlay.style.display = 'none';
             var max = Math.max(startX, endX),
                 min = Math.min(startX, endX);
@@ -204,18 +229,25 @@ function CSChart (container) {
             if (!that.originalZoom) {
                 that.originalZoom = {
                     start: START,
-                    end: END
+                    end: END,
+                    startOpt: qOptions.get('startday'), 
+                    endOpt: qOptions.get('endday') 
                 };
             }
+            var now = Date.now() / 1000;
 
-            START += (END - START) * (min - window.scrollX - rectSVG.left - 33) / rectSVG.width;
-            END -= (END - START) * (rectSVG.right + window.scrollX - max) / rectSVG.width;
+            START += (now - START) * (min - window.scrollX - rectSVG.left) / rectSVG.width;
+            END = now - (now - START) * (rectSVG.right + window.scrollX - max + 32) / rectSVG.width;
 
             resetZoom.style.display = 'block';
-            csBase.filter();
+            qOptions.showNewTime();
+            qBase.filter();
 
             container.onmousemove = null;
         }
+        
+        goodEvt = false;
+        endX = undefined;
     }
 
 
@@ -250,7 +282,7 @@ function CSChart (container) {
                             break;
                     }
                 } 
-                table = csBase.getTable();
+                table = qBase.getTable();
 
                 if (type !== 'pie') {
                     dataTable = dataTable || getDataTable();
@@ -258,9 +290,9 @@ function CSChart (container) {
                     assignZoom(type, slide);
                 }
                 else {
-                    that.pieSourceChooser();
+                    pieSourceChooser();
                     pieDataTable = pieDataTable || getPieDataTable();
-                    charts[type].draw(pieDataTable, options[type]);
+                    charts.pie.draw(pieDataTable, options.pie);
                 }
             });
         }
@@ -273,7 +305,7 @@ function CSChart (container) {
 
 
     this.resize = function () {
-        var type = csUI.type;
+        var type = qMenu.type;
         if (charts[type]) {
             charts[type].draw(type === 'pie' ? pieDataTable : dataTable, options[type]);
             assignZoom(type, SLIDES[type]);
@@ -282,18 +314,22 @@ function CSChart (container) {
 
 
     this.downloadPNG = function () {
-        var fileName = (csOptions.get('name') || 'noname') + '.png';
-        downloadUrl(charts[csUI.type].getImageURI(), fileName);
+        var fileName = (qOptions.get('name') || 'noname') + '.png';
+        downloadUrl(charts[qMenu.type].getImageURI(), fileName);
     };
 
 
     this.resetZoom = function () {
         byId('zooming-overlay').style.display = 'none';
-        START = this.originalZoom.start;
-        END = this.originalZoom.end;
+        var orig = this.originalZoom;
+        START = orig.start;
+        END = orig.end;
+        qOptions.showNewTime();
+        byId('startday').value = orig.startOpt;
+        byId('endday').value = orig.endOpt;
         this.originalZoom = null;
         resetZoom.style.display = 'none';
-        csBase.filter();
+        qBase.filter();
     }
 }
 
@@ -393,7 +429,7 @@ var START,
     ];
 
 
-function CSBase (visibleCols, visibleRows) {
+function QBase (visibleCols, visibleRows) {
     var that = this,
         calls,
         queues,
@@ -433,10 +469,10 @@ function CSBase (visibleCols, visibleRows) {
 
     
     this.sort = function () {
-        if (csTable.sortingCol > 0) {
-            table.sort(byCol(this.colPos.indexOf(csTable.sortingCol - 1) + 1, csTable.sortingOrder));
+        if (qTable.sortingCol > 0) {
+            table.sort(byCol(this.colPos.indexOf(qTable.sortingCol - 1) + 1, qTable.sortingOrder));
         }
-        else if (csTable.sortingOrder === -1) {
+        else if (qTable.sortingOrder === -1) {
             table.reverse();
         }
     };
@@ -492,7 +528,7 @@ function CSBase (visibleCols, visibleRows) {
 
 
     this.percTable = function (csv) {
-        var showTotal = PERIOD && +csOptions.get('totalrow'),
+        var showTotal = PERIOD && +qOptions.get('totalrow'),
             response = new Array(table.length),
             totalRow = ['Total'],
             i, j, perc;
@@ -556,6 +592,9 @@ function CSBase (visibleCols, visibleRows) {
 
 
     this.getTable = function () {
+        if (!table.length) {
+            table = new Array(this.colPos.length).fill(0).unshift('');
+        }
         return table;
     };
 
@@ -577,12 +616,12 @@ function CSBase (visibleCols, visibleRows) {
         }
         str += row.join(',') + '\n';
 
-        var data = csBase.percTable(true);
+        var data = qBase.percTable(true);
         for (i in data) {
             str += data[i].join(',') + '\n';
         }
 
-        var fileName = (csOptions.get('name') || 'noname') + '.csv',
+        var fileName = (qOptions.get('name') || 'noname') + '.csv',
             csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
 
         downloadBlob(fileName, csvBlob);
@@ -598,7 +637,7 @@ function CSBase (visibleCols, visibleRows) {
     }
 
 
-    function addMultiRow (row, multiRow) {
+    function add2MultiRow (row, multiRow) {
         for (var i = 1, n = row.length; i < n; i++) {
             multiRow[i] += row[i];
         }
@@ -606,11 +645,10 @@ function CSBase (visibleCols, visibleRows) {
     }
 
 
-    function addDestinationRow (display, row, multiRow) {
+    function add2TableOrMultiRow (display, row, multiRow) {
         if (visibleRows[display]) {
             if (multiRow) {
-                addMultiRow(row, multiRow);
-                multiRow.total++;
+                add2MultiRow(row, multiRow);
             }
             else {
                 var tblRow = table[rowPos[display]];
@@ -624,7 +662,7 @@ function CSBase (visibleCols, visibleRows) {
     }
 
 
-    function decode (call, multiRow) {
+    function decode (call, multiRow, justAppend) {
         var stype = call.getAttribute('stype'),
             dtype = call.getAttribute('dtype'),
             snumber = call.getAttribute('snumber'),
@@ -635,7 +673,15 @@ function CSBase (visibleCols, visibleRows) {
             isInbound,
             isInternal,
             isOutbound,
+            row;
+
+        if (justAppend) {
+            row = multiRow;
+        }
+        else {
             row = newRow();
+        }
+        row.total++;
 
         // total calls
         row[1]++;
@@ -686,20 +732,22 @@ function CSBase (visibleCols, visibleRows) {
         if (isOutbound && !answered) {
             row[12]++;
         }
-
-        //total
-        addDestinationRow(0, row, multiRow);
-        // external callers
-        if (stype === external || stype === local) {
-            addDestinationRow(1, row, multiRow);
-        }
-        // internal callers
-        if (stype !== external && stype !== local && dtype != external && dtype !== local) {
-            addDestinationRow(2, row, multiRow);
-        }
-        // external destinations
-        if (dtype === external || dtype === local) {
-            addDestinationRow(3, row, multiRow);
+        
+        if (!justAppend) {
+            //total
+            add2TableOrMultiRow(0, row, multiRow);
+            // external callers
+            if (stype === external || stype === local) {
+                add2TableOrMultiRow(1, row, multiRow);
+            }
+            // internal callers
+            if (stype !== external && stype !== local && dtype != external && dtype !== local) {
+                add2TableOrMultiRow(2, row, multiRow);
+            }
+            // external destinations
+            if (dtype === external || dtype === local) {
+                add2TableOrMultiRow(3, row, multiRow);
+            }
         }
     }
 
@@ -710,7 +758,7 @@ function CSBase (visibleCols, visibleRows) {
         var _agents = update.getElementsByTagName('agent');
         var _phones = update.getElementsByTagName('phone');
         var notEmpty = false;
-
+        
         this.minTime = Math.min(this.minTime, start);
         this.maxTime = Math.max(this.maxTime, end);
         
@@ -719,6 +767,9 @@ function CSBase (visibleCols, visibleRows) {
             call.end = call.getAttribute('end');
             calls.push(call);
             notEmpty = true;
+        }
+        if (notEmpty) {
+            calls.sort(byEnd);
         }
 
         //todo this change detection scheme is wrong
@@ -751,7 +802,6 @@ function CSBase (visibleCols, visibleRows) {
 
 
     this.filterByTime = function (start, end) {
-        calls.sort(byEnd);
         var startIndex,
             endIndex,
             callEnd;
@@ -788,11 +838,6 @@ function CSBase (visibleCols, visibleRows) {
             }
         }
     }
-
-
-    function mapCalls () {
-
-    }
     
     
     function byDestType (filteredCalls) {
@@ -817,11 +862,12 @@ function CSBase (visibleCols, visibleRows) {
             calls,
             row,
             now = Date.now() / 1000,
-            dateFormat = csOptions.config('dateformat'),
-            timeFormat = csOptions.config('timeformat');
-
+            dateFormat = qOptions.config('dateformat'),
+            timeFormat = qOptions.config('timeformat');
+ 
         if ((END - START) / period > 1000) {
             alert('Too many rows to display. Please set bigger time period');
+            byId('period').value = '0';
             throw 'too many rows to display';
         }
 
@@ -840,10 +886,13 @@ function CSBase (visibleCols, visibleRows) {
                 row[0] = formatDate(timeObj, dateFormat);
             }
 
-            for (var i in calls) {
-                decode(calls[i], row); 
+            if (calls.length) {
+                for (var i in calls) {
+                    decode(calls[i], row);
+                }
+                byQueueAgentPhone(calls, row);
             }
-            byDestination(calls, row);
+            
             table.push(row);
 
             time = endTime;
@@ -862,7 +911,7 @@ function CSBase (visibleCols, visibleRows) {
             reportIndex,
             date,
             totalHours = DAY / period,
-            timeFormat = csOptions.config('timeformat');
+            timeFormat = qOptions.config('timeformat');
 
         for (var i = 0; i < totalHours; i++) {
             row = newRow();
@@ -882,7 +931,7 @@ function CSBase (visibleCols, visibleRows) {
             for (i in calls) {
                 decode(calls[i], row);
             }
-            byDestination(calls, row);
+            byQueueAgentPhone(calls, row);
 
             time = endTime;
         }
@@ -926,7 +975,7 @@ function CSBase (visibleCols, visibleRows) {
             for (i in calls) {
                 decode(calls[i], row);
             } 
-            byDestination(calls, row);
+            byQueueAgentPhone(calls, row);
 
             time = endTime;
         }
@@ -935,14 +984,14 @@ function CSBase (visibleCols, visibleRows) {
     }
 
 
-    function byDestination (filteredCalls, multiRow) {
+    function byQueueAgentPhone (filteredCalls, multiRow) {
         var destinations = ['queues', 'agents', 'phones'];
         for (var dest in destinations) {
             
             var subject = destinations[dest],
                 ids = [],
                 arr,
-                settings = csOptions.get(subject),
+                settings = qOptions.get(subject),
                 i, j, n;
 
             switch (subject) {
@@ -1008,12 +1057,12 @@ function CSBase (visibleCols, visibleRows) {
                     }
 
                     if (match) {
-                        decode(call, row);
+                        decode(call, row, true);
                     }
                 }
 
                 if (multiRow) {
-                    addMultiRow(row, multiRow);
+                    add2MultiRow(row, multiRow);
                 }
                 else {
                     table.push(reduceRow(row));
@@ -1031,7 +1080,7 @@ function CSBase (visibleCols, visibleRows) {
         if (PERIOD === 0) {
             var filteredCalls = that.filterByTime(START, END);
             byDestType(filteredCalls);
-            byDestination(filteredCalls);
+            byQueueAgentPhone(filteredCalls);
         }
         else if (PERIOD > 0) {
             byTimePeriods(PERIOD)
@@ -1046,7 +1095,7 @@ function CSBase (visibleCols, visibleRows) {
         }
 
         this.sort();
-        csUI.update();
+        qMenu.update();
     };
 
 
@@ -1062,7 +1111,7 @@ function CSBase (visibleCols, visibleRows) {
     this.maxTime = 0;
 }
 
-function CSOptions () {
+function QOptions () {
     var savedScrollX,
         savedScrollY;
 
@@ -1082,33 +1131,33 @@ function CSOptions () {
 
         for (i in timeControls) {
             byId(timeControls[i]).addEventListener('change', function () {
-                qsPolling.update();
+                qPolling.update();
                 preventScroll();
             });
         }
         for (i in columnControls) {
             byId(columnControls[i]).addEventListener('change', function () {
                 var pos = columnControls.indexOf(this.id);
-                csBase.setVisibleCols(pos, +this.value);
+                qBase.setVisibleCols(pos, +this.value);
                 preventScroll();
             });
         }
         for (i in destControls) {
             byId(destControls[i]).addEventListener('change', function () {
                 var pos = destControls.indexOf(this.id);
-                csBase.setVisibleRows(pos, +this.value);
+                qBase.setVisibleRows(pos, +this.value);
                 preventScroll();
             });
         }
         for (i in queueControls) {
             byId(queueControls[i]).addEventListener('change', function () {
-                csBase.filter();
+                qBase.filter();
                 preventScroll();
             });
         }
         for (i in filterByList) {
             byId(filterByList[i]).addEventListener('change', function () {
-                csBase.filter();
+                qBase.filter();
                 preventScroll();
             });
         }
@@ -1116,17 +1165,17 @@ function CSOptions () {
         byId('period').addEventListener('change', function () {
             PERIOD = +this.value;
             byId('heading_rows').innerHTML = PERIOD ? 'Sum of destinations:' : 'Display destinations:';
-            csBase.filter();
+            qBase.filter();
             preventScroll();
         });
 
         byId('totalrow').addEventListener('change', function () {
-            csBase.filter();
+            qBase.filter();
             preventScroll();
         });
 
         form.find('input[type="button"]').on('click', function () {
-            csBase.filter();
+            qBase.filter();
             preventScroll();
         });
     }
@@ -1164,6 +1213,7 @@ function CSOptions () {
 
 
     PERIOD = this.getNumber('period');
+    this.recursive = +document.getElementsByName('recursive')[0].value;
 
     
     var form = $('form').last(),
@@ -1198,7 +1248,7 @@ function CSOptions () {
         function markAllOptions (mark) {
             var arr = ['queues', 'agents', 'phones'];
             for (var i in arr) {
-                if (csOptions.get(arr[i]) === 'use_include') {
+                if (qOptions.get(arr[i]) === 'use_include') {
                     var options = byId(arr[i] + 'include_selected').options;
                     for (var j = options.length - 1; j >= 0; j--) {
                         options[j].selected = mark;
@@ -1208,7 +1258,7 @@ function CSOptions () {
         }
 
 
-        if (!csOptions.get('name')) {
+        if (!qOptions.get('name')) {
             window.scrollTo(0, 0);
             byId('name').focus();
             alert('Please enter the report name.');
@@ -1231,10 +1281,10 @@ function CSOptions () {
                     '<input type="hidden" name="starttime" value="' + (START - getBeginningOfDay(START)) + '"/>' +
                     '<input type="hidden" name="endtime" value="' + (END - getBeginningOfDay(END)) + '"/>');
 
-        settingsForm.append('<input type="hidden" name="recursive"/>');
-
-        form[0]['piesource'].value = csChart.pieFilter.by + '_' + csChart.pieFilter.id;
-        form[0]['type'].value = csUI.type;
+        if (qChart.pieFilter && qChart.pieFilter.id) {
+            form[0]['piesource'].value = qChart.pieFilter.by + '_' + qChart.pieFilter.id;
+        }
+        form[0]['type'].value = qMenu.type;
 
         $.post(form.attr('action'), form.serialize(), function (response) {
             form[0]['id'].value = response.getElementsByTagName('return')[0].id;
@@ -1245,16 +1295,41 @@ function CSOptions () {
     });
 
 
+    this.showNewTime = function () {
+        byId('startday').value = 1;
+        byId('endday').value = 1;
+        var start = new Date(START * 1000),
+            end = new Date(END * 1000),
+            y1,m1,d1,y2,m2,d2;
+        byId('startdate').style.display = '';
+        byId('enddate').style.display = '';
+        byId('start_year').value = y1 = 1900 + start.getYear();
+        byId('end_year').value = y2 = 1900 + end.getYear();
+        byId('start_month').value = m1 = start.getMonth() + 1;
+        byId('end_month').value = m2 = end.getMonth() + 1;
+        byId('start_day').value = d1 = start.getDate();
+        byId('end_day').value = d2 = end.getDate();
+        byId('start_hour').value = start.getHours();
+        byId('end_hour').value = end.getHours();
+        byId('start_minute').value = start.getMinutes();
+        byId('end_minute').value = end.getMinutes();
+        byId('start_second').value = start.getSeconds();
+        byId('end_second').value = end.getSeconds();
+        byId('start_buffer').value = y1 + '-' + m1 + '-' + d1;
+        byId('end_buffer').value = y2 + '-' + m2 + '-' + d2;
+    };
+
+
     window.onbeforeunload = function () {
         if (dirty) {
             return "You have not saved your report options. If you navigate away, your changes will be lost";
         }
     };
 }
-function CSPolling (onResponse) {
+function QPolling (onResponse) {
     var that = this,
-        username = csOptions.config('username'),
-        password = csOptions.config('password'),
+        username = qOptions.config('username'),
+        password = qOptions.config('password'),
         xhr,
         preloaderShown,
         today,
@@ -1263,7 +1338,7 @@ function CSPolling (onResponse) {
         requestEnd,
         firstPoll,
         timeoutHandle,
-        pollDelay = +csOptions.config('refresh');
+        pollDelay = +qOptions.config('refresh');
 
 
     function ajaxGet (uri, success, failure) {
@@ -1285,23 +1360,23 @@ function CSPolling (onResponse) {
     function calcTimeFrame () {
         today = lastToday = getToday();
 
-        var startday = csOptions.getNumber('startday');
+        var startday = qOptions.getNumber('startday');
         if (startday === 1) {
-            START = new Date(csOptions.getNumber('start_year'), csOptions.getNumber('start_month') - 1, csOptions.getNumber('start_day')).getTime() / 1000;
+            START = new Date(qOptions.getNumber('start_year'), qOptions.getNumber('start_month') - 1, qOptions.getNumber('start_day')).getTime() / 1000;
         }
         else {
             START = today + startday * DAY;
         }
-        START += csOptions.getNumber('start_hour') * 3600 + csOptions.getNumber('start_minute') * 60 + csOptions.getNumber('start_second');
+        START += qOptions.getNumber('start_hour') * 3600 + qOptions.getNumber('start_minute') * 60 + qOptions.getNumber('start_second');
 
-        var endday = csOptions.getNumber('endday');
+        var endday = qOptions.getNumber('endday');
         if (endday == 1) {
-            END = new Date(csOptions.getNumber('end_year'), csOptions.getNumber('end_month') - 1, csOptions.getNumber('end_day')).getTime() / 1000;
+            END = new Date(qOptions.getNumber('end_year'), qOptions.getNumber('end_month') - 1, qOptions.getNumber('end_day')).getTime() / 1000;
         }
         else {
             END = today + endday * DAY;
         }
-        END += csOptions.getNumber('end_hour') * 3600 + csOptions.getNumber('end_minute') * 60 + csOptions.getNumber('end_second');
+        END += qOptions.getNumber('end_hour') * 3600 + qOptions.getNumber('end_minute') * 60 + qOptions.getNumber('end_second');
 
         if (START >= END) {
             alert('Start time should be before end time.');
@@ -1315,13 +1390,13 @@ function CSPolling (onResponse) {
             throw 'start > now';
         }
 
-        csChart.originalZoom = null;
+        qChart.originalZoom = null;
     }
 
 
     function requestIfAllowed () {
         if (!document.hidden) {
-            var request = '?_username=' + username + ';_password=' + password + ';start=' + requestStart + ';end=' + requestEnd + '?recursive=1';
+            var request = '?_username=' + username + ';_password=' + password + ';start=' + requestStart + ';end=' + requestEnd + '?recursive=' + qOptions.recursive;
             ajaxGet(request, response, function () {    // on error, poll again
                 timeoutHandle = setTimeout(requestIfAllowed, pollDelay);
             });
@@ -1336,20 +1411,20 @@ function CSPolling (onResponse) {
 
         firstPoll = true;
 
-        if (START >= csBase.minTime && END <= csBase.maxTime) {
+        if (START >= qBase.minTime && END <= qBase.maxTime) {
             onResponse();
             return;    
         }
         //query what is missing
-        else if (START < csBase.minTime && END >= csBase.minTime) {
+        else if (START < qBase.minTime && END >= qBase.minTime) {
             onResponse();
             requestStart = START;
-            requestEnd = csBase.minTime;
+            requestEnd = qBase.minTime;
         }
         //query what is missing
-        else if (START <= csBase.maxTime && END > csBase.maxTime) {
+        else if (START <= qBase.maxTime && END > qBase.maxTime) {
             onResponse();
-            requestStart = csBase.maxTime;
+            requestStart = qBase.maxTime;
             requestEnd = END;
         }
 
@@ -1379,7 +1454,7 @@ function CSPolling (onResponse) {
         }
         else {
             var updateEnd = +update.getAttribute('timestamp'),
-                updateNotEmpty = csBase.add(update, requestStart, Math.min(requestEnd, updateEnd));
+                updateNotEmpty = qBase.add(update, requestStart, Math.min(requestEnd, updateEnd));
 
             if (firstPoll || updateNotEmpty) {
                 onResponse();
@@ -1405,11 +1480,11 @@ function CSPolling (onResponse) {
                 return;
             }
 
-            if (END <= csBase.maxTime) {
+            if (END <= qBase.maxTime) {
                 return;
             }
 
-            requestStart = csBase.maxTime;
+            requestStart = qBase.maxTime;
             requestEnd = END;
 
             timeoutHandle = setTimeout(requestIfAllowed, pollDelay);
@@ -1465,7 +1540,7 @@ function CSPolling (onResponse) {
     document.addEventListener('visibilitychange', visibilityChange);
     this.update();
 }
-function CSTable () {
+function QTable () {
     var that = this,
         container,
         table,
@@ -1480,7 +1555,7 @@ function CSTable () {
     this.render = function (slide) {
         var i,
             str = '',
-            data = csBase.percTable();
+            data = qBase.percTable();
 
         container = slide;
         if (data) {
@@ -1513,8 +1588,8 @@ function CSTable () {
 
         var str = '<th id="0col" align="left"' + getSorting(0) + '>' + (PERIOD ? 'Time' : 'Destination') + '</th>';
         
-        for (var i in csBase.colPos) {
-            var newI = csBase.colPos[i];
+        for (var i in qBase.colPos) {
+            var newI = qBase.colPos[i];
             str += '<th id="' + (newI + 1) + 'col" draggable="true" ondragover="return false" align="left"' + getSorting(newI + 1) + '>' + COLUMNS[newI] + '</th>';
         }
 
@@ -1555,19 +1630,19 @@ function CSTable () {
             }
             that.sortingCol = startId;
             if (startId) {
-                csBase.sort();
-                csUI.update();
+                qBase.sort();
+                qMenu.update();
             }
             else {
-                csBase.filter();
+                qBase.filter();
             }
         });
         
         tr.addEventListener('dragstart', function (evt) {
             startTh = evt.target;
             startId = parseInt(startTh.id);
-            startTh.style.opacity = 0.55;
-            startTh.style.outline = '1px dashed black';
+            startTh.style.opacity = 0.53;
+            startTh.style.outline = '1px dashed white';
             evt.dataTransfer.effectAllowed = 'move';
             evt.dataTransfer.dropEffect = 'move';
         });
@@ -1588,7 +1663,7 @@ function CSTable () {
             }
 
             if (startTh !== target) {
-                target.style.opacity = 0.77;
+                target.style.opacity = 0.75;
             }
             else {
                 return false;
@@ -1613,15 +1688,15 @@ function CSTable () {
                 var temp = REARRANGE[id1];
                 REARRANGE[id1] = REARRANGE[id2];
                 REARRANGE[id2] = temp;
-                csBase.calculateColPos();
-                csBase.filter();
+                qBase.calculateColPos();
+                qBase.filter();
             }
         });
     }
 
 }
-function CSUI (container) {
-    this.type = (byId('type') && csOptions.get('type')) || 'table';
+function QMenu (container) {
+    this.type = (byId('type') && qOptions.get('type')) || 'table';
 
     var that = this,
         upToDate = [],
@@ -1635,9 +1710,9 @@ function CSUI (container) {
     }
 
     container.innerHTML = str +
-        '<div id="pie-chooser"></div><button id="zoom-out" onclick="csChart.resetZoom()" class="universal">Reset zoom</button>' +
+        '<div id="pie-chooser"></div><button id="zoom-out" onclick="qChart.resetZoom()" class="universal">Reset zoom</button>' +
         '<div id="zooming-overlay" ondragstart="return false"></div>';
-    container.insertAdjacentHTML('afterend', '<section id="right-menu"><button id="go-table" onclick="csUI.goTo(\'table\')"></button><button id="go-line" onclick="csUI.goTo(\'line\')"></button><button id="go-bar" onclick="csUI.goTo(\'bar\')"></button><button id="go-barstacked" onclick="csUI.goTo(\'barstacked\')"></button><button id="go-pie" onclick="csUI.goTo(\'pie\')"></button><button id="go-csv" onclick="csBase.downloadCSV()"></button><button id="go-png" onclick="csChart.downloadPNG()"></button></section>');
+    container.insertAdjacentHTML('afterend', '<section id="right-menu"><button id="go-table" onclick="qMenu.goTo(\'table\')"></button><button id="go-line" onclick="qMenu.goTo(\'line\')"></button><button id="go-bar" onclick="qMenu.goTo(\'bar\')"></button><button id="go-barstacked" onclick="qMenu.goTo(\'barstacked\')"></button><button id="go-pie" onclick="qMenu.goTo(\'pie\')"></button><button id="go-csv" onclick="qBase.downloadCSV()"></button><button id="go-png" onclick="qChart.downloadPNG()"></button></section>');
 
     var slides = container.children;
 
@@ -1655,24 +1730,24 @@ function CSUI (container) {
             nextSlide.style.opacity = 1;
             byId('go-' + this.type).className = '';
 
-            csOptions.onFormDirty();
+            qOptions.onFormDirty();
         }
 
-        if (csChart.originalZoom && slideIndex !== nextSlideIndex) {
+        if (qChart.originalZoom && slideIndex !== nextSlideIndex) {
             slideIndex = nextSlideIndex;
             this.type = nextType;
        
-            csChart.resetZoom();
-            csBase.filter();
+            qChart.resetZoom();
+            qBase.filter();
             return; // because filter will call goTo again
         }
 
         if (!upToDate[nextSlideIndex]) {
             if (nextType === 'table') {
-                csTable.render(nextSlide);
+                qTable.render(nextSlide);
             }
             else {
-                csChart.render(nextType, nextSlide);
+                qChart.render(nextType, nextSlide);
             }
         }
         upToDate[nextSlideIndex] = true;
@@ -1690,7 +1765,7 @@ function CSUI (container) {
 
     this.update = function () {
         upToDate = [];
-        csChart.invalidate();
+        qChart.invalidate();
         this.goTo(this.type);
     };
 }
@@ -1717,11 +1792,11 @@ window.addEventListener('resize', function () {
 });
 
 onWindowResize.throttle(function () {
-    if (csUI.type === 'table') {
-        csTable.resizeHeader();
+    if (qMenu.type === 'table') {
+        qTable.resizeHeader();
     }
     else {
-        csChart.resize();
+        qChart.resize();
     }
 });
 
@@ -1810,7 +1885,7 @@ function downloadUrl (url, fileName) {
 
 function getTableHeading () {
     var result = [PERIOD ? 'Time' : 'Destination'],
-        pos = csBase.colPos;
+        pos = qBase.colPos;
     for (var i in pos) {
         result.push(COLUMNS[pos[i]]);
     }
@@ -1819,16 +1894,16 @@ function getTableHeading () {
 
 document.addEventListener("DOMContentLoaded", function() {
 
-    window.csOptions = new CSOptions();
-    window.csUI = new CSUI(byId('left-content'));
+    window.qOptions = new QOptions();
+    window.qMenu = new QMenu(byId('left-content'));
 
-    window.csBase = new CSBase(csOptions.getColumns(), csOptions.getRows());
+    window.qBase = new QBase(qOptions.getColumns(), qOptions.getRows());
 
-    window.csTable = new CSTable();
-    window.csChart = new CSChart(byId('left-content'));
+    window.qTable = new QTable();
+    window.qChart = new QChart(byId('left-content'));
 
-    window.qsPolling = new CSPolling(function () {
-        csBase.filter();
+    window.qPolling = new QPolling(function () {
+        qBase.filter();
     });
 
     byId('panel-open-button').innerHTML = '';
@@ -1837,7 +1912,7 @@ document.addEventListener("DOMContentLoaded", function() {
     var savedMoveselect = move_selects;
     window.move_selects = function () {
         savedMoveselect.apply(window, arguments);
-        csBase.filter();
+        qBase.filter();
     };
 });
 

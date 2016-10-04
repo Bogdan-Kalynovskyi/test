@@ -9,10 +9,10 @@
 
 
 	function eqHeight () { 
-		if (window.csUI) {
+		if (window.qMenu) {
 			content.style.height = '';
 			panel.style.height = '';
-			var contentHeight = content.children[TYPES.indexOf(csUI.type)].scrollHeight,
+			var contentHeight = content.children[TYPES.indexOf(qMenu.type)].scrollHeight,
 				navbarHeight = navbar.offsetHeight,
 				maxHeight = Math.max(contentHeight, navbarHeight, isExpanded ? (panel.scrollHeight - 10) : 0);
 
