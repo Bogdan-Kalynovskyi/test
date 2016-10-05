@@ -22,7 +22,6 @@
 	top: 0;
 	transition: right 0.3s;
 	width: 500px;
-	height: calc(100% - 10px);
 	background: #e1ecfa;
 	box-shadow: 0 0 10px 0 rgba(0,0,0,0.5);
 	z-index: 1222;
@@ -52,7 +51,7 @@
 }
 
 input[type="submit"] {
-	box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.4);
+	box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.5);
 }
 
 button:active,
@@ -80,11 +79,20 @@ input[type="submit"]:active {
 }
 
 [draggable] {
-	cursor: move;
+	cursor: move; /* fallback if grab cursor is unsupported */
+	cursor: grab;
+	cursor: -moz-grab;
+	cursor: -webkit-grab;
 	-ms-user-select: none;
 	-moz-user-select: none;
 	-webkit-user-select: none;
 	user-select: none
+}
+
+[draggable]:active {
+	cursor: grabbing;
+	cursor: -moz-grabbing;
+	cursor: -webkit-grabbing;
 }
 
 .results {
@@ -311,7 +319,7 @@ slide:nth-child(4) {
 	opacity: 0;
 	top: 9px;
 	right: 46px;
-	padding: 5px 8px;
+	padding: 5px 9px;
 	border-radius: 18px;
 	white-space: nowrap;
 	color: #fff;

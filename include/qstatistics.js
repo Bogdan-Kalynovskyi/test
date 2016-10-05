@@ -44,7 +44,7 @@ function QChart (container) {
             }
 
             rect = byId('left-content').getBoundingClientRect();
-            byId('pie-chooser').style.right = 40 + rect.right - right - left + rect.left + 'px';
+            byId('pie-chooser').style.right = rect.right - right - left + rect.left + 'px';
         }
     }
 
@@ -75,20 +75,17 @@ function QChart (container) {
         
         var str = 'Display:<label> column <select id="pie-by-column"><option value="">Choose column</option>',
             visibleCols = qOptions.getColumns(),
-            value,
-            selected;
+            value;
         
         for (var i in COLUMNS) {
             if (visibleCols[i]) {
-                selected = (that.pieFilter.by === 'column' && that.pieFilter.id === i) ? ' selected="selected"' : '';
-                str += '<option value="' + i + '"' + selected + '>' + COLUMNS[i] + '</option>';
+                str += '<option value="' + i + '">' + COLUMNS[i] + '</option>';
             }
         }
         str += '</select></label><label>&#8198;, or row <select id="pie-by-row"><option value="">Choose row</option>';
         for (i in table) {
             if (table[i].total) {
-                selected = (that.pieFilter.by === 'row' && that.pieFilter.id === i) ? ' selected="selected"' : '';
-                str += '<option value="' + i + '"' + selected + '>' + table[i][0] + '</option>';
+                str += '<option value="' + i + '">' + table[i][0] + '</option>';
             }
         }
         str += '</select></label>';
@@ -119,20 +116,20 @@ function QChart (container) {
                 charts.pie.draw(pieDataTable, options.pie);
             }
         };
+
         if (that.pieFilter.by === 'column') {
             byCol.value = that.pieFilter.id;
             if (byCol.selectedIndex === -1) {
                 byCol.selectedIndex = 1;
             }
-            byRow.value = '';
         }
         else {
             byRow.value = that.pieFilter.id;
             if (byRow.selectedIndex === -1) {
                 byRow.selectedIndex = 1;
             }
-            byCol.value = '';
         }
+        
         setTimeout(centerPieSource, 0);
     }
 
@@ -144,39 +141,44 @@ function QChart (container) {
             that.pieFilter.id = qOptions.get('pie-by-row');
             that.pieFilter.by = 'row';
         }
-        var id = +that.pieFilter.id,
+        var row,
+            total = 0,
+            id = +that.pieFilter.id,
             data = [['', '']];
 
         if (that.pieFilter.by === 'column') {
             var pos = qBase.colPos.indexOf(id);
             if (qBase.colSum[pos]) {
-                var i = (PERIOD || qOptions.get('allcalls') === '0') ? 0 : 1,       // in Destination mode, don't show "All calls" in chart
-                    n = table.length - (PERIOD ? 1 : 0);                            // in Time mode, don't show "Total" row
+                var i = (!PERIOD && qOptions.getNumber('allcalls')) ? 1 : 0,                   // in Destination mode, don't show "All calls" in chart
+                    n = table.length - (PERIOD && qOptions.getNumber('totalrow') ? 1 : 0);     // in Time mode, don't show "Total" row
                 
                 for (; i < n; i++) { 
-                    var row = table[i];
+                    row = table[i];
                     if (row.total) {
+                        total += row[pos + 1];
                         data.push([row[0], row[pos + 1]]);
                     }
                 }
             }
-            else {
-                data.push(['No calls', 1]);
+            if (!total) {
+                data.splice(1, 9999, ['No calls', 1]);
             }
         }
         else {
-            if (table[id].total) {
+            row = table[id];
+            if (row.total) {
                 var tableHeading = getTableHeading(),
                     totalCallsPos = qBase.colPos.indexOf(0) + 1;
                 
                 for (i = 1; i < tableHeading.length; i++) {
                     if (i !== totalCallsPos) {
-                        data.push([tableHeading[i], table[id][i]]);
+                        total += row[i];
+                        data.push([tableHeading[i], row[i]]);
                     }
                 }
             }
-            else {
-                data.push(['No calls', 1]);
+            if (!total) {   // chart awfully behaves if total === 0
+                data.splice(1, 9999, ['No calls', 1]);
             }
         }
 
@@ -287,7 +289,7 @@ function QChart (container) {
                             break;
                     }
                 } 
-                table = qBase.getTable();
+                table = qBase.getTable(type);
 
                 if (type !== 'pie') {
                     dataTable = dataTable || getDataTable();
@@ -534,7 +536,7 @@ function QBase (visibleCols, visibleRows) {
 
 
     this.percTable = function (csv) {
-        var showTotal = PERIOD && +qOptions.get('totalrow'),
+        var showTotal = PERIOD && qOptions.getNumber('totalrow'),
             response = new Array(table.length),
             totalRow = ['Total'],
             i, j, perc;
@@ -597,12 +599,12 @@ function QBase (visibleCols, visibleRows) {
     };
 
 
-    this.getTable = function () {
+    this.getTable = function (type) {
         var result;
         if (!table.length) {
             result = new Array(this.colPos.length).fill(0).unshift('');
         }
-        if (PERIOD) {
+        else if (PERIOD && type === 'pie' && qOptions.getNumber('totalrow')) {
             var rowsum = ['Total'].concat(this.colSum);
             rowsum.total = total;
             result = table.concat([rowsum]);
