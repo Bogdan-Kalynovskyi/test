@@ -68,6 +68,9 @@ input[type="submit"]:active {
 	padding-top: 9px;
 	width: calc(100% - 40px);
 }
+form input.text {
+	width: calc(80% - 4px);
+}
 
 .calendar {
 	z-index: 2000;

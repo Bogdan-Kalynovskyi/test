@@ -3,6 +3,7 @@
 		openBtn = byId('panel-open-button'),
 		heading = byId('options-heading'),
 		navbar = byId('nav_bar'),
+		navbarHeight = navbar.offsetHeight,
 		content = byId('left-content'),
 		panel = byId('right-panel'),
 		isExpanded = false;
@@ -12,8 +13,7 @@
 		if (window.qMenu) {
 			content.style.height = '';
 			panel.style.height = '';
-			var contentHeight = content.children[TYPES.indexOf(qMenu.type)].scrollHeight,
-				navbarHeight = navbar.offsetHeight,
+			var contentHeight = SLIDES[qMenu.type].scrollHeight,
 				maxHeight = Math.max(contentHeight, navbarHeight, isExpanded ? (panel.scrollHeight - 10) : 0);
 
 			content.style.height = maxHeight + 'px';
