@@ -10,23 +10,31 @@ function QChart (container) {
         startX,
         endX,
         goodEvt,
+        chartArea = {
+            left: '8%',
+            right: '17%'
+        },
         options = {
             line: {
-                sliceVisibilityThreshold: 0
+                sliceVisibilityThreshold: 0,
+                chartArea: chartArea
             },
             bar: {
                 sliceVisibilityThreshold: 0,
+                chartArea: chartArea,
                 bar: {groupWidth: "90%"}
             },
             barstacked: {
                 isStacked: true,
                 sliceVisibilityThreshold: 0,
+                chartArea: chartArea,
                 bar: {groupWidth: "90%"}
             },
             pie: {
                 is3D: true,
                 pieSliceText: 'label',
-                sliceVisibilityThreshold: 0
+                sliceVisibilityThreshold: 0,
+                chartArea: chartArea
             }
         };
 
@@ -50,13 +58,19 @@ function QChart (container) {
     container.addEventListener('mousedown', mousedown, true);
     container.addEventListener('mouseup', mouseup, true);
     container.addEventListener('wheel', mousewheel);
+    byId('left-overlay').addEventListener('click', function () {
+        move(-1);
+    });
+    byId('right-overlay').addEventListener('click', function () {
+        move(1);
+    });
 
 
     function pieSourceChooser () {
         if (!that.pieFilter) {
-            var pieFilterSaved = document.getElementsByName('piesource')[0];
-            if (pieFilterSaved && pieFilterSaved.value) {
-                pieFilterSaved = pieFilterSaved.value.split('_');
+            var pieFilterSaved = byName('piesource');
+            if (pieFilterSaved) {
+                pieFilterSaved = pieFilterSaved.split('_');
                 that.pieFilter = {
                     by: pieFilterSaved[0],
                     id: pieFilterSaved[1]
@@ -154,11 +168,19 @@ function QChart (container) {
         }
         var row,
             id = +that.pieFilter.id,
-            data = [['', '']];
+            data = [['', '']],
+            hasTotalRow = PERIOD && qOptions.getNumber('totalrow');
 
         if (isNaN(id)) {
             return;
         }
+       
+        if (hasTotalRow) {
+            var rowsum = ['Total'].concat(qBase.colSum);
+            rowsum.total = 1;
+            table = table.concat([rowsum]);
+        }
+            
         options.pie.legend = null;
         options.pie.enableInteractivity = true;
 
@@ -166,7 +188,7 @@ function QChart (container) {
             var pos = qBase.colPos.indexOf(id);
             if (!PERIOD || qBase.colSum[pos]) {
                 var i = (!PERIOD && qOptions.getNumber('allcalls')) ? 1 : 0,                   // in Destination mode, don't show "All calls" in chart
-                    n = table.length - (PERIOD && qOptions.getNumber('totalrow') ? 1 : 0),     // in Time mode, don't show "Total" row
+                    n = table.length - (hasTotalRow ? 1 : 0),     // in Time mode, don't show "Total" row
                     totalVisible = 0;
 
                     for (; i < n; i++) {
@@ -205,7 +227,35 @@ function QChart (container) {
         var data = [getTableHeading()].concat(table);
         return google.visualization.arrayToDataTable(data);
     }
+    
+    
+    function setZoomBackup () {
+        if (!that.originalZoom) {
+            that.originalZoom = {
+                start: START,
+                end: END,
+                startOpt: qOptions.get('startday'),
+                endOpt: qOptions.get('endday'),
+                period: PERIOD
+            };
+            resetZoom.style.display = 'block';
+        }
+    }
+    
+    
+    function move (direction) {
+        var leftTime = START,
+            rightTime = Math.min(Date.now() / 1000, END),
+            delta = (rightTime - leftTime) * 0.2 * direction;
+        setZoomBackup();
 
+        START += delta;
+        END = rightTime + delta;
+
+        qOptions.showNewTime();
+        qBase.filter();
+    }
+    
 
     function mousedown (evt) {
         var svgr = charts[qMenu.type] && charts[qMenu.type].svgr;
@@ -245,17 +295,7 @@ function QChart (container) {
             if (maxX - minX < 6) {
                 return;
             }
-
-            if (!that.originalZoom) {
-                that.originalZoom = {
-                    start: START,
-                    end: END,
-                    startOpt: qOptions.get('startday'), 
-                    endOpt: qOptions.get('endday'),
-                    period: PERIOD
-                };
-                resetZoom.style.display = 'block';
-            }
+            setZoomBackup();
 
             var leftTime = START,
                 rightTime = Math.min(Date.now() / 1000, END);
@@ -278,16 +318,7 @@ function QChart (container) {
     function mousewheel (evt) {
         var svgr = charts[qMenu.type] && charts[qMenu.type].svgr;
         if (svgr && (svgr === evt.target || svgr.contains(evt.target))) {
-            if (!that.originalZoom) {
-                that.originalZoom = {
-                    start: START,
-                    end: END,
-                    startOpt: qOptions.get('startday'),
-                    endOpt: qOptions.get('endday'),
-                    period: PERIOD
-                };
-                resetZoom.style.display = 'block';
-            }
+            setZoomBackup();
             
             var leftTime = START,
                 rightTime = Math.min(Date.now() / 1000, END),
@@ -295,7 +326,7 @@ function QChart (container) {
                 center = evt.pageX + window.scrollX,
                 left = center - rectSVG.left,
                 right = rectSVG.right - center,
-                zoom = 0.2 * evt.deltaY / 100;
+                zoom = -0.2 * evt.deltaY / 100;
 
             START += (rightTime - leftTime) * left / rectSVG.width * zoom;
             END = rightTime - (rightTime - leftTime) * right / rectSVG.width * zoom;
@@ -303,6 +334,8 @@ function QChart (container) {
             
             qOptions.showNewTime();
             qBase.filter();
+            
+            return false;
         }
     }
 
@@ -338,7 +371,7 @@ function QChart (container) {
                             break;
                     }
                 } 
-                table = table || qBase.getTable(type);
+                table = qBase.getTable();
 
                 if (type !== 'pie') {
                     nonPieDataTable = nonPieDataTable || getDataTable();
@@ -653,21 +686,13 @@ function QBase (visibleCols, visibleRows) {
     };
 
 
-    this.getTable = function (type) {
-        var result;
+    this.getTable = function () {
         if (!table.length) {
-            result = new Array(this.colPos.length).fill(0).unshift('');
-        }
-        else if (PERIOD && type === 'pie' && qOptions.getNumber('totalrow')) {
-            var rowsum = ['Total'].concat(this.colSum);
-            rowsum.total = total;
-            result = table.concat([rowsum]);
+            return new Array(this.colPos.length).fill(0).unshift('');
         }
         else {
-            result = table;
+            return table;
         }
-        
-        return result;
     };
 
 
@@ -1257,6 +1282,9 @@ function QOptions () {
         byId('period').addEventListener('change', function () {
             PERIOD = +this.value;
             byId('heading_rows').innerHTML = PERIOD ? 'Sum of destinations:' : 'Display destinations:';
+            var showMoveLeftRight = (PERIOD <= 0 || qMenu.type === 'table' || qMenu.type === 'pie') ? 'none' : 'block';
+            byId('left-overlay').style.display = showMoveLeftRight;
+            byId('right-overlay').style.display = showMoveLeftRight;
             qBase.filter();
             preventScroll();
         });
@@ -1276,7 +1304,7 @@ function QOptions () {
     this.getColumns = function () {
         var result = [];
         for (var i in columnControls) {
-            result[i] = +byId(columnControls[i]).value;
+            result[i] = +this.get(columnControls[i]);
         }
         return result;
     };
@@ -1285,7 +1313,7 @@ function QOptions () {
     this.getRows = function () {
         var result = [];
         for (var i in destControls) {
-            result[i] = +byId(destControls[i]).value;
+            result[i] = +this.get(destControls[i]);
         }
         return result;
     };
@@ -1305,7 +1333,7 @@ function QOptions () {
 
 
     PERIOD = this.getNumber('period');
-    this.recursive = +document.getElementsByName('recursive')[0].value;
+    this.recursive = +byName('recursive');
 
     
     var form = $('form').last(),
@@ -1558,10 +1586,10 @@ function QPolling (onResponse) {
             // Handle the change of day at midnight. If the start or end day is not a specific date then the report period will change every day.
             today = getToday();
             if (today !== lastToday) {
-                if (byId('startday').value === '0') {
+                if (qOptions.get('startday') === '0') {
                     START = getDaysAhead(START, 1);
                 }
-                if (byId('endday').value === '0') {
+                if (qOptions.get('endday') === '0') {
                     END = getDaysAhead(END, 1);
                 }
             }
@@ -1733,7 +1761,7 @@ function QTable () {
         tr.addEventListener('dragstart', function (evt) {
             startTh = evt.target;
             startId = parseInt(startTh.id);
-            startTh.style.opacity = 0.53;
+            startTh.style.opacity = 0.5;
             startTh.style.outline = '1px dashed white';
             evt.dataTransfer.effectAllowed = 'move';
             evt.dataTransfer.dropEffect = 'move';
@@ -1788,22 +1816,22 @@ function QTable () {
 
 }
 function QMenu (container) {
-    this.type = (byId('type') && qOptions.get('type')) || 'table';
+    this.type = byName('type') || 'table';
 
     var that = this,
         upToDate = [],
-        zIndex = 2,
+        zIndex = 1,
         slideIndex = TYPES.indexOf(this.type);
 
 
     var str = '';
     for (var i in TYPES) {
-        str += '<slide' + (i !== '0' ? ' ondragstart="return false"' : ' style="z-index: 1"') + '></slide>';
+        str += '<slide style="z-index: ' + (i === '0' ? 1 : 0) + '"></slide>';
     }
 
     container.innerHTML = str +
-        '<div id="pie-chooser"></div><button id="zoom-out" onclick="qChart.resetZoom()" class="universal">Reset zoom</button>' +
-        '<div id="zooming-overlay" ondragstart="return false"></div>';
+        '<div id="pie-chooser"></div><button id="zoom-out" onclick="qChart.resetZoom()" class="universal">Reset chart</button>' +
+        '<div id="zooming-overlay" ondragstart="return false"></div><div id="left-overlay">&#10096;</div><div id="right-overlay">&#10097;</div>';
     container.insertAdjacentHTML('afterend', '<section id="right-menu"><button id="go-table" onclick="qMenu.goTo(\'table\')"></button><button id="go-line" onclick="qMenu.goTo(\'line\')"></button><button id="go-bar" onclick="qMenu.goTo(\'bar\')"></button><button id="go-barstacked" onclick="qMenu.goTo(\'barstacked\')"></button><button id="go-pie" onclick="qMenu.goTo(\'pie\')"></button><button id="go-csv" onclick="qBase.downloadCSV()"></button><button id="go-png" onclick="qChart.downloadPNG()"></button></section>');
 
     var slides = container.children;
@@ -1847,6 +1875,9 @@ function QMenu (container) {
         byId('go-png').disabled = (nextType === 'table');
         byId('pie-chooser').style.display = nextType === 'pie' ? 'block' : 'none';
         byId('go-' + nextType).className = 'active';
+        var showMoveLeftRight = (PERIOD <= 0 || nextType === 'table' || nextType === 'pie') ? 'none' : 'block';
+        byId('left-overlay').style.display = showMoveLeftRight;
+        byId('right-overlay').style.display = showMoveLeftRight;
 
         slideIndex = nextSlideIndex;
         this.type = nextType;
@@ -1871,29 +1902,27 @@ var onWindowResize = {
     }
 };
 
+var hndlr;
 window.addEventListener('resize', function () {
-    var o = onWindowResize;
-    if (!o.hndlr) {
-        o.hndlr = setTimeout(function () {
-            for (var i in o.list) {
-                o.list[i]();
-            }
-            o.hndlr = 0;
-        }, 100);
-    }
+    clearTimeout(hndlr);
+    
+    hndlr = setTimeout(function () {
+        if (qMenu.type === 'table') {
+            qTable.resizeHeader();
+        }
+        else {
+            qChart.resize();
+        }
+    }, 100);
 });
 
-onWindowResize.throttle(function () {
-    if (qMenu.type === 'table') {
-        qTable.resizeHeader();
-    }
-    else {
-        qChart.resize();
-    }
-});
 
 function byId (id) {
     return document.getElementById(id);
+}
+
+function byName (id) {
+    return document.getElementsByName(id)[0].value;
 }
 
 
