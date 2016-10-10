@@ -168,7 +168,7 @@ text {
 	position: absolute;
 	top: 251px;
 	font-size: 37px;
-	color: rgba(0, 101, 163, .4);
+	color: rgba(0, 101, 163, .44);
 	opacity: 0.4;
 	transition: opacity 0.3s;
 	cursor: pointer;
@@ -217,7 +217,7 @@ text {
 	color: #fafafa;
 }
 
-#pie-chooser {
+#piechart-chooser {
 	position: absolute;
 	top: 0;
 	left: 0;
@@ -282,16 +282,16 @@ text {
 #go-table:after {
 	background-image: url('/local/bohdan/include/img/table.png');
 }
-#go-line:after {
+#go-linechart:after {
 	background-image: url('/local/bohdan/include/img/line.png');
 }
-#go-bar:after {
+#go-barchart:after {
 	background-image: url('/local/bohdan/include/img/bar.png');
 }
-#go-barstacked:after {
+#go-stacked:after {
 	background-image: url('/local/bohdan/include/img/bar-stacked.png');
 }
-#go-pie:after {
+#go-piechart:after {
 	background-image: url('/local/bohdan/include/img/pie.png');
 }
 #go-csv:after {
@@ -307,16 +307,16 @@ text {
 #go-table:hover:before {
 	content: 'Table'!important;
 }
-#go-line:hover:before {
+#go-linechart:hover:before {
 	content: 'Line chart'!important;
 }
-#go-bar:hover:before {
+#go-barchart:hover:before {
 	content: 'Bar chart'!important;
 }
-#go-barstacked:hover:before {
+#go-stacked:hover:before {
 	content: 'Stacked bar chart'!important;
 }
-#go-pie:hover:before {
+#go-piechart:hover:before {
 	content: 'Pie chart'!important;
 }
 #go-csv:hover:before {

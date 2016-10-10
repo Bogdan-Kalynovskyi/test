@@ -15,22 +15,22 @@ function QChart (container) {
             right: '17%'
         },
         options = {
-            line: {
+            linechart: {
                 sliceVisibilityThreshold: 0,
                 chartArea: chartArea
             },
-            bar: {
+            barchart: {
                 sliceVisibilityThreshold: 0,
                 chartArea: chartArea,
                 bar: {groupWidth: "90%"}
             },
-            barstacked: {
+            stacked: {
                 isStacked: true,
                 sliceVisibilityThreshold: 0,
                 chartArea: chartArea,
                 bar: {groupWidth: "90%"}
             },
-            pie: {
+            piechart: {
                 is3D: true,
                 pieSliceText: 'label',
                 sliceVisibilityThreshold: 0,
@@ -40,18 +40,18 @@ function QChart (container) {
 
 
     function centerPieSource () {
-        var g = SLIDES.pie.querySelectorAll('svg > g'),
+        var g = SLIDES.piechart.querySelectorAll('svg > g'),
             left = Infinity,
             right = 0;
 
-        for (var i = (options.pie.legend === null ? 1 : 0); i < g.length - 1; i++) {
+        for (var i = (options.piechart.legend === null ? 1 : 0); i < g.length - 1; i++) {
             var rect = g[i].getBoundingClientRect();
             left = Math.min(left, rect.left);
             right = Math.max(right, rect.right);
         }
 
         rect = byId('left-content').getBoundingClientRect();
-        byId('pie-chooser').style.right = rect.right - right - left + rect.left + 1 + 'px';
+        byId('piechart-chooser').style.right = rect.right - right - left + rect.left + 1 + 'px';
     }
 
 
@@ -84,8 +84,8 @@ function QChart (container) {
             }
         }
         
-        var str = 'Display:<label> column <select id="pie-by-column"><option value="">Choose column</option>',
-            visibleCols = qOptions.getColumns(),
+        var str = 'Display:<label> column <select id="piechart-by-column"><option value="">Choose column</option>',
+            visibleCols = qOpts.getColumns(),
             value;
         
         for (var i in COLUMNS) {
@@ -93,7 +93,7 @@ function QChart (container) {
                 str += '<option value="' + i + '">' + COLUMNS[i] + '</option>';
             }
         }
-        str += '</select></label><label>&#8198;, or row <select id="pie-by-row"><option value="">Choose row</option>';
+        str += '</select></label><label>&#8198;, or row <select id="piechart-by-row"><option value="">Choose row</option>';
         for (i in table) {
             var row = table[i],
                 totalVisible = 0;
@@ -114,10 +114,10 @@ function QChart (container) {
             }
         }
         str += '</select></label>';
-        byId('pie-chooser').innerHTML = str;
+        byId('piechart-chooser').innerHTML = str;
 
-        var byCol = byId('pie-by-column'),
-            byRow = byId('pie-by-row');
+        var byCol = byId('piechart-by-column'),
+            byRow = byId('piechart-by-row');
 
         byCol.onchange = function () {
             if (this.value) {
@@ -127,7 +127,7 @@ function QChart (container) {
                 };
                 byRow.value = '';
                 pieDataTable = getPieDataTable();
-                charts.pie.draw(pieDataTable, options.pie);
+                charts.piechart.draw(pieDataTable, options.piechart);
                 centerPieSource();
             }
         };
@@ -139,7 +139,7 @@ function QChart (container) {
                 };
                 byCol.value = '';
                 pieDataTable = getPieDataTable();
-                charts.pie.draw(pieDataTable, options.pie);
+                charts.piechart.draw(pieDataTable, options.piechart);
                 centerPieSource();
             }
         };
@@ -160,16 +160,16 @@ function QChart (container) {
 
 
     function getPieDataTable () {
-        that.pieFilter.id = qOptions.get('pie-by-column');
+        that.pieFilter.id = qOpts.get('piechart-by-column');
         that.pieFilter.by = 'column';
         if (!that.pieFilter.id) {
-            that.pieFilter.id = qOptions.get('pie-by-row');
+            that.pieFilter.id = qOpts.get('piechart-by-row');
             that.pieFilter.by = 'row';
         }
         var row,
             id = +that.pieFilter.id,
             data = [['', '']],
-            hasTotalRow = PERIOD && qOptions.getNumber('totalrow');
+            hasTotalRow = PERIOD && qOpts.getNum('totalrow');
 
         if (isNaN(id)) {
             return;
@@ -178,17 +178,17 @@ function QChart (container) {
         if (hasTotalRow) {
             var rowsum = ['Total'].concat(qBase.colSum);
             rowsum.total = 1;
-            table = table.concat([rowsum]);
+            table = table.push(rowsum);
         }
             
-        options.pie.legend = null;
-        options.pie.enableInteractivity = true;
+        options.piechart.legend = null;
+        options.piechart.enableInteractivity = true;
 
         if (that.pieFilter.by === 'column') {
             var pos = qBase.colPos.indexOf(id);
             if (!PERIOD || qBase.colSum[pos]) {
-                var i = (!PERIOD && qOptions.getNumber('allcalls')) ? 1 : 0,                   // in Destination mode, don't show "All calls" in chart
-                    n = table.length - (hasTotalRow ? 1 : 0),     // in Time mode, don't show "Total" row
+                var i = (!PERIOD && qOpts.getNum('allcalls')) ? 1 : 0,             // in Destination mode, don't show "All calls" in chart
+                    n = table.length - (hasTotalRow ? 1 : 0),                      // in Time mode, don't show "Total" row
                     totalVisible = 0;
 
                     for (; i < n; i++) {
@@ -200,9 +200,9 @@ function QChart (container) {
                 }
             }
             if (!totalVisible) {
-                data.splice(1, 9999, ['No calls', 1]);
-                options.pie.legend = 'none';
-                options.pie.enableInteractivity = false;
+                data = [['', ''], ['No calls', 1]];
+                options.piechart.legend = 'none';
+                options.piechart.enableInteractivity = false;
             }
         }
         else {
@@ -234,8 +234,8 @@ function QChart (container) {
             that.originalZoom = {
                 start: START,
                 end: END,
-                startOpt: qOptions.get('startday'),
-                endOpt: qOptions.get('endday'),
+                startOpt: qOpts.get('startday'),
+                endOpt: qOpts.get('endday'),
                 period: PERIOD
             };
             resetZoom.style.display = 'block';
@@ -252,7 +252,7 @@ function QChart (container) {
         START += delta;
         END = rightTime + delta;
 
-        qOptions.showNewTime();
+        qOpts.showNewTime();
         qBase.filter();
     }
     
@@ -304,7 +304,7 @@ function QChart (container) {
             END = rightTime - (rightTime - leftTime) * (rectSVG.right + window.scrollX - maxX) / rectSVG.width;
             PERIOD *= (END - START) / (rightTime - leftTime);
 
-            qOptions.showNewTime();
+            qOpts.showNewTime();
             qBase.filter();
 
             container.onmousemove = null;
@@ -332,7 +332,7 @@ function QChart (container) {
             END = rightTime - (rightTime - leftTime) * right / rectSVG.width * zoom;
             PERIOD *= (END - START) / (rightTime - leftTime) * (zoom > 0 ? 1.05 : 0.95);
             
-            qOptions.showNewTime();
+            qOpts.showNewTime();
             qBase.filter();
             
             return false;
@@ -359,21 +359,21 @@ function QChart (container) {
             google.charts.setOnLoadCallback(function () {
                 if (!charts[type]) {
                     switch (type) {
-                        case 'line':
+                        case 'linechart':
                             charts[type] = new google.visualization.LineChart(slide);
                             break;
-                        case 'bar':
-                        case 'barstacked':
+                        case 'barchart':
+                        case 'stacked':
                             charts[type] = new google.visualization.ColumnChart(slide);
                             break;
-                        case 'pie':
+                        case 'piechart':
                             charts[type] = new google.visualization.PieChart(slide);
                             break;
                     }
                 } 
                 table = qBase.getTable();
 
-                if (type !== 'pie') {
+                if (type !== 'piechart') {
                     nonPieDataTable = nonPieDataTable || getDataTable();
                     charts[type].draw(nonPieDataTable, options[type]);
                     assignZoom(type, slide);
@@ -381,7 +381,7 @@ function QChart (container) {
                 else {
                     pieSourceChooser();
                     pieDataTable = getPieDataTable();
-                    charts.pie.draw(pieDataTable, options.pie);
+                    charts.piechart.draw(pieDataTable, options.piechart);
                     centerPieSource();
                 }
             });
@@ -397,8 +397,8 @@ function QChart (container) {
     this.resize = function () {
         var type = qMenu.type;
         if (charts[type]) {
-            charts[type].draw(type === 'pie' ? pieDataTable : nonPieDataTable, options[type]);
-            if (type === 'pie') {
+            charts[type].draw(type === 'piechart' ? pieDataTable : nonPieDataTable, options[type]);
+            if (type === 'piechart') {
                 centerPieSource();
             }
             else {
@@ -409,7 +409,7 @@ function QChart (container) {
 
 
     this.downloadPNG = function () {
-        var fileName = (qOptions.get('name') || 'noname') + '.png';
+        var fileName = (qOpts.get('name') || 'noname') + '.png';
         downloadUrl(charts[qMenu.type].getImageURI(), fileName);
     };
 
@@ -420,7 +420,7 @@ function QChart (container) {
         START = orig.start;
         END = orig.end;
         PERIOD = orig.period;
-        qOptions.showNewTime();
+        qOpts.showNewTime();
         byId('startday').value = orig.startOpt;
         byId('endday').value = orig.endOpt;
         this.originalZoom = null;
@@ -438,7 +438,7 @@ var START,
         0,1,2,3,4,5,6,7,8,9,10,11
     ],
 
-    TYPES = ['table', 'line', 'bar', 'barstacked', 'pie'],
+    TYPES = ['table', 'linechart', 'barchart', 'stacked', 'piechart'],
     SLIDES = {},
 
     DESTINATIONS = [
@@ -450,6 +450,7 @@ var START,
     
     COLUMNS = [
         'Total calls',
+        'SLA ok',
         'Answered',
         'Not answered',
         'Inbound calls',
@@ -461,67 +462,6 @@ var START,
         'Outbound calls',
         'Outbound answered',
         'Outbound not answered'
-    ],
-    
-    timeControls = [
-        'startday',
-        'start_year',
-        'start_month',
-        'start_day',
-        'start_hour',
-        'start_minute',
-        'start_second',
-        'endday',
-        'end_year',
-        'end_month',
-        'end_day',
-        'end_hour',
-        'end_minute',
-        'end_second'
-    ],
-    
-    columnControls = [
-        'totalcalls',
-        'answercalls',
-        'noanswercalls',
-        'incalls',
-        'inanswer',
-        'innoanswer',
-        'internalcalls',
-        'internalanswer',
-        'internalnoanswer',
-        'outcalls',
-        'outanswer',
-        'outnoanswer'
-    ],
-
-    destControls = [
-        'allcalls',
-        'inbound',
-        'internal',
-        'outbound'
-    ],
-
-    queueControls = [
-        'queues',
-        'agents',
-        'phones'
-    ],
-    
-    filterByList = [
-        'queuesinclude',
-        'agentsinclude',
-        'phonesinclude'
-    ];
-
-    daysOfWeek = [
-        'Sunday',
-        'Monday',
-        'Tuesday',
-        'Wednesday',
-        'Thursday',
-        'Friday',
-        'Saturday'
     ];
 
 
@@ -624,7 +564,7 @@ function QBase (visibleCols, visibleRows) {
 
 
     this.percTable = function (csv) {
-        var showTotal = PERIOD && qOptions.getNumber('totalrow'),
+        var showTotal = PERIOD && qOpts.getNum('totalrow'),
             response = new Array(table.length),
             totalRow = ['Total'],
             i, j, perc;
@@ -718,7 +658,7 @@ function QBase (visibleCols, visibleRows) {
             str += data[i].join(',') + '\n';
         }
 
-        var fileName = (qOptions.get('name') || 'noname') + '.csv',
+        var fileName = (qOpts.get('name') || 'noname') + '.csv',
             csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
 
         downloadBlob(fileName, csvBlob);
@@ -782,52 +722,56 @@ function QBase (visibleCols, visibleRows) {
 
         // total calls
         row[1]++;
+        // sla time
+        if (answered && (answered - call.getAttribute('start') <= qOpts.slaTime)) {
+            row[2]++;
+        }
         // answered
         if (answered) {
-            row[2]++;
+            row[3]++;
         }
         // not answered
         if (!answered) {
-            row[3]++;
+            row[4]++;
         }
         // inbound calls
         isInbound = stype === external || stype === local;
         if (isInbound) {
-            row[4]++;
+            row[5]++;
         }
         // inbound answered
         if (isInbound && answered) {
-            row[5]++;
+            row[6]++;
         }
         // inbound no answer
         if (isInbound && !answered) {
-            row[6]++;
+            row[7]++;
         }
         // internal calls
         isInternal = stype !== external && stype !== local && dtype != external && dtype !== local;
         if (isInternal) {
-            row[7]++;
+            row[8]++;
         }
         // internal answered
         if (isInternal && answered) {
-            row[8]++;
+            row[9]++;
         }
         // internal no answer
         if (isInternal && !answered) {
-            row[9]++;
+            row[10]++;
         }
         // outbound
         isOutbound = dtype === external || dtype === local;
         if (isOutbound) {
-            row[10]++;
+            row[11]++;
         }
         // outbound answered
         if (isOutbound && answered) {
-            row[11]++;
+            row[12]++;
         }
         // outbound no answer
         if (isOutbound && !answered) {
-            row[12]++;
+            row[13]++;
         }
         
         if (!justAppend) {
@@ -862,6 +806,10 @@ function QBase (visibleCols, visibleRows) {
         for (var i = 0, n = _calls.length; i < n; i++) {
             var call = _calls[i];
             call.end = call.getAttribute('end');
+            call.dtype = call.getAttribute('dtype');
+            call.stype = call.getAttribute('stype');
+            call.dnumber = call.getAttribute('dnumber');
+            call.snumber = call.getAttribute('snumber');
             calls.push(call);
             notEmpty = true;
         }
@@ -869,10 +817,18 @@ function QBase (visibleCols, visibleRows) {
             calls.sort(byEnd);
         }
 
+        function cacheFields (call) {
+            call.name = call.getAttribute('name');
+            call.description = call.getAttribute('description');
+            call.callerid = call.getAttribute('callerid_internal');
+        }
+        
+        
         //todo this change detection scheme is wrong
         for (i = 0, n = _queues.length; i < n; i++) {
             var queue = _queues[i];
             if (!queues[queue.id]) {
+                queue.name = queue.getAttribute('name');
                 queues[queue.id] = queue;
                 notEmpty = true;
             }
@@ -881,6 +837,9 @@ function QBase (visibleCols, visibleRows) {
         for (i = 0, n = _agents.length; i < n; i++) {
             var agent = _agents[i];
             if (!agents[agent.id]) {
+                cacheFields(agent);
+                agent.dtype = agent.getAttribute('dtype');
+                agent.dnumber = agent.getAttribute('dnumber');
                 agents[agent.id] = agent;
                 notEmpty = true;
             }
@@ -890,6 +849,7 @@ function QBase (visibleCols, visibleRows) {
             var phone = _phones[i],
                 name = phone.getAttribute('name');
             if (!phones[name]) {
+                cacheFields(phone);
                 phones[name] = phone;
                 notEmpty = true;
             }
@@ -961,11 +921,11 @@ function QBase (visibleCols, visibleRows) {
             calls,
             row,
             now = Date.now() / 1000,
-            dateFormat = qOptions.config('dateformat'),
-            timeFormat = qOptions.config('timeformat');
+            dateFormat = qOpts.config('dateformat'),
+            timeFormat = qOpts.config('timeformat');
  
-        if ((END - START) / PERIOD > 2600) {
-            alert('Too many rows to display. Please set bigger time period');
+        if ((END - START) / PERIOD > 1900) {
+            alert('Too many rows to display. Please set bigger time period.');
             byId('period').value = '0';
             throw 'too many rows to display';
         }
@@ -1010,7 +970,7 @@ function QBase (visibleCols, visibleRows) {
             date = new Date(START * 1000),
             totalHours = DAY / period,
             isHalfHours = period === 1800,
-            timeFormat = qOptions.config('timeformat'),
+            timeFormat = qOpts.config('timeformat'),
         
             startShift = date.getHours();
         if (isHalfHours) {
@@ -1056,7 +1016,16 @@ function QBase (visibleCols, visibleRows) {
             row,
             reportIndex,
             dayOfWeek,
-            startDayOfWeek = new Date(START * 1000).getDay();
+            startDayOfWeek = new Date(START * 1000).getDay(),
+            daysOfWeek = [
+                'Sunday',
+                'Monday',
+                'Tuesday',
+                'Wednesday',
+                'Thursday',
+                'Friday',
+                'Saturday'
+            ];
 
         for (var i = 0; i < 7; i++) {
             row = newRow();
@@ -1093,16 +1062,17 @@ function QBase (visibleCols, visibleRows) {
 
 
     function byQueueAgentPhone (filteredCalls, multiRow) {
-        var destinations = ['queues', 'agents', 'phones'];
-        for (var dest in destinations) {
-            
-            var subject = destinations[dest],
+        var destinations = ['queues', 'agents', 'phones'],
+            phoneDisplay = qOpts.get('phonetitle');
+
+        for (var d in destinations) {
+            var dest = destinations[d],
                 ids = [],
                 arr,
-                settings = qOptions.get(subject),
+                destDisplay = qOpts.get(dest),
                 i, j, n;
 
-            switch (subject) {
+            switch (dest) {
                 case 'queues':
                     arr = queues;
                     break;
@@ -1114,15 +1084,15 @@ function QBase (visibleCols, visibleRows) {
                     break;
             }
 
-            if (settings === 'use_include') {
-                var options = byId(subject + 'include_selected').options;
+            if (destDisplay === 'use_include') {
+                var options = byId(dest + 'include_selected').options;
                 for (i = 0, n = options.length; i < n; i++) {
                     ids.push(options[i].value);
                 }
             }
             else {
                 for (i in arr) {
-                    if (settings !== 'use_control_panel' || arr[i].getAttribute('panel') === '1') {
+                    if (destDisplay !== 'use_control_panel' || arr[i].getAttribute('panel') === '1') {
                         ids.push(i);
                     }
                 }
@@ -1130,21 +1100,48 @@ function QBase (visibleCols, visibleRows) {
 
             for (j in ids) {
                 var call,
-                    el = arr[ids[j]],
-                    name = el.getAttribute('name'),
+                    id = ids[j],
+                    el = arr[id],
+                    name,
                     match,
                     row = newRow();
 
                 if (!multiRow) {
-                    switch (subject) {
+                    switch (dest) {
                         case 'queues':
-                            row[0] = 'Queue: ' + name;
+                            row[0] = 'Queue: ' + el.name;
                             break;
                         case 'agents':
-                            row[0] = 'Queue agent: ' + name;
-                            break;
                         case 'phones':
-                            row[0] = 'Ext: ' + name;
+                            switch (phoneDisplay) {
+                                case 'name':
+                                    name = el.name;
+                                    break;
+                                case 'description':
+                                    name = el.description;
+                                    break;
+                                case 'internal':
+                                    name = el.callerid;
+                                    break;
+                                case 'name_description':
+                                    name = el.name + '&nbsp;' + el.description;
+                                    break;
+                                case 'internal_description':
+                                    name = el.callerid + '&nbsp;' + el.description;
+                                    break;
+                                case 'description_name':
+                                    name = el.description + '&nbsp;' + el.name;
+                                    break;
+                                case 'description_internal':
+                                    name = el.description + '&nbsp;' + el.callerid;
+                                    break;
+                            }
+                            if (dest === 'agents') {
+                                row[0] = 'Queue agent: ' + name;
+                            }
+                            else {
+                                row[0] = 'Ext: ' + name;
+                            }
                             break;
                     }
                 }
@@ -1152,17 +1149,17 @@ function QBase (visibleCols, visibleRows) {
                 for (i in filteredCalls) {
                     call = filteredCalls[i];
 
-                    switch (subject) {
+                    switch (dest) {
                         case 'queues':
-                            match = call.getAttribute('dtype') === 'queue' && call.getAttribute('dnumber') === ids[j];
+                            match = call.dtype === 'queue' && call.dnumber === id;
                             break;
 
                         case 'agents':
-                            match = call.getAttribute('stype') === 'queue' && call.getAttribute('dnumber') === el.getAttribute('dnumber') && call.getAttribute('dtype') === el.getAttribute('dtype');
+                            match = call.stype === 'queue' && call.dnumber === el.dnumber && call.dtype === el.dtype;
                             break;
 
                         case 'phones':
-                            match = (call.getAttribute('stype') === 'phone' && call.getAttribute('snumber') === name) || (call.getAttribute('dtype') === 'phone' && call.getAttribute('dnumber') === name);
+                            match = (call.stype === 'phone' && call.snumber === id) || (call.dtype === 'phone' && call.dnumber === id);
                             break;
                     }
 
@@ -1225,9 +1222,60 @@ function QBase (visibleCols, visibleRows) {
 
 function QOptions () {
     var that = this,
+
+        timeControls = [
+            'startday',
+            'start_year',
+            'start_month',
+            'start_day',
+            'start_hour',
+            'start_minute',
+            'start_second',
+            'endday',
+            'end_year',
+            'end_month',
+            'end_day',
+            'end_hour',
+            'end_minute',
+            'end_second'
+        ],
+        columnControls = [
+            'totalcalls',
+            'slaok',
+            'answercalls',
+            'noanswercalls',
+            'incalls',
+            'inanswer',
+            'innoanswer',
+            'internalcalls',
+            'internalanswer',
+            'internalnoanswer',
+            'outcalls',
+            'outanswer',
+            'outnoanswer'
+        ],
+        destControls = [
+            'allcalls',
+            'inbound',
+            'internal',
+            'outbound'
+        ],
+        filterControls = [
+            'phonetitle',
+            'slatime',
+            'total',
+            'queues',
+            'agents',
+            'phones',
+            'queuesinclude',
+            'agentsinclude',
+            'phonesinclude'
+        ],
+
         savedScrollX,
         savedScrollY;
-
+    
+    
     window.addEventListener('scroll', function () {
         savedScrollX = window.scrollX;
         savedScrollY = window.scrollY;
@@ -1241,62 +1289,51 @@ function QOptions () {
 
     function setWatchers() {
         var i;
-        
-        byId('name').addEventListener('change', function () {
-            that.onFormDirty();
-        });
 
+        byId('slatime').addEventListener('change', function () {
+            that.slaTime = +this.value;
+        });
+        
         for (i in timeControls) {
             byId(timeControls[i]).addEventListener('change', function () {
-                qPolling.update();
                 preventScroll();
+                qPolling.update();
             });
         }
         for (i in columnControls) {
             byId(columnControls[i]).addEventListener('change', function () {
+                preventScroll();
                 var pos = columnControls.indexOf(this.id);
                 qBase.setVisibleCols(pos, +this.value);
-                preventScroll();
             });
         }
         for (i in destControls) {
             byId(destControls[i]).addEventListener('change', function () {
+                preventScroll();
                 var pos = destControls.indexOf(this.id);
                 qBase.setVisibleRows(pos, +this.value);
-                preventScroll();
             });
         }
-        for (i in queueControls) {
-            byId(queueControls[i]).addEventListener('change', function () {
+        for (i in filterControls) {
+            byId(filterControls[i]).addEventListener('change', function () {
+                preventScroll();
                 qBase.filter();
-                preventScroll();
             });
         }
-        for (i in filterByList) {
-            byId(filterByList[i]).addEventListener('change', function () {
-                qBase.filter();
-                preventScroll();
-            });
-        }
-
+        
         byId('period').addEventListener('change', function () {
+            preventScroll();
             PERIOD = +this.value;
             byId('heading_rows').innerHTML = PERIOD ? 'Sum of destinations:' : 'Display destinations:';
-            var showMoveLeftRight = (PERIOD <= 0 || qMenu.type === 'table' || qMenu.type === 'pie') ? 'none' : 'block';
+            var showMoveLeftRight = (PERIOD <= 0 || qMenu.type === 'table' || qMenu.type === 'piechart') ? 'none' : 'block';
             byId('left-overlay').style.display = showMoveLeftRight;
             byId('right-overlay').style.display = showMoveLeftRight;
             qBase.filter();
-            preventScroll();
-        });
-
-        byId('totalrow').addEventListener('change', function () {
-            qBase.filter();
-            preventScroll();
         });
 
         form.find('input[type="button"]').on('click', function () {
-            qBase.filter();
             preventScroll();
+            qBase.filter();
         });
     }
 
@@ -1327,15 +1364,16 @@ function QOptions () {
     this.get = function (id) {
         return byId(id).value;
     };
-    this.getNumber = function (id) {
+    this.getNum = function (id) {
         return +byId(id).value;
     };
 
 
-    PERIOD = this.getNumber('period');
+    PERIOD = this.getNum('period');
     this.recursive = +byName('recursive');
+    this.slaTime = this.get('slatime');
 
-    
+
     var form = $('form').last(),
         inputs = form.find('select, input'),
         submitBtn = form.find('input[type="submit"]').css('margin-top', '10px')[0],
@@ -1367,7 +1405,7 @@ function QOptions () {
         function markAllOptions (mark) {
             var arr = ['queues', 'agents', 'phones'];
             for (var i in arr) {
-                if (qOptions.get(arr[i]) === 'use_include') {
+                if (qOpts.get(arr[i]) === 'use_include') {
                     var options = byId(arr[i] + 'include_selected').options;
                     for (var j = options.length - 1; j >= 0; j--) {
                         options[j].selected = mark;
@@ -1377,7 +1415,7 @@ function QOptions () {
         }
 
 
-        if (!qOptions.get('name')) {
+        if (!qOpts.get('name')) {
             window.scrollTo(0, 0);
             byId('name').focus();
             alert('Please enter the report name.');
@@ -1447,8 +1485,8 @@ function QOptions () {
 }
 function QPolling (onResponse) {
     var that = this,
-        username = qOptions.config('username'),
-        password = qOptions.config('password'),
+        username = qOpts.config('username'),
+        password = qOpts.config('password'),
         xhr,
         preloaderShown,
         today,
@@ -1457,7 +1495,7 @@ function QPolling (onResponse) {
         requestEnd,
         firstPoll,
         timeoutHandle,
-        pollDelay = +qOptions.config('refresh');
+        pollDelay = +qOpts.config('refresh');
 
 
     function ajaxGet (uri, success, failure) {
@@ -1479,23 +1517,23 @@ function QPolling (onResponse) {
     function calcTimeFrame () {
         today = lastToday = getToday();
 
-        var startday = qOptions.getNumber('startday');
+        var startday = qOpts.getNum('startday');
         if (startday === 1) {
-            START = new Date(qOptions.getNumber('start_year'), qOptions.getNumber('start_month') - 1, qOptions.getNumber('start_day')).getTime() / 1000;
+            START = new Date(qOpts.getNum('start_year'), qOpts.getNum('start_month') - 1, qOpts.getNum('start_day')).getTime() / 1000;
         }
         else {
             START = getDaysAhead(today, startday);
         }
-        START += qOptions.getNumber('start_hour') * 3600 + qOptions.getNumber('start_minute') * 60 + qOptions.getNumber('start_second');
+        START += qOpts.getNum('start_hour') * 3600 + qOpts.getNum('start_minute') * 60 + qOpts.getNum('start_second');
 
-        var endday = qOptions.getNumber('endday');
+        var endday = qOpts.getNum('endday');
         if (endday == 1) {
-            END = new Date(qOptions.getNumber('end_year'), qOptions.getNumber('end_month') - 1, qOptions.getNumber('end_day')).getTime() / 1000;
+            END = new Date(qOpts.getNum('end_year'), qOpts.getNum('end_month') - 1, qOpts.getNum('end_day')).getTime() / 1000;
         }
         else {
             END = getDaysAhead(today, endday);
         }
-        END += qOptions.getNumber('end_hour') * 3600 + qOptions.getNumber('end_minute') * 60 + qOptions.getNumber('end_second');
+        END += qOpts.getNum('end_hour') * 3600 + qOpts.getNum('end_minute') * 60 + qOpts.getNum('end_second');
 
         if (START >= END) {
             alert('Start time should be before end time.');
@@ -1515,7 +1553,7 @@ function QPolling (onResponse) {
 
     function requestIfAllowed () {
         if (!document.hidden) {
-            var request = '?_username=' + username + ';_password=' + password + ';start=' + requestStart + ';end=' + requestEnd + ';recursive=' + qOptions.recursive;
+            var request = '?_username=' + username + ';_password=' + password + ';start=' + requestStart + ';end=' + requestEnd + ';recursive=' + qOpts.recursive;
             ajaxGet(request, response, function () {    // on error, poll again
                 timeoutHandle = setTimeout(requestIfAllowed, pollDelay);
             });
@@ -1586,17 +1624,17 @@ function QPolling (onResponse) {
             // Handle the change of day at midnight. If the start or end day is not a specific date then the report period will change every day.
             today = getToday();
             if (today !== lastToday) {
-                if (qOptions.get('startday') === '0') {
+                if (qOpts.get('startday') === '0') {
                     START = getDaysAhead(START, 1);
                 }
-                if (qOptions.get('endday') === '0') {
+                if (qOpts.get('endday') === '0') {
                     END = getDaysAhead(END, 1);
                 }
             }
             lastToday = today;
 
             if (START >= END) {
-                alert('Because start time was set for "Today", it became greater than end time after midnight. Stopping.');
+                alert('Because start_time was set for "Today", it became greater than end_time after midnight. Stopping.');
                 return;
             }
 
@@ -1830,9 +1868,9 @@ function QMenu (container) {
     }
 
     container.innerHTML = str +
-        '<div id="pie-chooser"></div><button id="zoom-out" onclick="qChart.resetZoom()" class="universal">Reset chart</button>' +
+        '<div id="piechart-chooser"></div><button id="zoom-out" onclick="qChart.resetZoom()" class="universal">Reset chart</button>' +
         '<div id="zooming-overlay" ondragstart="return false"></div><div id="left-overlay">&#10096;</div><div id="right-overlay">&#10097;</div>';
-    container.insertAdjacentHTML('afterend', '<section id="right-menu"><button id="go-table" onclick="qMenu.goTo(\'table\')"></button><button id="go-line" onclick="qMenu.goTo(\'line\')"></button><button id="go-bar" onclick="qMenu.goTo(\'bar\')"></button><button id="go-barstacked" onclick="qMenu.goTo(\'barstacked\')"></button><button id="go-pie" onclick="qMenu.goTo(\'pie\')"></button><button id="go-csv" onclick="qBase.downloadCSV()"></button><button id="go-png" onclick="qChart.downloadPNG()"></button></section>');
+    container.insertAdjacentHTML('afterend', '<section id="right-menu"><button id="go-table" onclick="qMenu.goTo(\'table\')"></button><button id="go-linechart" onclick="qMenu.goTo(\'linechart\')"></button><button id="go-barchart" onclick="qMenu.goTo(\'barchart\')"></button><button id="go-stacked" onclick="qMenu.goTo(\'stacked\')"></button><button id="go-piechart" onclick="qMenu.goTo(\'piechart\')"></button><button id="go-csv" onclick="qBase.downloadCSV()"></button><button id="go-png" onclick="qChart.downloadPNG()"></button></section>');
 
     var slides = container.children;
 
@@ -1850,7 +1888,7 @@ function QMenu (container) {
             nextSlide.style.opacity = 1;
             byId('go-' + this.type).className = '';
 
-            qOptions.onFormDirty();
+            qOpts.onFormDirty();
         }
 
         if (qChart.originalZoom && slideIndex !== nextSlideIndex) {
@@ -1873,9 +1911,9 @@ function QMenu (container) {
         upToDate[nextSlideIndex] = true;
 
         byId('go-png').disabled = (nextType === 'table');
-        byId('pie-chooser').style.display = nextType === 'pie' ? 'block' : 'none';
+        byId('piechart-chooser').style.display = nextType === 'piechart' ? 'block' : 'none';
         byId('go-' + nextType).className = 'active';
-        var showMoveLeftRight = (PERIOD <= 0 || nextType === 'table' || nextType === 'pie') ? 'none' : 'block';
+        var showMoveLeftRight = (PERIOD <= 0 || nextType === 'table' || nextType === 'piechart') ? 'none' : 'block';
         byId('left-overlay').style.display = showMoveLeftRight;
         byId('right-overlay').style.display = showMoveLeftRight;
 
@@ -2022,10 +2060,10 @@ function getTableHeading () {
 
 document.addEventListener("DOMContentLoaded", function() {
 
-    window.qOptions = new QOptions();
+    window.qOpts = new QOptions();
     window.qMenu = new QMenu(byId('left-content'));
 
-    window.qBase = new QBase(qOptions.getColumns(), qOptions.getRows());
+    window.qBase = new QBase(qOpts.getColumns(), qOpts.getRows());
 
     window.qTable = new QTable();
     window.qChart = new QChart(byId('left-content'));
