@@ -93,7 +93,7 @@ function QChart (container) {
                 str += '<option value="' + i + '">' + COLUMNS[i] + '</option>';
             }
         }
-        str += '</select></label><label>&#8198;, or row <select id="piechart-by-row"><option value="">Choose row</option>';
+        str += '</select></label><label> or row <select id="piechart-by-row"><option value="">Choose row</option>';
         for (i in table) {
             var row = table[i],
                 totalVisible = 0;
@@ -433,10 +433,6 @@ var START,
     END,
     PERIOD,
     DAY = 86400,
-    
-    REARRANGE = [
-        0,1,2,3,4,5,6,7,8,9,10,11
-    ],
 
     TYPES = ['table', 'linechart', 'barchart', 'stacked', 'piechart'],
     SLIDES = {},
@@ -455,14 +451,40 @@ var START,
         'Not answered',
         'Inbound calls',
         'Inbound answered',
-        'Inbound not answered',
+        'Inbound no answer',
         'Internal calls',
         'Internal answered',
-        'Internal not answered',
+        'Internal no answer',
         'Outbound calls',
         'Outbound answered',
-        'Outbound not answered'
-    ];
+        'Outbound no answer'],
+
+    PrimaryColsLen = COLUMNS.length,
+
+    REARRANGE = [];
+
+COLUMNS = COLUMNS.concat([
+    'Hold time min',
+    'Hold time avg',
+    'Hold time max',
+    'Talk time min',
+    'Talk time avg',
+    'Talk time max',
+    'Total time min',
+    'Total time avg',
+    'Total time max',
+    'Abandoned by caller',
+    'No agents available',
+    'Time-out in queue',
+    'Key press by caller',
+    'Agent completed',
+    'Caller completed',
+    'Transfer by agent'
+]);
+
+for (PERIOD = 0; PERIOD < COLUMNS.length; PERIOD++) {
+    REARRANGE[PERIOD] = PERIOD;
+}
 
 
 function QBase (visibleCols, visibleRows) {
@@ -514,14 +536,14 @@ function QBase (visibleCols, visibleRows) {
     };
 
 
-    this.setVisibleCols = function (pos, value) {
+    this.setVisibleCol = function (pos, value) {
         visibleCols[pos] = value;
         this.calculateColPos();
         this.filter();
     };
 
 
-    this.setVisibleRows = function (pos, value) {
+    this.setVisibleRow = function (pos, value) {
         visibleRows[pos] = value;
         calculateRowPos();
         this.filter();
@@ -550,8 +572,82 @@ function QBase (visibleCols, visibleRows) {
     }
 
 
+    function calcSecondaryCols (row) {
+        var call,
+            rowtot = row.total,
+            minhold = Infinity,
+            avghold = 0,
+            maxhold = 0,
+            mintalk = Infinity,
+            avgtalk = 0,
+            maxtalk = 0,
+            mintotal = Infinity,
+            avgtotal = 0,
+            maxtotal = 0,
+            abandon = 0,
+            noagent = 0,
+            timeout = 0,
+            keypress = 0,
+            agent = 0,
+            caller = 0,
+            transfer = 0,
+            answeredCount = 0;
+
+        for (var i in row.calls) {
+            call = row.calls[i];
+            minhold = Math.min(minhold, call.hold);
+            avghold += call.hold;
+            maxhold = Math.max(maxhold, call.hold);
+            if (call.answer) {
+                mintalk = Math.min(mintalk, call.talk);
+                avgtalk += call.talk;
+                maxtalk = Math.max(maxtalk, call.talk);
+                answeredCount++;
+            }
+            mintotal = Math.min(mintotal, call.total);
+            avgtotal += call.total;
+            maxtotal = Math.max(maxtotal, call.total);
+            var q = call.queuestatus;
+            if (q === 'abandon') {
+                abandon++;
+            } else if (q === 'exitempty') {
+                noagent++;
+            } else if (q === 'exitwithintimeout') {
+                timeout++;
+            } else if (q === 'exitwithkey') {
+                keypress++;
+            } else if (q === 'completeagent') {
+                agent++;
+            } else if (q === 'completecaler') {
+                caller++;
+            } else if (q === 'transfer') {
+                transfer++;
+            }
+        }
+
+        if (minhold === Infinity) {
+            minhold = 0;
+        }
+        if (mintalk === Infinity) {
+            mintalk = 0;
+        }
+        if (mintotal === Infinity) {
+            mintotal = 0;
+        }
+        if (rowtot) {
+            avghold /= rowtot;
+            avgtalk /= answeredCount;
+            avgtotal /= rowtot;
+        }
+
+        row.push(minhold, avghold, maxhold, mintalk, avgtalk, maxtalk, mintotal, avgtotal, maxtotal, abandon, noagent, timeout, keypress, agent, caller, transfer);
+    }
+
+
     function reduceRow (row) {
         var result = [row[0]];
+
+        calcSecondaryCols(row);
         for (var i in that.colPos) {
             result.push(row[that.colPos[i] + 1]);
         }
@@ -668,8 +764,9 @@ function QBase (visibleCols, visibleRows) {
 
 
     function newRow () {
-        var row = new Array(COLUMNS.length + 1).fill(0);
+        var row = new Array(PrimaryColsLen + 1).fill(0);
         row.total = 0;
+        row.calls = [];
         return row;
     }
 
@@ -679,6 +776,7 @@ function QBase (visibleCols, visibleRows) {
             multiRow[i] += row[i];
         }
         multiRow.total += row.total;
+        multiRow.calls = multiRow.calls.concat(row.calls);
     }
 
 
@@ -691,6 +789,7 @@ function QBase (visibleCols, visibleRows) {
                 var tblRow = table[rowPos[display]];
                 
                 tblRow.total++;
+                tblRow.calls = tblRow.calls.concat(row.calls);
                 for (var i = 1, n = row.length; i < n; i++) {
                     tblRow[i] += row[i];
                 }
@@ -700,11 +799,9 @@ function QBase (visibleCols, visibleRows) {
 
 
     function decode (call, multiRow, justAppend) {
-        var stype = call.getAttribute('stype'),
-            dtype = call.getAttribute('dtype'),
-            snumber = call.getAttribute('snumber'),
-            dnumber = call.getAttribute('dnumber'),
-            answered = +call.getAttribute('answered'),
+        var stype = call.stype,
+            dtype = call.dtype,
+            answered = call.answer,
             external = 'external',
             local = 'local',
             isInbound,
@@ -719,11 +816,12 @@ function QBase (visibleCols, visibleRows) {
             row = newRow();
         }
         row.total++;
+        row.calls.push(call);
 
         // total calls
         row[1]++;
         // sla time
-        if (answered && (answered - call.getAttribute('start') <= qOpts.slaTime)) {
+        if (answered && (answered - call.start <= qOpts.slaTime)) {
             row[2]++;
         }
         // answered
@@ -805,11 +903,17 @@ function QBase (visibleCols, visibleRows) {
         
         for (var i = 0, n = _calls.length; i < n; i++) {
             var call = _calls[i];
-            call.end = call.getAttribute('end');
+            call.start = +call.getAttribute('start');
+            call.answer = +call.getAttribute('answered');
+            call.end = +call.getAttribute('end');
             call.dtype = call.getAttribute('dtype');
             call.stype = call.getAttribute('stype');
             call.dnumber = call.getAttribute('dnumber');
             call.snumber = call.getAttribute('snumber');
+            call.queuestatus = call.getAttribute('queuestatus');
+            call.hold = call.answer ? call.answer - call.start : call.end - call.start;
+            call.talk = call.answer ? call.end - call.answer : 0;
+            call.total = call.end - call.start;
             calls.push(call);
             notEmpty = true;
         }
@@ -924,7 +1028,7 @@ function QBase (visibleCols, visibleRows) {
             dateFormat = qOpts.config('dateformat'),
             timeFormat = qOpts.config('timeformat');
  
-        if ((END - START) / PERIOD > 1900) {
+        if ((END - START) / PERIOD > Math.max(900, window.innerWidth - 390)) {
             alert('Too many rows to display. Please set bigger time period.');
             byId('period').value = '0';
             throw 'too many rows to display';
@@ -1118,22 +1222,22 @@ function QBase (visibleCols, visibleRows) {
                                     name = el.name;
                                     break;
                                 case 'description':
-                                    name = el.description;
+                                    name = el.description || el.name;
                                     break;
                                 case 'internal':
                                     name = el.callerid;
                                     break;
                                 case 'name_description':
-                                    name = el.name + '&nbsp;' + el.description;
+                                    name = el.name + ' ' + (el.description || el.name);
                                     break;
                                 case 'internal_description':
-                                    name = el.callerid + '&nbsp;' + el.description;
+                                    name = el.callerid + ' ' + (el.description || el.name);
                                     break;
                                 case 'description_name':
-                                    name = el.description + '&nbsp;' + el.name;
+                                    name = (el.description || el.name) + ' ' + el.name;
                                     break;
                                 case 'description_internal':
-                                    name = el.description + '&nbsp;' + el.callerid;
+                                    name = (el.description || el.name) + ' ' + el.callerid;
                                     break;
                             }
                             if (dest === 'agents') {
@@ -1252,7 +1356,23 @@ function QOptions () {
             'internalnoanswer',
             'outcalls',
             'outanswer',
-            'outnoanswer'
+            'outnoanswer',
+            'holdmin',
+            'holdavg',
+            'holdmax',
+            'talkmin',
+            'talkavg',
+            'talkmax',
+            'totalmin',
+            'totalavg',
+            'totalmax',
+            'abandon',
+            'noagent',
+            'timeout',
+            'keypress',
+            'agent',
+            'caller',
+            'transfer'
         ],
         destControls = [
             'allcalls',
@@ -1263,7 +1383,7 @@ function QOptions () {
         filterControls = [
             'phonetitle',
             'slatime',
-            'total',
+            'totalrow',
             'queues',
             'agents',
             'phones',
@@ -1271,10 +1391,9 @@ function QOptions () {
             'agentsinclude',
             'phonesinclude'
         ],
-
         savedScrollX,
         savedScrollY;
-    
+
     
     window.addEventListener('scroll', function () {
         savedScrollX = window.scrollX;
@@ -1292,48 +1411,49 @@ function QOptions () {
 
         byId('slatime').addEventListener('change', function () {
             that.slaTime = +this.value;
+            preventScroll();
         });
         
         for (i in timeControls) {
             byId(timeControls[i]).addEventListener('change', function () {
-                preventScroll();
                 qPolling.update();
+                preventScroll();
             });
         }
         for (i in columnControls) {
             byId(columnControls[i]).addEventListener('change', function () {
-                preventScroll();
                 var pos = columnControls.indexOf(this.id);
-                qBase.setVisibleCols(pos, +this.value);
+                qBase.setVisibleCol(pos, +this.value);
+                preventScroll();
             });
         }
         for (i in destControls) {
             byId(destControls[i]).addEventListener('change', function () {
-                preventScroll();
                 var pos = destControls.indexOf(this.id);
-                qBase.setVisibleRows(pos, +this.value);
+                qBase.setVisibleRow(pos, +this.value);
+                preventScroll();
             });
         }
         for (i in filterControls) {
             byId(filterControls[i]).addEventListener('change', function () {
-                preventScroll();
                 qBase.filter();
+                preventScroll();
             });
         }
         
         byId('period').addEventListener('change', function () {
-            preventScroll();
             PERIOD = +this.value;
             byId('heading_rows').innerHTML = PERIOD ? 'Sum of destinations:' : 'Display destinations:';
             var showMoveLeftRight = (PERIOD <= 0 || qMenu.type === 'table' || qMenu.type === 'piechart') ? 'none' : 'block';
             byId('left-overlay').style.display = showMoveLeftRight;
             byId('right-overlay').style.display = showMoveLeftRight;
             qBase.filter();
+            preventScroll();
         });
 
         form.find('input[type="button"]').on('click', function () {
-            preventScroll();
             qBase.filter();
+            preventScroll();
         });
     }
 
@@ -1371,7 +1491,7 @@ function QOptions () {
 
     PERIOD = this.getNum('period');
     this.recursive = +byName('recursive');
-    this.slaTime = this.get('slatime');
+    this.slaTime = +this.get('slatime');
 
 
     var form = $('form').last(),
@@ -1439,12 +1559,13 @@ function QOptions () {
                     '<input type="hidden" name="endtime" value="' + (END - getBeginningOfDay(END)) + '"/>');
 
         if (qChart.pieFilter && qChart.pieFilter.id) {
-            form[0]['piesource'].value = qChart.pieFilter.by + '_' + qChart.pieFilter.id;
+            form[0].piesource.value = qChart.pieFilter.by + '_' + qChart.pieFilter.id;
         }
-        form[0]['type'].value = qMenu.type;
+        form[0].type.value = qMenu.type;
 
         $.post(form.attr('action'), form.serialize(), function (response) {
-            form[0]['id'].value = response.getElementsByTagName('return')[0].id;
+            form[0].id.value = response.getElementsByTagName('return')[0].id;
+            window.history.pushState('', form[0].name, location.href + '?id=' + form[0].id);
             onFormClean();
         });
         markAllOptions(false);
