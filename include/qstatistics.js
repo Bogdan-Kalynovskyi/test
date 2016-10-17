@@ -479,7 +479,8 @@ COLUMNS = COLUMNS.concat([
     'Key press by caller',
     'Agent completed',
     'Caller completed',
-    'Transfer by agent'
+    'Transfer by agent',
+    'Logged in time'
 ]);
 
 for (PERIOD = 0; PERIOD < COLUMNS.length; PERIOD++) {
@@ -636,11 +637,11 @@ function QBase (visibleCols, visibleRows) {
         }
         if (rowtot) {
             avghold /= rowtot;
-            avgtalk /= answeredCount;
+            avgtalk = answeredCount ? avgtalk / answeredCount : 0;
             avgtotal /= rowtot;
         }
 
-        row.push(minhold, avghold, maxhold, mintalk, avgtalk, maxtalk, mintotal, avgtotal, maxtotal, abandon, noagent, timeout, keypress, agent, caller, transfer);
+        row.push(formatPeriod(minhold), formatPeriod(avghold), formatPeriod(maxhold), formatPeriod(mintalk), formatPeriod(avgtalk), formatPeriod(maxtalk), formatPeriod(mintotal), formatPeriod(avgtotal), formatPeriod(maxtotal), formatPeriod(abandon), formatPeriod(noagent), formatPeriod(timeout), formatPeriod(keypress), formatPeriod(agent), formatPeriod(caller), formatPeriod(transfer), '');
     }
 
 
@@ -663,7 +664,8 @@ function QBase (visibleCols, visibleRows) {
         var showTotal = PERIOD && qOpts.getNum('totalrow'),
             response = new Array(table.length),
             totalRow = ['Total'],
-            i, j, perc;
+            loggedInCol = visibleCols.length - 1,
+            i, j;
 
         for (i in table) {
             if (csv) {
@@ -683,14 +685,23 @@ function QBase (visibleCols, visibleRows) {
                 j1 = +j + 1;
             if (visibleCols[i1] === 2) {
                 for (i in table) {
-                    var row = table[i];
-                    perc = row.total ? Math.round(row[j1] * 100 / row.total) : '';
+                    var row = table[i],
+                        perc;
+                    
+                    if (i1 === loggedInCol) {
+                        perc = row.loggedtime !== '' ? Math.round(row.loggedtime / (END - START)) : '';
+                    }
+                    else {
+                        perc = row.total ? Math.round(row[j1] * 100 / row.total) : '';
+                    }
+                    
                     if (csv) {
                         response[i].push(row[j1]);
                         response[i].push(perc);
                     }
                     else {
-                        response[i][j1] += ' <small>(' + perc + (row.total ? '&#8198;%' : '') + ')</small>';
+                        perc = perc !== '' ? (perc + '&#8198;%') : '';
+                        response[i][j1] += ' <small>(' + perc + ')</small>';
                     }
                 }
 
@@ -944,8 +955,12 @@ function QBase (visibleCols, visibleRows) {
                 cacheFields(agent);
                 agent.dtype = agent.getAttribute('dtype');
                 agent.dnumber = agent.getAttribute('dnumber');
+                agent.loggedtime = +agent.getAttribute('loggedtime');
                 agents[agent.id] = agent;
                 notEmpty = true;
+            }
+            else {
+                agents[agent.id].loggedtime += +agent.getAttribute('loggedtime');
             }
         }
 
@@ -1278,6 +1293,12 @@ function QBase (visibleCols, visibleRows) {
                 else {
                     table.push(reduceRow(row));
                 }
+
+                if (PERIOD === 0 && dest === 'agents' && visibleCols[visibleCols.length - 1]) {
+                    row = multiRow || table[table.length - 1];
+                    row[that.colPos.indexOf(visibleCols.length - 1) + 1] = formatPeriod(el.loggedtime, true);
+                    row.loggedtime = el.loggedtime;
+                }
             }
         }
     }
@@ -1286,7 +1307,7 @@ function QBase (visibleCols, visibleRows) {
     this.filter = function () {
         table = [];
         if (PERIOD) {
-            this.colSum = new Array(that.colPos.length).fill(0);
+            this.colSum = new Array(this.colPos.length).fill(0);
         }
         total = 0;
 
@@ -1372,7 +1393,8 @@ function QOptions () {
             'keypress',
             'agent',
             'caller',
-            'transfer'
+            'transfer',
+            'logintime'
         ],
         destControls = [
             'allcalls',
@@ -2144,6 +2166,27 @@ function formatTime (time, format) {
     else {
         return pad(hh) + ':' + pad(mm);
     }
+}
+
+
+function formatPeriod (period, dontShowHours) {
+    var time = Math.floor(period / DAY),
+        str = '';
+
+    if (time) {
+        str = pad(time) + ':';
+    }
+    time = Math.floor((period % DAY) / 3600);
+    if (time || str || !dontShowHours) {
+        str += pad(time) + ':';
+    }
+    time = Math.floor((period % 3600) / 60);
+    if (time || str) {
+        str += pad(time) + ':';
+    }
+    time = Math.round(period % 60);
+    str += pad(time);
+    return str;
 }
 
 

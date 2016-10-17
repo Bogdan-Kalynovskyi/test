@@ -117,7 +117,7 @@ form input.text {
 	cursor: pointer;
 }
 
-.results td:first-child {
+.results td {
 	white-space: nowrap;
 }
 
