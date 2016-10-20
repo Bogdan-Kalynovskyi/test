@@ -123,7 +123,7 @@ form input.text {
 
 .results small {
 	color: #666666;
-	word-spacing: 2px;
+	word-spacing: -2px;
 }
 
 th.asc:after, th.desc:after {

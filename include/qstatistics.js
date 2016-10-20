@@ -1,3 +1,94 @@
+function QAgentEvents () {
+    var arr = [];
+
+
+    function byTime (a, b) {
+        if (a.time > b.time) {
+            return 1;
+        }
+        else if (a.time < b.time) {
+            return -1;
+        }
+        else {
+            return 0;
+        }
+    }
+
+
+    this.add = function (nodes) {
+        for (var i = 0, n = nodes.length; i < n; i++) {
+            var node = nodes[i],
+                event = {
+                    time: +node.getAttribute('time'),
+                    login: node.getAttribute('type') === 'agentlogin'
+                };
+
+            for (i in arr) {
+                if (arr[i].time === event.time && arr[i].login === event.login) {
+                    event = null;
+                    break;
+                }
+            }
+
+            if (event) {
+                arr.push(event);
+                arr.sort(byTime);
+            }
+        }
+    };
+
+    
+    this.calcLoggedTime = function () {
+        var start,
+            end,
+            clear,
+            i = 0,
+            n = arr.length,
+            total = 0;
+
+        while (i < n) {
+            clear = false;
+            
+            var el = arr[i];
+            if (el.login) {
+                start = el.time;
+            }
+            else {
+                end = el.time;
+            }
+            
+            if (end < START) {
+                clear = true;
+            }
+            else if (start && end) {
+                total += Math.min(END, end) - Math.max(START, start);
+                clear = true;
+            }
+
+            if (start > END || end > END) {
+                if (clear) {
+                    start = undefined;
+                    end = undefined;
+                }
+                break;
+            }
+            if (clear) {
+                start = undefined;
+                end = undefined;
+            }
+
+            i++;
+        }
+        
+        if (start && !end) {
+            total += END - Math.max(START, start);
+        }
+
+        return total;
+    }
+}
+
+
 function QChart (container) {
     var that = this,
         table,
@@ -497,9 +588,9 @@ var START,
         'Logged in time'
     ],
 
-    COL_timeStart = 13,
+    COL_timeStart = 14,
     COL_timeEnd = 22,
-    COL_loggedIn = 30,
+    COL_loggedIn = 28,
     
     REARRANGE = [];
 
@@ -832,7 +923,7 @@ function QBase (visibleCols, visibleRows) {
         // total calls
         row[1]++;
         // sla time
-        if (answered && (answered - call.start <= qOpts.slaTime)) {
+        if (answered && (call.hold <= qOpts.slaTime)) {
             row[2]++;
         }
         // answered
@@ -922,9 +1013,9 @@ function QBase (visibleCols, visibleRows) {
             call.dnumber = call.getAttribute('dnumber');
             call.snumber = call.getAttribute('snumber');
             call.queuestatus = call.getAttribute('queuestatus');
-            call.hold = call.answer ? call.answer - call.start : call.end - call.start;
-            call.talk = call.answer ? call.end - call.answer : 0;
-            call.total = call.end - call.start;
+            call.hold = +call.getAttribute('holdtime');
+            call.talk = +call.getAttribute('talktime');
+            call.total = +call.getAttribute('totaltime');
             calls.push(call);
             notEmpty = true;
         }
@@ -955,13 +1046,14 @@ function QBase (visibleCols, visibleRows) {
                 cacheFields(agent);
                 agent.dtype = agent.getAttribute('dtype');
                 agent.dnumber = agent.getAttribute('dnumber');
-                agent.loggedtime = +agent.getAttribute('loggedtime');
+                agent.events = new QAgentEvents();
                 agents[agent.id] = agent;
                 notEmpty = true;
             }
             else {
-                agents[agent.id].loggedtime += +agent.getAttribute('loggedtime');
+                agent = agents[agent.id];
             }
+            agent.events.add(agent.getElementsByTagName('event'));
         }
 
         for (i = 0, n = _phones.length; i < n; i++) {
@@ -1057,7 +1149,6 @@ function QBase (visibleCols, visibleRows) {
             timeObj,
             calls,
             row,
-            now = Date.now() / 1000,
             dateFormat = qOpts.config('dateformat'),
             timeFormat = qOpts.config('timeformat');
  
@@ -1067,7 +1158,7 @@ function QBase (visibleCols, visibleRows) {
             throw 'too many rows to display';
         }
 
-        while (startTime < END && startTime < now) {
+        while (startTime < END) {
             endTime += PERIOD;
             endTime = Math.min(endTime, END);
 
@@ -1146,8 +1237,7 @@ function QBase (visibleCols, visibleRows) {
 
 
     function byDaysOfWeek () {
-        var now = Date.now() / 1000,
-            startTime = START,
+        var startTime = START,
             endTime = getBeginningOfDay(START),
             calls,
             row,
@@ -1174,9 +1264,8 @@ function QBase (visibleCols, visibleRows) {
             table[i] = row;
         }
 
-        while (startTime < END && startTime < now) {
-            endTime = getDaysAhead(endTime, 1);
-            endTime = Math.min(endTime, END);
+        while (startTime < END) {
+            endTime = Math.min(getDaysAhead(endTime, 1), END);
 
             dayOfWeek = new Date(startTime * 1000).getDay();
             reportIndex = dayOfWeek - startDayOfWeek;  // start from startDayOfWeek
@@ -1314,7 +1403,7 @@ function QBase (visibleCols, visibleRows) {
 
                 if (PERIOD === 0 && dest === 'agents' && visibleCols[visibleCols.length - 1]) {
                     row = multiRow || table[table.length - 1];
-                    row[that.colPos.indexOf(visibleCols.length - 1) + 1] = el.loggedtime;
+                    row[that.colPos.indexOf(visibleCols.length - 1) + 1] = el.events.calcLoggedTime();
                 }
             }
         }
