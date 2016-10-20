@@ -86,7 +86,7 @@ function QChart (container) {
         
         var str = 'Display:<label> column <select id="piechart-by-column"><option value="">Choose column</option>',
             visibleCols = qOpts.getColumns(),
-            value;
+            colPosLen = qBase.colPos.length + 1;
         
         for (var i in COLUMNS) {
             if (visibleCols[i]) {
@@ -99,10 +99,9 @@ function QChart (container) {
                 totalVisible = 0;
 
             if (row.total) {
-                var tableHeading = getTableHeading(),
-                    totalCallsPos = qBase.colPos.indexOf(0) + 1;
+                var totalCallsPos = qBase.colPos.indexOf(0) + 1;
 
-                for (var j = 1; j < tableHeading.length; j++) {
+                for (var j = 1; j < colPosLen; j++) {
                     if (j !== totalCallsPos) {
                         totalVisible += row[j];
                     }
@@ -160,6 +159,12 @@ function QChart (container) {
 
 
     function getPieDataTable () {
+        function setEmptyChart () {
+            data = [['', ''], ['No calls', 1]];
+            options.piechart.legend = 'none';
+            options.piechart.enableInteractivity = false;
+        }
+        
         that.pieFilter.id = qOpts.get('piechart-by-column');
         that.pieFilter.by = 'column';
         if (!that.pieFilter.id) {
@@ -168,54 +173,50 @@ function QChart (container) {
         }
         var row,
             id = +that.pieFilter.id,
-            data = [['', '']],
-            hasTotalRow = PERIOD && qOpts.getNum('totalrow');
+            data = [['??', '???']];              // in pieChart, first row seems not to send any useful information
 
-        if (isNaN(id)) {
+        if (isNaN(id)) {                         // case when both selects are unset, or anything weird
             return;
-        }
-       
-        if (hasTotalRow) {
-            var rowsum = ['Total'].concat(qBase.colSum);
-            rowsum.total = 1;
-            table = table.push(rowsum);
         }
             
         options.piechart.legend = null;
         options.piechart.enableInteractivity = true;
 
         if (that.pieFilter.by === 'column') {
-            var pos = qBase.colPos.indexOf(id);
-            if (!PERIOD || qBase.colSum[pos]) {
-                var i = (!PERIOD && qOpts.getNum('allcalls')) ? 1 : 0,             // in Destination mode, don't show "All calls" in chart
-                    n = table.length - (hasTotalRow ? 1 : 0),                      // in Time mode, don't show "Total" row
-                    totalVisible = 0;
+            var pos = qBase.colPos.indexOf(id) + 1,
+                i = (!PERIOD && qOpts.getNum('allcalls')) ? 1 : 0,                // in Destination mode, don't show "All calls" in chart
+                n = table.length - (PERIOD && qOpts.totalRow ? 1 : 0),            // in Time mode, don't show "Total" row
+                totalVisible = 0;
 
-                    for (; i < n; i++) {
-                    row = table[i];
-                    if (row.total) {
-                        totalVisible += row[pos + 1];
-                        data.push([row[0], row[pos + 1]]);
-                    }
+                for (; i < n; i++) {
+                row = table[i];
+                if (row.total) {
+                    totalVisible += row[pos];
+                    data.push([row[0], row[pos]]);
                 }
             }
-            if (!totalVisible) {
-                data = [['', ''], ['No calls', 1]];
-                options.piechart.legend = 'none';
-                options.piechart.enableInteractivity = false;
+            if (!totalVisible) {                                            // all cols should be given as an option, but they don't always contain data
+                setEmptyChart();
             }
         }
         else {
             row = table[id];
-            if (row.total) {
+            if (row.total) {                                              // this can be false if you save report and then data changes
                 var tableHeading = getTableHeading(),
                     totalCallsPos = qBase.colPos.indexOf(0) + 1;
                 
                 for (i = 1, n = tableHeading.length; i < n; i++) {
                     if (i !== totalCallsPos) {
+                        var i1 = qBase.colPos[i];
+                        if ((i1 >= COL_timeStart && i1 <= COL_timeEnd) || i1 === COL_loggedIn) {
+                            tableHeading[i] += ', seconds';
+                        }
                         data.push([tableHeading[i], row[i]]);
                     }
                 }
+            }
+            else {
+                setEmptyChart();
             }
         }
 
@@ -224,7 +225,26 @@ function QChart (container) {
 
 
     function getDataTable () {
-        var data = [getTableHeading()].concat(table);
+        var colPos = qBase.colPos,
+            data = [getTableHeading()],
+            j = 0,
+            n = table.length - (PERIOD && qOpts.totalRow ? 1 : 0);            // in Time mode, don't show "Total" row
+
+        for (; j < n; j++) {
+            var row = table[j].slice();
+            for (var i in colPos) {
+                var i1 = colPos[i],
+                    isTime = i1 >= COL_timeStart && i1 <= COL_timeEnd;
+                if (isTime) {
+                    row[i] = arrayPeriod(row[i]);
+                }
+                else if (i1 === COL_loggedIn) {
+                    row[i] = arrayPeriod(row[i], 4);
+                }
+            }
+            data.push(row);
+        }
+
         return google.visualization.arrayToDataTable(data);
     }
     
@@ -371,7 +391,7 @@ function QChart (container) {
                             break;
                     }
                 } 
-                table = qBase.getTable();
+                table = qBase.getData();
 
                 if (type !== 'piechart') {
                     nonPieDataTable = nonPieDataTable || getDataTable();
@@ -457,33 +477,33 @@ var START,
         'Internal no answer',
         'Outbound calls',
         'Outbound answered',
-        'Outbound no answer'],
+        'Outbound no answer',
+        'Hold time min',
+        'Hold time avg',
+        'Hold time max',
+        'Talk time min',
+        'Talk time avg',
+        'Talk time max',
+        'Total time min',
+        'Total time avg',
+        'Total time max',
+        'Abandoned by caller',
+        'No agents available',
+        'Time-out in queue',
+        'Key press by caller',
+        'Agent completed',
+        'Caller completed',
+        'Transfer by agent',
+        'Logged in time'
+    ],
 
-    PrimaryColsLen = COLUMNS.length,
-
+    COL_timeStart = 13,
+    COL_timeEnd = 22,
+    COL_loggedIn = 30,
+    
     REARRANGE = [];
 
-COLUMNS = COLUMNS.concat([
-    'Hold time min',
-    'Hold time avg',
-    'Hold time max',
-    'Talk time min',
-    'Talk time avg',
-    'Talk time max',
-    'Total time min',
-    'Total time avg',
-    'Total time max',
-    'Abandoned by caller',
-    'No agents available',
-    'Time-out in queue',
-    'Key press by caller',
-    'Agent completed',
-    'Caller completed',
-    'Transfer by agent',
-    'Logged in time'
-]);
-
-for (PERIOD = 0; PERIOD < COLUMNS.length; PERIOD++) {
+for (PERIOD = 0; PERIOD < COLUMNS.length; PERIOD++) {  // here PERIOD is just counter, and will be changed later
     REARRANGE[PERIOD] = PERIOD;
 }
 
@@ -575,7 +595,7 @@ function QBase (visibleCols, visibleRows) {
 
     function calcSecondaryCols (row) {
         var call,
-            rowtot = row.total,
+            rowTotal = row.total,
             minhold = Infinity,
             avghold = 0,
             maxhold = 0,
@@ -635,13 +655,13 @@ function QBase (visibleCols, visibleRows) {
         if (mintotal === Infinity) {
             mintotal = 0;
         }
-        if (rowtot) {
-            avghold /= rowtot;
+        if (rowTotal) {
+            avghold /= rowTotal;
             avgtalk = answeredCount ? avgtalk / answeredCount : 0;
-            avgtotal /= rowtot;
+            avgtotal /= rowTotal;
         }
 
-        row.push(formatPeriod(minhold), formatPeriod(avghold), formatPeriod(maxhold), formatPeriod(mintalk), formatPeriod(avgtalk), formatPeriod(maxtalk), formatPeriod(mintotal), formatPeriod(avgtotal), formatPeriod(maxtotal), formatPeriod(abandon), formatPeriod(noagent), formatPeriod(timeout), formatPeriod(keypress), formatPeriod(agent), formatPeriod(caller), formatPeriod(transfer), '');
+        row.push(minhold, avghold, maxhold, mintalk, avgtalk, maxtalk, mintotal, avgtotal, maxtotal, abandon, noagent, timeout, keypress, agent, caller, transfer, '');
     }
 
 
@@ -652,93 +672,73 @@ function QBase (visibleCols, visibleRows) {
         for (var i in that.colPos) {
             result.push(row[that.colPos[i] + 1]);
         }
-
         result.total = row.total;
-        total += row.total;
 
         return result;
     }
 
 
-    this.percTable = function (csv) {
-        var showTotal = PERIOD && qOpts.getNum('totalrow'),
-            response = new Array(table.length),
-            totalRow = ['Total'],
-            loggedInCol = visibleCols.length - 1,
+    this.getTable = function (csv) {
+        var result = new Array(table.length),
+            inserts = 0,
             i, j;
 
         for (i in table) {
-            if (csv) {
-                response[i] = [table[i][0]];
-            }
-            else {
-                response[i] = table[i].slice();
-            }
-        }
-
-        if (showTotal && !csv) {
-            totalRow = totalRow.concat(this.colSum);
+            result[i] = table[i].slice();
         }
         
         for (j in this.colPos) {
             var i1 = this.colPos[j],
-                j1 = +j + 1;
-            if (visibleCols[i1] === 2) {
-                for (i in table) {
-                    var row = table[i],
+                j1 = +j + 1 + inserts;
+
+            if (visibleCols[i1] === 2 || (i1 >= COL_timeStart && i1 <= COL_timeEnd) || (i1 === COL_loggedIn)) { // todo cache
+                for (i in result) {
+                    var tblRow = table[i],
+                        row = result[i],
                         perc;
-                    
-                    if (i1 === loggedInCol) {
-                        perc = row.loggedtime !== '' ? Math.round(row.loggedtime / (END - START)) : '';
-                    }
-                    else {
-                        perc = row.total ? Math.round(row[j1] * 100 / row.total) : '';
-                    }
-                    
-                    if (csv) {
-                        response[i].push(row[j1]);
-                        response[i].push(perc);
-                    }
-                    else {
-                        perc = perc !== '' ? (perc + '&#8198;%') : '';
-                        response[i][j1] += ' <small>(' + perc + ')</small>';
-                    }
-                }
 
-                if (showTotal) {
-                    perc = total ? Math.round(this.colSum[j] * 100 / total) : '';
-                    if (csv) {
-                        totalRow.push(this.colSum[j]);
-                        totalRow.push(perc);
+                    if (i1 >= COL_timeStart && i1 <= COL_timeEnd) {
+                        row[j1] = formatPeriod(row[j1], true);
                     }
-                    else {
-                        totalRow[j1] += ' <small>(' + perc + (total ? '&#8198;%' : '') + ')</small>';
+                    else if (i1 === COL_loggedIn) {
+                        if (row[j1]) {
+                            row[j1] = formatPeriod(row[j1]);
+                        }
                     }
-                }
-            }
-            else if (csv) {
-                for (i in table) {
-                    response[i].push(table[i][j1]);
-                }
-                if (showTotal) {
-                    totalRow.push(this.colSum[j]);
+
+                    if (visibleCols[i1] === 2) {
+                        if (i1 === COL_loggedIn) {
+                            perc = tblRow[+j + 1] ? Math.round(100 * tblRow[+j + 1] / (END - START)) : '';
+                        }
+                        else {
+                            perc = tblRow.total ? Math.round(100 * tblRow[+j + 1] / tblRow.total) : '';
+                        }
+
+                        if (csv) {
+                            row.splice(j1, 0, perc);
+                            inserts++;
+                        }
+                        else {
+                            if (perc !== '') {
+                                perc += ' %';
+                            }
+                            row[j1] += ' <small>(' + perc + ')</small>';
+                        }
+                    }
                 }
             }
         }
 
-        if (showTotal) {
-            response.push(totalRow);
-        }
-        return response;
+        return result;
     };
 
 
-    this.getTable = function () {
+    this.getData = function () {
         if (!table.length) {
             return new Array(this.colPos.length).fill(0).unshift('');
         }
         else {
-            return table;
+            return table.slice();
         }
     };
 
@@ -760,7 +760,7 @@ function QBase (visibleCols, visibleRows) {
         }
         str += row.join(',') + '\n';
 
-        var data = qBase.percTable(true);
+        var data = qBase.getTable(true);
         for (i in data) {
             str += data[i].join(',') + '\n';
         }
@@ -775,7 +775,7 @@ function QBase (visibleCols, visibleRows) {
 
 
     function newRow () {
-        var row = new Array(PrimaryColsLen + 1).fill(0);
+        var row = new Array(COL_timeStart + 1).fill(0);
         row.total = 0;
         row.calls = [];
         return row;
@@ -1005,15 +1005,33 @@ function QBase (visibleCols, visibleRows) {
 
 
     function reduceTable () {
-        var n = that.colPos.length + 1;
+        var n = that.colPos.length + 1,
+            total = 0;
+
+        if (PERIOD && qOpts.totalRow) {
+            var colSum = new Array(that.colPos.length + 1).fill(0);
+            colSum[0] = 'Total';
+        }
+
         for (var i in table) {
             var row = reduceRow(table[i]);
             table[i] = row;
-            if (PERIOD) {
+            if (PERIOD && qOpts.totalRow) {
                 for (var j = 1; j < n; j++) {
-                    that.colSum[j - 1] += row[j];
+                    colSum[j] += row[j];
+                }
+                total += row.total;
+            }
+        }
+        if (PERIOD && qOpts.totalRow) {
+            for (j = 1; j < n; j++) {
+                var j1 = that.colPos[j];
+                if (j1 >= COL_timeStart && j1 <= COL_timeEnd) {
+                    colSum[j] /= table.length;
                 }
             }
+            colSum.total = total;
+            table.push(colSum);
         }
     }
     
@@ -1296,8 +1314,7 @@ function QBase (visibleCols, visibleRows) {
 
                 if (PERIOD === 0 && dest === 'agents' && visibleCols[visibleCols.length - 1]) {
                     row = multiRow || table[table.length - 1];
-                    row[that.colPos.indexOf(visibleCols.length - 1) + 1] = formatPeriod(el.loggedtime, true);
-                    row.loggedtime = el.loggedtime;
+                    row[that.colPos.indexOf(visibleCols.length - 1) + 1] = el.loggedtime;
                 }
             }
         }
@@ -1306,10 +1323,6 @@ function QBase (visibleCols, visibleRows) {
 
     this.filter = function () {
         table = [];
-        if (PERIOD) {
-            this.colSum = new Array(this.colPos.length).fill(0);
-        }
-        total = 0;
 
         if (PERIOD === 0) {
             var filteredCalls = that.filterByTime(START, END);
@@ -1433,9 +1446,11 @@ function QOptions () {
 
         byId('slatime').addEventListener('change', function () {
             that.slaTime = +this.value;
-            preventScroll();
         });
-        
+        byId('totalrow').addEventListener('change', function () {
+            that.totalRow = +this.value;
+        });
+
         for (i in timeControls) {
             byId(timeControls[i]).addEventListener('change', function () {
                 qPolling.update();
@@ -1514,6 +1529,7 @@ function QOptions () {
     PERIOD = this.getNum('period');
     this.recursive = +byName('recursive');
     this.slaTime = +this.get('slatime');
+    this.totalRow = +this.get('totalrow');
 
 
     var form = $('form').last(),
@@ -1586,8 +1602,9 @@ function QOptions () {
         form[0].type.value = qMenu.type;
 
         $.post(form.attr('action'), form.serialize(), function (response) {
-            form[0].id.value = response.getElementsByTagName('return')[0].id;
-            window.history.pushState('', form[0].name, location.href + '?id=' + form[0].id);
+            var id = response.getElementsByTagName('return')[0].id;
+            form[0].id.value = id;
+            window.history.pushState('', form[0].name, '//' + location.host + location.pathname + '?id=' + id);
             onFormClean();
         });
         markAllOptions(false);
@@ -1856,7 +1873,7 @@ function QTable () {
     this.render = function (slide) {
         var i,
             str = '',
-            data = qBase.percTable();
+            data = qBase.getTable();
 
         container = slide;
         if (data) {
@@ -1910,7 +1927,7 @@ function QTable () {
 
         do {
             theadTr.style.fontSize = --fontSize + 'px';
-        } while (containerWidth < table.clientWidth);
+        } while (fontSize && containerWidth < table.clientWidth);
     };
 
 
@@ -2169,7 +2186,7 @@ function formatTime (time, format) {
 }
 
 
-function formatPeriod (period, dontShowHours) {
+function formatPeriod (period, alwaysShowHours) {
     var time = Math.floor(period / DAY),
         str = '';
 
@@ -2177,7 +2194,7 @@ function formatPeriod (period, dontShowHours) {
         str = pad(time) + ':';
     }
     time = Math.floor((period % DAY) / 3600);
-    if (time || str || !dontShowHours) {
+    if (time || str || alwaysShowHours) {
         str += pad(time) + ':';
     }
     time = Math.floor((period % 3600) / 60);
@@ -2187,6 +2204,18 @@ function formatPeriod (period, dontShowHours) {
     time = Math.round(period % 60);
     str += pad(time);
     return str;
+}
+
+
+function arrayPeriod (period, length) {
+    var result = [];
+
+    if (length === 4) {
+        result.push(Math.floor(period / DAY));
+    }
+
+    result.push(Math.floor((period % DAY) / 3600), Math.floor((period % 3600) / 60), Math.round(period % 60));
+    return result;
 }
 
 

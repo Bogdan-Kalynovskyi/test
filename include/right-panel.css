@@ -123,6 +123,7 @@ form input.text {
 
 .results small {
 	color: #666666;
+	word-spacing: 2px;
 }
 
 th.asc:after, th.desc:after {
@@ -157,6 +158,9 @@ slide {
 	left: 0;
 	height: 560px;
 	transition: opacity 0.3s;
+}
+
+slide:not(:first-child) {
 	-webkit-user-select: none;
 	-moz-user-select: none;
 	-ms-user-select: none;
