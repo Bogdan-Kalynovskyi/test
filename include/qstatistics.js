@@ -46,6 +46,10 @@ function QAgentEvents () {
             n = arr.length,
             total = 0;
 
+        if (n && !arr[0].login && arr[0].time >= START) {           // case when first event is logoff inside calculated period. Then add event "login" before it
+            start = START;
+        }
+
         while (i < n) {
             clear = false;
             
@@ -81,7 +85,7 @@ function QAgentEvents () {
         }
         
         if (start && !end) {
-            total += END - Math.max(START, start);
+            total += Math.min(Date.now() / 1000, END) - Math.max(START, start);
         }
 
         return total;
@@ -590,7 +594,7 @@ var START,
 
     COL_timeStart = 14,
     COL_timeEnd = 22,
-    COL_loggedIn = 28,
+    COL_loggedIn = 29,
     
     REARRANGE = [];
 
@@ -685,7 +689,7 @@ function QBase (visibleCols, visibleRows) {
 
 
     function calcSecondaryCols (row) {
-        var call,
+        var call, 
             rowTotal = row.total,
             minhold = Infinity,
             avghold = 0,
@@ -1050,10 +1054,7 @@ function QBase (visibleCols, visibleRows) {
                 agents[agent.id] = agent;
                 notEmpty = true;
             }
-            else {
-                agent = agents[agent.id];
-            }
-            agent.events.add(agent.getElementsByTagName('event'));
+            agents[agent.id].events.add(agent.getElementsByTagName('event'));
         }
 
         for (i = 0, n = _phones.length; i < n; i++) {
@@ -1401,9 +1402,13 @@ function QBase (visibleCols, visibleRows) {
                     table.push(reduceRow(row));
                 }
 
-                if (PERIOD === 0 && dest === 'agents' && visibleCols[visibleCols.length - 1]) {
+                if (dest === 'agents' && visibleCols[COL_loggedIn]) {
                     row = multiRow || table[table.length - 1];
-                    row[that.colPos.indexOf(visibleCols.length - 1) + 1] = el.events.calcLoggedTime();
+                    var pos = that.colPos.indexOf(COL_loggedIn) + 1;
+                    if (row[pos] === '') {
+                        row[pos] = 0;
+                    }
+                    row[pos] += el.events.calcLoggedTime();
                 }
             }
         }
