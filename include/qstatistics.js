@@ -38,7 +38,7 @@ function QAgentEvents () {
     };
 
     
-    this.calcLoggedTime = function () {
+    this.calcLoggedTime = function (startPeriod, endPeriod) {
         var start,
             end,
             clear,
@@ -46,8 +46,8 @@ function QAgentEvents () {
             n = arr.length,
             total = 0;
 
-        if (n && !arr[0].login && arr[0].time >= START) {           // case when first event is logoff inside calculated period. Then add event "login" before it
-            start = START;
+        if (n && !arr[0].login && arr[0].time >= startPeriod) {           // case when first event is logoff inside calculated period. Then add event "login" before it
+            start = startPeriod;
         }
 
         while (i < n) {
@@ -61,15 +61,15 @@ function QAgentEvents () {
                 end = el.time;
             }
             
-            if (end < START) {
+            if (end < startPeriod) {
                 clear = true;
             }
             else if (start && end) {
-                total += Math.min(END, end) - Math.max(START, start);
+                total += Math.min(endPeriod, end) - Math.max(startPeriod, start);
                 clear = true;
             }
 
-            if (start > END || end > END) {
+            if (start > endPeriod || end > endPeriod) {
                 if (clear) {
                     start = undefined;
                     end = undefined;
@@ -85,7 +85,7 @@ function QAgentEvents () {
         }
         
         if (start && !end) {
-            total += Math.min(Date.now() / 1000, END) - Math.max(START, start);
+            total += Math.min(Date.now() / 1000, endPeriod) - Math.max(startPeriod, start);
         }
 
         return total;
@@ -303,7 +303,7 @@ function QChart (container) {
                 for (i = 1, n = tableHeading.length; i < n; i++) {
                     if (i !== totalCallsPos) {
                         var i1 = qBase.colPos[i];
-                        if ((i1 >= COL_timeStart && i1 <= COL_timeEnd) || i1 === COL_loggedIn) {
+                        if ((i1 >= COL_timeStart && i1 < COL_timeEnd) || i1 === COL_loggedIn) {
                             tableHeading[i] += ', seconds';
                         }
                         data.push([tableHeading[i], row[i]]);
@@ -329,7 +329,7 @@ function QChart (container) {
             var row = table[j].slice();
             for (var i in colPos) {
                 var i1 = colPos[i],
-                    isTime = i1 >= COL_timeStart && i1 <= COL_timeEnd;
+                    isTime = i1 >= COL_timeStart && i1 < COL_timeEnd;
                 if (isTime) {
                     row[i] = arrayPeriod(row[i]);
                 }
@@ -592,9 +592,10 @@ var START,
         'Logged in time'
     ],
 
-    COL_timeStart = 14,
+    COL_timeStart = 13,
     COL_timeEnd = 22,
     COL_loggedIn = 29,
+    COL_avg = [14, 17, 20],
     
     REARRANGE = [];
 
@@ -756,7 +757,7 @@ function QBase (visibleCols, visibleRows) {
             avgtotal /= rowTotal;
         }
 
-        row.push(minhold, avghold, maxhold, mintalk, avgtalk, maxtalk, mintotal, avgtotal, maxtotal, abandon, noagent, timeout, keypress, agent, caller, transfer, '');
+        row.splice(COL_timeStart, 0, minhold, avghold, maxhold, mintalk, avgtalk, maxtalk, mintotal, avgtotal, maxtotal, abandon, noagent, timeout, keypress, agent, caller, transfer);
     }
 
 
@@ -783,30 +784,31 @@ function QBase (visibleCols, visibleRows) {
         }
         
         for (j in this.colPos) {
-            var i1 = this.colPos[j],
-                j1 = +j + 1 + inserts;
+            var i1 = this.colPos[j], 
+                j0 = +j + 1,
+                j1 = j0 + inserts,
+                a = visibleCols[i1] === 2,
+                b = i1 >= COL_timeStart && i1 < COL_timeEnd,
+                c = i1 === COL_loggedIn;
 
-            if (visibleCols[i1] === 2 || (i1 >= COL_timeStart && i1 <= COL_timeEnd) || (i1 === COL_loggedIn)) { // todo cache
+            if (a || b || c) {
                 for (i in result) {
-                    var tblRow = table[i],
-                        row = result[i],
+                    var row = result[i],
                         perc;
 
-                    if (i1 >= COL_timeStart && i1 <= COL_timeEnd) {
-                        row[j1] = formatPeriod(row[j1], true);
+                    if (b) {
+                        row[j1] = formatPeriod(row[j1], 3);
                     }
-                    else if (i1 === COL_loggedIn) {
-                        if (row[j1]) {
-                            row[j1] = formatPeriod(row[j1]);
-                        }
+                    else if (c) {
+                        row[j1] = (row[j1] || PERIOD) ? formatPeriod(row[j1], 4) : '';
                     }
 
-                    if (visibleCols[i1] === 2) {
+                    if (a) {
                         if (i1 === COL_loggedIn) {
-                            perc = tblRow[+j + 1] ? Math.round(100 * tblRow[+j + 1] / (END - START)) : '';
+                            perc = row[j1] ? Math.round(100 * table[i][j0] / (END - START)) : '';
                         }
                         else {
-                            perc = tblRow.total ? Math.round(100 * tblRow[+j + 1] / tblRow.total) : '';
+                            perc = row.total ? Math.round(100 * table[i][j0] / row.total) : '';
                         }
 
                         if (csv) {
@@ -870,7 +872,7 @@ function QBase (visibleCols, visibleRows) {
 
 
     function newRow () {
-        var row = new Array(COL_timeStart + 1).fill(0);
+        var row = new Array(COL_timeStart + 1 + (visibleCols[COL_loggedIn] ? 1 : 0)).fill(0);
         row.total = 0;
         row.calls = [];
         return row;
@@ -1119,7 +1121,7 @@ function QBase (visibleCols, visibleRows) {
         if (PERIOD && qOpts.totalRow) {
             for (j = 1; j < n; j++) {
                 var j1 = that.colPos[j];
-                if (j1 >= COL_timeStart && j1 <= COL_timeEnd) {
+                if (COL_avg.indexOf(j1) !== -1) {
                     colSum[j] /= table.length;
                 }
             }
@@ -1140,7 +1142,6 @@ function QBase (visibleCols, visibleRows) {
         for (var j in filteredCalls) {
             decode(filteredCalls[j]);
         }
-        reduceTable();
     }
 
 
@@ -1178,15 +1179,13 @@ function QBase (visibleCols, visibleRows) {
                 for (var i in calls) {
                     decode(calls[i], row);
                 }
-                byQueueAgentPhone(calls, row);
+                byQueueAgentPhone(calls, row, startTime, endTime);
             }
             
             table.push(row);
 
             startTime = endTime;
         }
-
-        reduceTable();
     }
 
 
@@ -1230,10 +1229,8 @@ function QBase (visibleCols, visibleRows) {
             
             row = table[reportIndex];
             decode(call, row);
-            byQueueAgentPhone([call], row);
+            byQueueAgentPhone([call], row, call.end - period, call.end);
         }
-
-        reduceTable();
     }
 
 
@@ -1279,16 +1276,14 @@ function QBase (visibleCols, visibleRows) {
             for (i in calls) {
                 decode(calls[i], row);
             } 
-            byQueueAgentPhone(calls, row);
+            byQueueAgentPhone(calls, row, startTime, endTime);
 
             startTime = endTime;
         }
-
-        reduceTable();
     }
 
 
-    function byQueueAgentPhone (filteredCalls, multiRow) {
+    function byQueueAgentPhone (filteredCalls, multiRow, periodStart, periodEnd) {
         var destinations = ['queues', 'agents', 'phones'],
             phoneDisplay = qOpts.get('phonetitle');
 
@@ -1395,20 +1390,15 @@ function QBase (visibleCols, visibleRows) {
                     }
                 }
 
+                if (dest === 'agents' && visibleCols[COL_loggedIn]) {
+                    row[COL_timeStart + 1] += el.events.calcLoggedTime(periodStart || START, periodEnd || END);
+                }
+
                 if (multiRow) {
                     add2MultiRow(row, multiRow);
                 }
                 else {
-                    table.push(reduceRow(row));
-                }
-
-                if (dest === 'agents' && visibleCols[COL_loggedIn]) {
-                    row = multiRow || table[table.length - 1];
-                    var pos = that.colPos.indexOf(COL_loggedIn) + 1;
-                    if (row[pos] === '') {
-                        row[pos] = 0;
-                    }
-                    row[pos] += el.events.calcLoggedTime();
+                    table.push(row);
                 }
             }
         }
@@ -1435,6 +1425,7 @@ function QBase (visibleCols, visibleRows) {
             }
         }
 
+        reduceTable();
         this.sort();
         qMenu.update();
     };
@@ -2280,15 +2271,15 @@ function formatTime (time, format) {
 }
 
 
-function formatPeriod (period, alwaysShowHours) {
+function formatPeriod (period, minPeriod) {
     var time = Math.floor(period / DAY),
         str = '';
 
-    if (time) {
+    if (time || minPeriod === 4) {
         str = pad(time) + ':';
     }
     time = Math.floor((period % DAY) / 3600);
-    if (time || str || alwaysShowHours) {
+    if (time || str || minPeriod === 3) {
         str += pad(time) + ':';
     }
     time = Math.floor((period % 3600) / 60);
