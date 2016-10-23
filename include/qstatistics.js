@@ -808,7 +808,8 @@ function QBase (visibleCols, visibleRows) {
                             perc = row[j1] ? Math.round(100 * table[i][j0] / (END - START)) : '';
                         }
                         else {
-                            perc = row.total ? Math.round(100 * table[i][j0] / row.total) : '';
+                            var tblRow = table[i];
+                            perc = tblRow.total ? Math.round(100 * tblRow[j0] / tblRow.total) : '';
                         }
 
                         if (csv) {
@@ -1122,7 +1123,7 @@ function QBase (visibleCols, visibleRows) {
             for (j = 1; j < n; j++) {
                 var j1 = that.colPos[j];
                 if (COL_avg.indexOf(j1) !== -1) {
-                    colSum[j] /= table.length;
+                    colSum[j + 1] /= table.length;
                 }
             }
             colSum.total = total;
