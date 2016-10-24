@@ -131,6 +131,13 @@ function QChart (container) {
                 sliceVisibilityThreshold: 0,
                 chartArea: chartArea
             }
+        },
+        useSecondYAxis,
+        secondYAxis = {
+            vAxes: {
+                0: {},
+                1: {}
+            }
         };
 
 
@@ -322,6 +329,9 @@ function QChart (container) {
     function getDataTable () {
         var colPos = qBase.colPos,
             data = [getTableHeading()],
+            hasNumericCols = false,
+            hasDurationCols = false,
+            cols = [],
             j = 0,
             n = table.length - (PERIOD && qOpts.totalRow ? 1 : 0);            // in Time mode, don't show "Total" row
 
@@ -329,14 +339,42 @@ function QChart (container) {
             var row = table[j].slice();
             for (var i in colPos) {
                 var i1 = colPos[i],
+                    j1 = +i + 1,
                     isTime = i1 >= COL_timeStart && i1 < COL_timeEnd;
+                
                 if (isTime) {
-                    row[i] = arrayPeriod(row[i]);
+                    row[j1] = arrayPeriod(row[j1]);
                 }
                 else if (i1 === COL_loggedIn) {
-                    row[i] = arrayPeriod(row[i], 4);
+                    row[j1] = arrayPeriod(row[j1], 4);
+                }
+
+                // once, check for column types
+                if (j === 0) {
+                    if (isTime || i1 === COL_loggedIn) {
+                        hasDurationCols = true;
+                        cols.push(1);
+                    }
+                    else {
+                        hasNumericCols = true;
+                        cols.push(0);
+                    }
                 }
             }
+            
+            // then reflect col types in options
+            if (j === 0) {
+                useSecondYAxis = hasNumericCols && hasDurationCols;
+
+                var series = {};
+                if (useSecondYAxis) {
+                    for (i in colPos) {
+                        series[i] = {targetAxisIndex: cols[i]};
+                    }
+                }
+                secondYAxis.series = series;
+            }
+
             data.push(row);
         }
 
@@ -490,7 +528,11 @@ function QChart (container) {
 
                 if (type !== 'piechart') {
                     nonPieDataTable = nonPieDataTable || getDataTable();
-                    charts[type].draw(nonPieDataTable, options[type]);
+                    var opts = options[type];
+                    if (useSecondYAxis) {
+                        opts = $.extend({}, opts, secondYAxis);
+                    }
+                    charts[type].draw(nonPieDataTable, opts);
                     assignZoom(type, slide);
                 }
                 else {
@@ -611,7 +653,6 @@ function QBase (visibleCols, visibleRows) {
         agents,
         phones,
         rowPos,
-        total,
         table;
 
 
@@ -644,11 +685,17 @@ function QBase (visibleCols, visibleRows) {
 
     
     this.sort = function () {
+        if (PERIOD && qOpts.totalRow) {
+            var totalRow = table.pop();
+        }
         if (qTable.sortingCol > 0) {
             table.sort(byCol(this.colPos.indexOf(qTable.sortingCol - 1) + 1, qTable.sortingOrder));
         }
         else if (qTable.sortingOrder === -1) {
             table.reverse();
+        }
+        if (PERIOD && qOpts.totalRow) {
+            table.push(totalRow);
         }
     };
 
@@ -1121,9 +1168,9 @@ function QBase (visibleCols, visibleRows) {
         }
         if (PERIOD && qOpts.totalRow) {
             for (j = 1; j < n; j++) {
-                var j1 = that.colPos[j];
+                var j1 = that.colPos[j - 1];
                 if (COL_avg.indexOf(j1) !== -1) {
-                    colSum[j + 1] /= table.length;
+                    colSum[j] /= table.length;
                 }
             }
             colSum.total = total;
