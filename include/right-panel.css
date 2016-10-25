@@ -8,7 +8,7 @@
 }
 
 #left-content {
-	box-sizing: border-box;
+	margin: 0;
 }
 
 #left-content h2 {
@@ -152,15 +152,16 @@ th.desc:after {
 }
 
 slide {
-	width: calc(100% - 40px);
 	position: absolute;
+	width: calc(100% - 40px);
 	top: 0;
 	left: 0;
-	height: 560px;
+	overflow: auto;
 	transition: opacity 0.3s;
 }
 
 slide:not(:first-child) {
+	height: 560px;
 	-webkit-user-select: none;
 	-moz-user-select: none;
 	-ms-user-select: none;
