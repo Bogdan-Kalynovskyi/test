@@ -161,7 +161,8 @@ slide {
 }
 
 slide:not(:first-child) {
-	height: 560px;
+	height: 600px;
+	overflow: hidden;
 	-webkit-user-select: none;
 	-moz-user-select: none;
 	-ms-user-select: none;
