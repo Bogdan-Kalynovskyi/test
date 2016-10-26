@@ -812,7 +812,7 @@ function QDataBase (visibleCols, visibleRows) {
                 keypress++;
             } else if (q === 'completeagent') {
                 agent++;
-            } else if (q === 'completecaler') {
+            } else if (q === 'completecaller') {
                 caller++;
             } else if (q === 'transfer') {
                 transfer++;
@@ -834,7 +834,7 @@ function QDataBase (visibleCols, visibleRows) {
             avgtotal /= rowTotal;
         }
 
-        row.splice(COL_timeStart, 0, minhold, avghold, maxhold, mintalk, avgtalk, maxtalk, mintotal, avgtotal, maxtotal, abandon, noagent, timeout, keypress, agent, caller, transfer);
+        row.splice(COL_timeStart + 1, 0, minhold, avghold, maxhold, mintalk, avgtalk, maxtalk, mintotal, avgtotal, maxtotal, abandon, noagent, timeout, keypress, agent, caller, transfer);
     }
 
     
@@ -1126,7 +1126,7 @@ function QDataBase (visibleCols, visibleRows) {
                 dbChanged = true;
             }
             
-            if (savedAgent.events.add(agent.getElementsByTagName('event')) || savedAgent.events.isLoggedIn()) {
+            if ((savedAgent.events.add(agent.getElementsByTagName('event')) || savedAgent.events.isLoggedIn()) && visibleCols[COL_loggedIn]) {
                 dbChanged = true;
             }
         }
