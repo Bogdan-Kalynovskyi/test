@@ -600,17 +600,19 @@ function QChart (container) {
 
 
     this.resetZoom = function () {
-        byId('zooming-overlay').style.display = 'none';
         var orig = this.originalZoom;
-        START = orig.start;
-        END = orig.end;
-        PERIOD = orig.period;
-        qOpts.showNewTime();
-        byId('startday').value = orig.startOpt;
-        byId('endday').value = orig.endOpt;
-        this.originalZoom = null;
-        resetZoom.style.display = 'none';
-        qDB.filter();
+        if (orig) {
+            byId('zooming-overlay').style.display = 'none';
+            START = orig.start;
+            END = orig.end;
+            PERIOD = orig.period;
+            qOpts.showNewTime();
+            byId('startday').value = orig.startOpt;
+            byId('endday').value = orig.endOpt;
+            this.originalZoom = null;
+            resetZoom.style.display = 'none';
+            qDB.filter();
+        }
     }
 }
 
