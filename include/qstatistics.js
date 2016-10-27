@@ -1,7 +1,8 @@
 function QAgentEvents () {
-    var arr = [];
+    var events = [];            // should be sorted
 
 
+    // Sort array of objects by .time
     function byTime (a, b) {
         if (a.time > b.time) {
             return 1;
@@ -15,6 +16,7 @@ function QAgentEvents () {
     }
 
 
+    // Takes htmlNodesCollection and adds them to sorted array. Checks for duplicates. Returns whether array was changed
     this.add = function (nodes) {
         var isChanged = false;
         
@@ -25,66 +27,64 @@ function QAgentEvents () {
                     isLogged: node.getAttribute('type') === 'agentlogin'
                 };
 
-            for (var j in arr) {
-                if (arr[j].time === event.time && arr[j].isLogged === event.isLogged) {
+            for (var j in events) {
+                if (events[j].time === event.time && events[j].isLogged === event.isLogged) {
                     event = null;
                     break;
                 }
             }
 
             if (event) {
-                arr.push(event);
+                events.push(event);
                 isChanged = true;
             }
         }
         
         if (isChanged) {
-            arr.sort(byTime);
+            events.sort(byTime);
         }
         
         return isChanged;
     };
 
-    
-    this.calcLoggedTime = function (startPeriod, endPeriod) {
-        var start,
-            end,
-            clear,
+
+    // Calculates logged in time in period between periodStart and periodEnd.
+    // Tricky thing is to group events into login-logout pairs.
+    this.calcLoggedTime = function (periodStart, periodEnd) {
+        var start,              // start and end of logged in period,
+            end,                // is composed out of a pair of events.
+            clear,              // marker that we're done with current start-end pair, so start over again 
             i = 0,
-            n = arr.length,
+            n = events.length,
             total = 0;
 
-        if (n && !arr[0].isLogged && arr[0].time >= startPeriod) {           // case when first event is logoff inside calculated period. Then virtually add event "isLogged = true" before it
-            start = startPeriod;
+        // when first event is logoff, and it is inside bounds, then virtually add login event before it
+        if (n && !events[0].isLogged && events[0].time >= periodStart) {           
+            start = periodStart;
         }
 
         while (i < n) {
             clear = false;
             
-            var el = arr[i];
-            if (el.isLogged) {
-                start = el.time;
+            if (events[i].isLogged) {
+                start = events[i].time;
             }
             else {
-                end = el.time;
+                end = events[i].time;
             }
             
-            if (end < startPeriod) {
+            if (end <= periodStart) {                           // completely out of bounds 
                 clear = true;
             }
-            else if (start && end) {
-                total += Math.min(endPeriod, end) - Math.max(startPeriod, start);
+            else if (start && end) {                            // gathered a pair, which is at least partially in bounds
+                total += Math.min(periodEnd, end) - Math.max(periodStart, start);
                 clear = true;
             }
 
-            if (start > endPeriod || end > endPeriod) {
-                if (clear) {
-                    start = undefined;
-                    end = undefined;
-                }
+            if (start > periodEnd || end > periodEnd) {         // no more pairs in bounds, because array is sorted
                 break;
             }
-            if (clear) {
+            if (clear) {                                        // clear that pair, and search for a new one
                 start = undefined;
                 end = undefined;
             }
@@ -92,18 +92,19 @@ function QAgentEvents () {
             i++;
         }
         
-        if (start && !end) {
-            total += Math.min(Date.now() / 1000, endPeriod) - Math.max(startPeriod, start);
+        if (start && start < periodEnd && !end) {               // unfinished pair in bounds, agent is still logged in 
+            total += Math.min(Date.now() / 1000, periodEnd) - Math.max(periodStart, start);
         }
 
         return total;
     }; 
     
     
+    // queue agent is currently logged in
     this.isLoggedIn = function () {
-        var n = arr.length;
+        var n = events.length;
         if (n) {
-            return arr[n - 1].isLogged;
+            return events[n - 1].isLogged;
         }  
         else {
             return false;
@@ -115,20 +116,20 @@ function QAgentEvents () {
 function QChart (container) {
     var that = this,
         dbData,
-        nonPieDataTable,
-        pieDataTable,
+        dataTable,
         charts = {},
-        overlay = byId('zooming-overlay'),
-        resetZoom = byId('zoom-out'),
+        zoomingOverlay = byId('zooming-overlay'),
+        resetZoomBtn = byId('zoom-out'),
         rectSVG,
         startX,
         endX,
         goodEvt,
-        chartArea = {
+        chartArea = { 
+            top: 26,
             left: '8%',
-            right: '17%'
+            right: '16%'
         },
-        options = {
+        chartOptions = {
             linechart: {
                 sliceVisibilityThreshold: 0,
                 chartArea: chartArea
@@ -150,14 +151,24 @@ function QChart (container) {
                 sliceVisibilityThreshold: 0,
                 chartArea: chartArea
             }
-        },
-        useSecondYAxis,
-        secondYAxis = {
-            vAxes: {
-                0: {},
-                1: {}
-            }
         };
+
+
+    function getTableHeading () {
+        var result = [PERIOD ? 'Time' : 'Destination'],
+            colPos = qDB.colPos,
+            colLoggedInTimePos = qDB.colPos.indexOf(COL_loggedIn);
+
+        for (var i in colPos) {
+            if (+i === colLoggedInTimePos) {
+                result.push(COLUMNS[colPos[i]] + ' (hours)');
+            }
+            else {
+                result.push(COLUMNS[colPos[i]]);
+            }
+        }
+        return result;
+    }
 
 
     function centerPieSource () {
@@ -165,7 +176,7 @@ function QChart (container) {
             left = Infinity,
             right = 0;
 
-        for (var i = (options.piechart.legend === null ? 1 : 0); i < g.length - 1; i++) {
+        for (var i = (chartOptions.piechart.legend === null ? 1 : 0); i < g.length - 1; i++) {
             var rect = g[i].getBoundingClientRect();
             left = Math.min(left, rect.left);
             right = Math.max(right, rect.right);
@@ -246,8 +257,8 @@ function QChart (container) {
                     id: this.value
                 };
                 byRow.value = '';
-                pieDataTable = getPieDataTable();
-                charts.piechart.draw(pieDataTable, options.piechart);
+                dataTable = getPieDataTable();
+                charts.piechart.draw(dataTable, chartOptions.piechart);
                 centerPieSource();
             }
         };
@@ -258,8 +269,8 @@ function QChart (container) {
                     id: this.value
                 };
                 byCol.value = '';
-                pieDataTable = getPieDataTable();
-                charts.piechart.draw(pieDataTable, options.piechart);
+                dataTable = getPieDataTable();
+                charts.piechart.draw(dataTable, chartOptions.piechart);
                 centerPieSource();
             }
         };
@@ -282,8 +293,8 @@ function QChart (container) {
     function getPieDataTable () {
         function setEmptyChart () {
             data = [['', ''], ['No calls', 1]];
-            options.piechart.legend = 'none';
-            options.piechart.enableInteractivity = false;
+            chartOptions.piechart.legend = 'none';
+            chartOptions.piechart.enableInteractivity = false;
         }
         
         that.pieFilter.id = qOpts.get('piechart-by-column');
@@ -304,8 +315,8 @@ function QChart (container) {
             id = +that.pieFilter.id,
             data = [['', '']];                   // in pieChart, first row seems not to send any useful information
             
-        options.piechart.legend = null;
-        options.piechart.enableInteractivity = true;
+        chartOptions.piechart.legend = null;
+        chartOptions.piechart.enableInteractivity = true;
 
         if (that.pieFilter.by === 'column') {
             var pos = qDB.colPos.indexOf(id) + 1,
@@ -332,10 +343,6 @@ function QChart (container) {
                 
                 for (i = 1, n = tableHeading.length; i < n; i++) {
                     if (i !== totalCallsPos) {
-                        var i1 = qDB.colPos[i];
-                        if ((i1 >= COL_timeStart && i1 < COL_timeEnd) || i1 === COL_loggedIn) {
-                            tableHeading[i] += ', seconds';
-                        }
                         data.push([tableHeading[i], row[i]]);
                     }
                 }
@@ -349,7 +356,7 @@ function QChart (container) {
     }
 
 
-    function getDataTable () {
+    function getDataTable (type) {
         var colPos = qDB.colPos,
             data = [getTableHeading()],
             hasNumericCols = false,
@@ -369,12 +376,12 @@ function QChart (container) {
                     row[j1] = arrayPeriod(row[j1]);
                 }
                 else if (i1 === COL_loggedIn) {
-                    row[j1] = arrayPeriod(row[j1], 4);
+                    row[j1] = +(row[j1]/ 3600).toFixed(2);
                 }
 
                 // once, check for column types
                 if (j === 0) {
-                    if (isTime || i1 === COL_loggedIn) {
+                    if (isTime) {
                         hasDurationCols = true;
                         cols.push(1);
                     }
@@ -387,15 +394,21 @@ function QChart (container) {
             
             // then reflect col types in options
             if (j === 0) {
-                useSecondYAxis = hasNumericCols && hasDurationCols;
-
-                var series = {};
-                if (useSecondYAxis) {
+                if (hasNumericCols && hasDurationCols) {
+                    var series = {};
                     for (i in colPos) {
                         series[i] = {targetAxisIndex: cols[i]};
                     }
+                    chartOptions[type].vAxes = {
+                        0: {},
+                        1: {}
+                    };
+                    chartOptions[type].series = series;
                 }
-                secondYAxis.series = series;
+                else {
+                    delete chartOptions[type].vAxes;
+                    delete chartOptions[type].series; 
+                }
             }
 
             data.push(row);
@@ -414,7 +427,7 @@ function QChart (container) {
                 endOpt: qOpts.get('endday'),
                 period: PERIOD
             };
-            resetZoom.style.display = 'block';
+            resetZoomBtn.style.display = 'block';
         }
     }
     
@@ -440,11 +453,11 @@ function QChart (container) {
         if (goodEvt) {
             rectSVG = svgr.getBoundingClientRect();
             startX = evt.pageX;
-            overlay.style.top = rectSVG.top + 'px';
-            overlay.style.bottom = document.body.clientHeight - rectSVG.bottom + 'px';
-            overlay.style.left = startX - window.scrollX + 'px';
-            overlay.style.right = document.body.clientWidth + window.scrollX - startX + 'px';
-            overlay.style.display = 'block';
+            zoomingOverlay.style.top = rectSVG.top + 'px';
+            zoomingOverlay.style.bottom = document.body.clientHeight - rectSVG.bottom + 'px';
+            zoomingOverlay.style.left = startX - window.scrollX + 'px';
+            zoomingOverlay.style.right = document.body.clientWidth + window.scrollX - startX + 'px';
+            zoomingOverlay.style.display = 'block';
             container.onmousemove = mousemove;
         }
     }
@@ -452,19 +465,16 @@ function QChart (container) {
 
     function mousemove (evt) {
         endX = evt.pageX;
-        overlay.style.top = rectSVG.top + 'px';
-        overlay.style.bottom = document.body.clientHeight - rectSVG.bottom + 'px';
-        overlay.style.left = Math.min(startX, endX) - window.scrollX + 'px';
-        overlay.style.right = document.body.clientWidth + window.scrollX - Math.max(startX, endX) + 'px';
+        zoomingOverlay.style.top = rectSVG.top + 'px';
+        zoomingOverlay.style.bottom = document.body.clientHeight - rectSVG.bottom + 'px';
+        zoomingOverlay.style.left = Math.min(startX, endX) - window.scrollX + 'px';
+        zoomingOverlay.style.right = document.body.clientWidth + window.scrollX - Math.max(startX, endX) + 'px';
     }
 
     
     function mouseup () {
-        if (endX === undefined) {
-            overlay.style.display = 'none';
-        }
-        else if (goodEvt) {
-            overlay.style.display = 'none';
+        zoomingOverlay.style.display = 'none';
+        if (goodEvt) {
             var maxX = Math.max(startX, endX),
                 minX = Math.min(startX, endX);
 
@@ -486,9 +496,6 @@ function QChart (container) {
 
             container.onmousemove = null;
         }
-        
-        goodEvt = false;
-        endX = undefined;
     }
 
     
@@ -553,36 +560,29 @@ function QChart (container) {
                 dbData = qDB.getData();
 
                 if (type !== 'piechart') {
-                    nonPieDataTable = nonPieDataTable || getDataTable();
-                    var opts = options[type];
-                    if (useSecondYAxis) {
-                        opts = $.extend({}, opts, secondYAxis);
-                    }
-                    charts[type].draw(nonPieDataTable, opts);
+                    dataTable = getDataTable(type);
+                    charts[type].draw(dataTable, chartOptions[type]);
                     assignZoom(type, slide);
                 }
                 else {
                     if (type !== qMenu.type) {
                         pieSourceChooser();
                     }
-                    pieDataTable = getPieDataTable();
-                    charts.piechart.draw(pieDataTable, options.piechart);
+                    dataTable = getPieDataTable();
+                    charts.piechart.draw(dataTable, chartOptions.piechart);
                     centerPieSource();
                 }
+
+                eqHeight();
             });
         }
-    };
-
-
-    this.invalidate = function () {
-        dbData = nonPieDataTable = undefined;
     };
 
 
     this.resize = function () {
         var type = qMenu.type;
         if (charts[type]) {
-            charts[type].draw(type === 'piechart' ? pieDataTable : nonPieDataTable, options[type]);
+            charts[type].draw(dataTable, chartOptions[type]);
             if (type === 'piechart') {
                 centerPieSource();
             }
@@ -602,7 +602,6 @@ function QChart (container) {
     this.resetZoom = function () {
         var orig = this.originalZoom;
         if (orig) {
-            byId('zooming-overlay').style.display = 'none';
             START = orig.start;
             END = orig.end;
             PERIOD = orig.period;
@@ -610,7 +609,7 @@ function QChart (container) {
             byId('startday').value = orig.startOpt;
             byId('endday').value = orig.endOpt;
             this.originalZoom = null;
-            resetZoom.style.display = 'none';
+            resetZoomBtn.style.display = 'none';
             qDB.filter();
         }
     }
@@ -801,21 +800,24 @@ function QDataBase (visibleCols, visibleRows) {
             mintotal = Math.min(mintotal, call.total);
             avgtotal += call.total;
             maxtotal = Math.max(maxtotal, call.total);
-            var q = call.queuestatus;
-            if (q === 'abandon') {
-                abandon++;
-            } else if (q === 'exitempty') {
-                noagent++;
-            } else if (q === 'exitwithintimeout') {
-                timeout++;
-            } else if (q === 'exitwithkey') {
-                keypress++;
-            } else if (q === 'completeagent') {
-                agent++;
-            } else if (q === 'completecaller') {
-                caller++;
-            } else if (q === 'transfer') {
-                transfer++;
+         
+            if (row.queueRelevant) {
+                var q = call.queuestatus;
+                if (q === 'abandon') {
+                    abandon++;
+                } else if (q === 'exitempty') {
+                    noagent++;
+                } else if (q === 'exitwithintimeout') {
+                    timeout++;
+                } else if (q === 'exitwithkey') {
+                    keypress++;
+                } else if (q === 'completeagent') {
+                    agent++;
+                } else if (q === 'completecaller') {
+                    caller++;
+                } else if (q === 'transfer') {
+                    transfer++;
+                }
             }
         }
 
@@ -900,10 +902,11 @@ function QDataBase (visibleCols, visibleRows) {
 
     this.getData = function () {
         if (!table.length) {
+            debugger;
             return new Array(this.colPos.length).fill(0).unshift('');
         }
         else {
-            return table.slice();
+            return table;
         }
     };
 
@@ -943,6 +946,7 @@ function QDataBase (visibleCols, visibleRows) {
         var row = new Array(COL_timeStart + 1 + (visibleCols[COL_loggedIn] ? 1 : 0)).fill(0);
         row.total = 0;
         row.calls = [];
+        row.queueRelevant = false;
         return row;
     }
 
@@ -1498,9 +1502,15 @@ function QDataBase (visibleCols, visibleRows) {
 
                 if (multiRow) {
                     add2MultiRow(row, multiRow);
+                    if (dest !== 'phones') {
+                        multiRow.queueRelevant = true;
+                    }
                 }
                 else {
                     table.push(row);
+                    if (dest !== 'phones') {
+                        row.queueRelevant = true;
+                    }
                 }
             }
         }
@@ -1831,7 +1841,7 @@ function QOptions () {
         }
     };
 }
-function QPolling (onResponse) {
+function QPolling (onFreshData) {
     var that = this,
         username = qOpts.config('username'),
         password = qOpts.config('password'),
@@ -1841,7 +1851,8 @@ function QPolling (onResponse) {
         lastToday,
         requestStart,
         requestEnd,
-        firstPoll,
+        stopPolling = false,
+        firstRequest,
         timeoutHandle,
         pollDelay = +qOpts.config('refresh');
 
@@ -1899,51 +1910,55 @@ function QPolling (onResponse) {
     }
 
 
-    function requestIfAllowed () {
-        if (!document.hidden) {
+    function tryNewRequest () {
+        if (!stopPolling && !document.hidden) {
             var request = '?_username=' + username + ';_password=' + password + ';start=' + requestStart + ';end=' + requestEnd + ';recursive=' + qOpts.recursive;
             ajaxGet(request, response, function () {    // on error, poll again
-                timeoutHandle = setTimeout(requestIfAllowed, pollDelay);
+                timeoutHandle = setTimeout(tryNewRequest, pollDelay);
             });
         }
     }
 
 
     this.update = function () {
-        byId('zoom-out').style.display = 'none';
+        byId('zoom-out').style.display = 'none'; 
+        qChart.originalZoom = null;
 
+        stopCurrentRequest();
         calcTimeFrame();
 
-        firstPoll = true;
+        stopPolling = false;
+        firstRequest = true;
 
+        // if all required data is in the cache, don't query server 
         if (START >= qDB.minTime && END <= qDB.maxTime) {
-            onResponse();
+            onFreshData(); 
+            stopPolling = true;
             return;    
         }
-        //query what is missing
+        // query only what is missing (from the beginning)
         else if (START < qDB.minTime && END >= qDB.minTime) {
-            onResponse();
+            onFreshData();
             requestStart = START;
             requestEnd = qDB.minTime;
         }
-        //query what is missing
+        // query only what is missing (from the end)
         else if (START <= qDB.maxTime && END > qDB.maxTime) {
-            onResponse();
+            onFreshData();
             requestStart = qDB.maxTime;
             requestEnd = END;
         }
-
+        // if missing data is on both sides, just query everything
         else {
             requestStart = START;
             requestEnd = END;
         }
 
-        stopPolling();
         if (!preloaderShown && requestEnd - requestStart > DAY / 2) {
             showPreloader();
         }
       
-        requestIfAllowed();
+        tryNewRequest();
     };
 
 
@@ -1960,13 +1975,13 @@ function QPolling (onResponse) {
         }
         else {
             var updateEnd = +update.getAttribute('timestamp'),
-                updateNotEmpty = qDB.add(update, requestStart, Math.min(requestEnd, updateEnd));
+                anythingChanged = qDB.add(update, requestStart, Math.min(requestEnd, updateEnd));
 
-            if (firstPoll || updateNotEmpty) {
-                onResponse();
+            if (firstRequest || anythingChanged) {
+                onFreshData();
             }
 
-            firstPoll = false;
+            firstRequest = false;
             hidePreloader();
 
             // Handle the change of day at midnight. If the start or end day is not a specific date then the report period will change every day.
@@ -1982,23 +1997,25 @@ function QPolling (onResponse) {
             lastToday = today;
 
             if (START >= END) {
+                stopPolling = true;
                 alert('Because start_time was set for "Today", it became greater than end_time after midnight. Stopping.');
                 return;
             }
 
             if (END <= qDB.maxTime) {
+                stopPolling = true;
                 return;
             }
 
             requestStart = qDB.maxTime;
             requestEnd = END;
 
-            timeoutHandle = setTimeout(requestIfAllowed, pollDelay);
+            timeoutHandle = setTimeout(tryNewRequest, pollDelay);
         }
     }
 
 
-    function stopPolling () {
+    function stopCurrentRequest () {
         clearTimeout(timeoutHandle);
         if (xhr) {
             xhr.abort();
@@ -2007,8 +2024,8 @@ function QPolling (onResponse) {
 
 
     function visibilityChange () {
-        stopPolling();
-        requestIfAllowed();
+        stopCurrentRequest();
+        tryNewRequest();
     }
     
     
@@ -2018,26 +2035,16 @@ function QPolling (onResponse) {
     function showPreloader () {
         preloaderShown = true;
         var img = document.createElement('IMG');
-        img.setAttribute('style',
-            'position: fixed;' +
-            'z-index: 90000;' +
-            'top: 50%;' +
-            'left: 50%;' +
-            'width: 64px' +
-            'height: 64px' +
-            'margin-top: -32px' +
-            'margin-left: -32px'
-        );
         img.src = '/local/bohdan/include/img/ajax.gif';
         img.alt = '';
-        img.id = '_preloader';
+        img.id = 'ajax-preloader';
         document.body.appendChild(img);
     }
 
 
     function hidePreloader () {
         if (preloaderShown) {
-            var el = byId('_preloader');
+            var el = byId('ajax-preloader');
             if (el) {
                 el.parentNode.removeChild(el);
             }
@@ -2218,7 +2225,7 @@ function QMenu (container) {
 
     var str = '';
     for (var i in TYPES) {
-        str += '<slide style="z-index: ' + (i === '0' ? 1 : 0) + '"></slide>';
+        str += '<slide style="z-index: ' + (+i === slideIndex ? 1 : 0) + '"></slide>';
     }
 
     container.innerHTML = str +
@@ -2238,7 +2245,7 @@ function QMenu (container) {
         
         if (nextSlideIndex !== slideIndex) {
             slide.style.opacity = 0;
-            nextSlide.style.zIndex = zIndex++;
+            nextSlide.style.zIndex = ++zIndex;
             nextSlide.style.opacity = 1;
             byId('go-' + this.type).className = '';
 
@@ -2273,12 +2280,13 @@ function QMenu (container) {
 
         slideIndex = nextSlideIndex;
         this.type = nextType;
+
+        eqHeight();
     };
 
 
     this.update = function () {
         upToDate = [];
-        qChart.invalidate();
         this.goTo(this.type);
     };
 }
@@ -2431,16 +2439,6 @@ function downloadUrl (url, fileName) {
     setTimeout(function () {
         document.body.removeChild(link);
     }, 10000);
-}
-
-
-function getTableHeading () {
-    var result = [PERIOD ? 'Time' : 'Destination'],
-        pos = qDB.colPos;
-    for (var i in pos) {
-        result.push(COLUMNS[pos[i]]);
-    }
-    return result;
 }
 
 document.addEventListener("DOMContentLoaded", function() {

@@ -32,7 +32,7 @@
 }
 
 #options-heading {
-	height: 39px;
+	height: 38px;
 	font-family: Verdana, Arial, Helvetica, sans-serif;
 	text-align: center;
 	font-size: 8px;
@@ -244,7 +244,7 @@ text {
 #right-menu {
 	position: absolute;
 	right: 0;
-	top: 40px;
+	top: 39px;
 	width: 40px;
 	z-index: 1555;
 }
@@ -274,11 +274,11 @@ text {
 	display: block;
 }
 
-#right-menu button.active {
+#right-menu > button.active {
 	box-shadow: 0 0 5px 2px orange inset, 0 0 10px 10px #003658 inset;
 }
 
-#right-menu button:after,
+#right-menu > button:after,
 #panel-open-button:after {
 	content: '';
 	background-position: center center;
@@ -291,7 +291,6 @@ text {
 }
 
 #panel-open-button:after {
-	top: 1px;
 	background-image: url('/local/bohdan/include/img/cog2.png');
 }
 #go-table:after {
@@ -317,50 +316,49 @@ text {
 }
 
 #panel-open-button:hover:before {
-	content: 'Open options'!important;
+	content: 'Open options';
 }
 #go-table:hover:before {
-	content: 'Table'!important;
+	content: 'Table';
 }
 #go-linechart:hover:before {
-	content: 'Line chart'!important;
+	content: 'Line chart';
 }
 #go-barchart:hover:before {
-	content: 'Bar chart'!important;
+	content: 'Bar chart';
 }
 #go-stacked:hover:before {
-	content: 'Stacked bar chart'!important;
+	content: 'Stacked bar chart';
 }
 #go-piechart:hover:before {
-	content: 'Pie chart'!important;
+	content: 'Pie chart';
 }
 #go-csv:hover:before {
-	content: 'Download as CSV'!important;
+	content: 'Download as CSV';
 }
 #go-png:hover:before {
-	content: 'Download chart as PNG'!important;
+	content: 'Download chart as PNG';
 }
 
 #panel-open-button.expanded:after {
 	opacity: 0.3;
 }
-#panel-open-button.expanded:before {
-	content: 'Close options'!important;
+#panel-open-button.expanded:hover:before {
+	content: 'Close options';
 }
 
 #panel-open-button:before,
-#right-menu button:before {
-	content: none;
+#right-menu > button:before {
 	position: absolute;
 	opacity: 0;
 	top: 9px;
-	right: 46px;
+	right: 49px;
 	padding: 5px 9px;
 	border-radius: 18px;
 	white-space: nowrap;
 	color: #fff;
 	background: rgba(0, 0, 0, 0.77);
-	box-shadow: 1px 1px 12px rgba(0, 0, 0, 0.7);
+	box-shadow: 0 0 14px rgba(255, 255, 255, 0.6), 0 0 12px rgba(0, 0, 0, 0.9);
 	transition: opacity 0.3s;
 }
 #panel-open-button:before {
@@ -370,4 +368,15 @@ text {
 #panel-open-button:hover:before,
 #right-menu button:hover:before {
 	opacity: 1;
+}
+
+#ajax-preloader {
+	position: fixed;
+	z-index: 90000;
+	top: 50%;
+	left: 50%;
+	width: 64px;
+	height: 64px;
+	/*margin-top: -32px;*/
+	/*margin-left: -32px;*/
 }
