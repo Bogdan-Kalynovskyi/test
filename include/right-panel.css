@@ -166,7 +166,7 @@ slide {
 }
 
 slide:not(:first-child) {
-	height: 600px;
+	height: 660px;
 	overflow: hidden;
 	-webkit-user-select: none;
 	-moz-user-select: none;
@@ -188,6 +188,10 @@ text {
 	transition: opacity 0.3s;
 	cursor: pointer;
 	z-index: 1001;
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
 }
 #left-overlay:hover,
 #right-overlay:hover {
@@ -358,11 +362,11 @@ text {
 	white-space: nowrap;
 	color: #fff;
 	background: rgba(0, 0, 0, 0.77);
-	box-shadow: 0 0 14px rgba(255, 255, 255, 0.6), 0 0 12px rgba(0, 0, 0, 0.9);
+	box-shadow: 0 0 13px rgba(255, 255, 255, 0.6), 1px 1px 10px rgba(0, 0, 0, 0.6);
 	transition: opacity 0.3s;
 }
 #panel-open-button:before {
-	top: 6px;
+	top: 5px;
 }
 
 #panel-open-button:hover:before,

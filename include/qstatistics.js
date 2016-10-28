@@ -125,7 +125,7 @@ function QChart (container) {
         endX,
         goodEvt,
         chartArea = { 
-            top: 26,
+            top: 32,
             left: '8%',
             right: '16%'
         },
@@ -321,7 +321,7 @@ function QChart (container) {
         if (that.pieFilter.by === 'column') {
             var pos = qDB.colPos.indexOf(id) + 1,
                 i = (!PERIOD && qOpts.getNum('allcalls')) ? 1 : 0,                // in Destination mode, don't show "All calls" in chart
-                n = dbData.length - (PERIOD && qOpts.totalRow ? 1 : 0),            // in Time mode, don't show "Total" row
+                n = dbData.length - (PERIOD && qOpts.totalRow ? 1 : 0),           // in Time mode, don't show "Total" row
                 totalVisible = 0;
 
             for (; i < n; i++) {
@@ -336,13 +336,17 @@ function QChart (container) {
             }
         }
         else {
-            row = dbData[id];
-            if (row.total) {                                              // this can be false if you save report and then data changes
+            row = dbData[id].slice();
+            if (dbData[id].total) {                                         // this can be false if you save report and then data changes
                 var tableHeading = getTableHeading(),
-                    totalCallsPos = qDB.colPos.indexOf(0) + 1;
+                    totalCallsPos = qDB.colPos.indexOf(0) + 1,
+                    loggedInPos = qDB.colPos.indexOf(COL_loggedIn) + 1;
                 
                 for (i = 1, n = tableHeading.length; i < n; i++) {
-                    if (i !== totalCallsPos) {
+                    if (i !== totalCallsPos) { 
+                        if (i === loggedInPos) {
+                            row[i] = +(row[i]/ 3600).toFixed(2);
+                        }
                         data.push([tableHeading[i], row[i]]);
                     }
                 }
@@ -800,24 +804,24 @@ function QDataBase (visibleCols, visibleRows) {
             mintotal = Math.min(mintotal, call.total);
             avgtotal += call.total;
             maxtotal = Math.max(maxtotal, call.total);
-         
-            if (row.queueRelevant) {
-                var q = call.queuestatus;
-                if (q === 'abandon') {
-                    abandon++;
-                } else if (q === 'exitempty') {
-                    noagent++;
-                } else if (q === 'exitwithintimeout') {
-                    timeout++;
-                } else if (q === 'exitwithkey') {
-                    keypress++;
-                } else if (q === 'completeagent') {
-                    agent++;
-                } else if (q === 'completecaller') {
-                    caller++;
-                } else if (q === 'transfer') {
-                    transfer++;
-                }
+        }
+
+        for (i in row.queueCalls) {
+            var q = row.queueCalls[i].queuestatus;
+            if (q === 'abandon') {
+                abandon++;
+            } else if (q === 'exitempty') {
+                noagent++;
+            } else if (q === 'exitwithintimeout') {
+                timeout++;
+            } else if (q === 'exitwithkey') {
+                keypress++;
+            } else if (q === 'completeagent') {
+                agent++;
+            } else if (q === 'completecaller') {
+                caller++;
+            } else if (q === 'transfer') {
+                transfer++;
             }
         }
 
@@ -866,7 +870,7 @@ function QDataBase (visibleCols, visibleRows) {
                         row[j1] = formatPeriod(row[j1], 3);
                     }
                     else if (loggedTime) {
-                        row[j1] = (row[j1] || PERIOD) ? formatPeriod(row[j1], 4) : '';
+                        row[j1] = (PERIOD || table[i].isAgent) ? formatPeriod(row[j1], 4) : '';
                     }
 
                     if (withPercentage) {
@@ -946,39 +950,29 @@ function QDataBase (visibleCols, visibleRows) {
         var row = new Array(COL_timeStart + 1 + (visibleCols[COL_loggedIn] ? 1 : 0)).fill(0);
         row.total = 0;
         row.calls = [];
+        row.queueCalls = [];
         row.queueRelevant = false;
         return row;
     }
 
 
-    function add2MultiRow (row, multiRow) {
-        for (var i = 1, n = row.length; i < n; i++) {
-            multiRow[i] += row[i];
-        }
-        multiRow.total += row.total;
-        multiRow.calls = multiRow.calls.concat(row.calls);
-    }
-
-
     function add2TableOrMultiRow (display, row, multiRow) {
         if (visibleRows[display]) {
-            if (multiRow) {
-                add2MultiRow(row, multiRow);
+            var i = 1,
+                n = row.length;
+
+            multiRow = multiRow || table[rowPos[display]];
+
+            for (; i < n; i++) {
+                multiRow[i] += row[i];
             }
-            else {
-                var tblRow = table[rowPos[display]];
-                
-                tblRow.total++;
-                tblRow.calls = tblRow.calls.concat(row.calls);
-                for (var i = 1, n = row.length; i < n; i++) {
-                    tblRow[i] += row[i];
-                }
-            }
+            multiRow.total += row.total;
+            multiRow.calls = multiRow.calls.concat(row.calls);
         }
     }
 
 
-    function decode (call, multiRow, justAppend) {
+    function decode (call, multiRow, dontAddToMultipleRows) {
         var stype = call.stype,
             dtype = call.dtype,
             answered = call.answer,
@@ -989,7 +983,7 @@ function QDataBase (visibleCols, visibleRows) {
             isOutbound,
             row;
 
-        if (justAppend) {
+        if (dontAddToMultipleRows) {
             row = multiRow;
         }
         else {
@@ -1052,7 +1046,7 @@ function QDataBase (visibleCols, visibleRows) {
             row[13]++;
         }
         
-        if (!justAppend) {
+        if (!dontAddToMultipleRows) {
             //total
             add2TableOrMultiRow(0, row, multiRow);
             // external callers
@@ -1101,10 +1095,10 @@ function QDataBase (visibleCols, visibleRows) {
             calls.sort(byEnd);
         }
 
-        function cacheFields (call) {
-            call.name = call.getAttribute('name');
-            call.description = call.getAttribute('description');
-            call.callerid = call.getAttribute('callerid_internal');
+        function cacheFields (tag) {
+            tag.name = tag.getAttribute('name');
+            tag.description = tag.getAttribute('description');
+            tag.callerid = tag.getAttribute('callerid_internal');
         }
         
         
@@ -1205,6 +1199,8 @@ function QDataBase (visibleCols, visibleRows) {
                 result.totalTime = duration;
             }
             total += result.total;
+//            result.isQueue = row.isQueue;
+            result.isAgent = row.isAgent;
 
             table[i] = result;
         }
@@ -1432,7 +1428,7 @@ function QDataBase (visibleCols, visibleRows) {
                     el = arr[id],
                     name,
                     match,
-                    row = newRow();
+                    row = multiRow || newRow();
 
                 if (!multiRow) {
                     switch (dest) {
@@ -1480,10 +1476,16 @@ function QDataBase (visibleCols, visibleRows) {
                     switch (dest) {
                         case 'queues':
                             match = call.dtype === 'queue' && call.dnumber === id;
+                            if (match) {
+                                row.queueCalls.push(call);
+                            }
                             break;
 
                         case 'agents':
-                            match = call.stype === 'queue' && call.dnumber === el.dnumber && call.dtype === el.dtype;
+                            if (match) {
+                                match = call.stype === 'queue' && call.dnumber === el.dnumber && call.dtype === el.dtype;
+                            }
+                            row.queueCalls.push(call);
                             break;
 
                         case 'phones':
@@ -1500,17 +1502,10 @@ function QDataBase (visibleCols, visibleRows) {
                     row[COL_timeStart + 1] += el.events.calcLoggedTime(periodStart || START, periodEnd || END);
                 }
 
-                if (multiRow) {
-                    add2MultiRow(row, multiRow);
-                    if (dest !== 'phones') {
-                        multiRow.queueRelevant = true;
-                    }
-                }
-                else {
+                if (!multiRow) {
+                    row.isQueue = dest === 'queues';
+                    row.isAgent = dest === 'agents';
                     table.push(row);
-                    if (dest !== 'phones') {
-                        row.queueRelevant = true;
-                    }
                 }
             }
         }
@@ -2062,13 +2057,18 @@ function QTable () {
         table,
         theadTr,
         ths,
-        tbody;
+        tbody,
+        blockRefresh;
 
     this.sortingCol = 0;
     this.sortingOrder = 1;
 
 
     this.render = function (slide) {
+        if (blockRefresh) {
+            return;
+        }
+        
         var i,
             str = '',
             data = qDB.getTable();
@@ -2158,6 +2158,7 @@ function QTable () {
         });
         
         tr.addEventListener('dragstart', function (evt) {
+            blockRefresh = true;
             startTh = evt.target;
             startId = parseInt(startTh.id);
             startTh.style.opacity = 0.5;
@@ -2190,6 +2191,7 @@ function QTable () {
         });
 
         tr.addEventListener('dragend', function () {
+            blockRefresh = false;
             for (var i = 0, n = ths.length; i < n; i++) {
                 ths[i].style.opacity = '';
                 startTh.style.outline = '';
@@ -2197,6 +2199,7 @@ function QTable () {
         });
 
         tr.addEventListener('drop', function (evt) {
+            blockRefresh = false;
             var target = evt.target,
                 currId = parseInt(target.id);
 
