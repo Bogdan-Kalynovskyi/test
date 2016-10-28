@@ -124,7 +124,8 @@ function QChart (container) {
         startX,
         endX,
         goodEvt,
-        chartArea = { 
+        blockRefresh,
+        chartArea = {
             top: 32,
             left: '8%',
             right: '16%'
@@ -274,6 +275,15 @@ function QChart (container) {
                 centerPieSource();
             }
         };
+        byCol.onfocus = byRow.onfocus = function () {
+            blockRefresh = true;
+            setTimeout(function () {
+                blockRefresh = false;
+            }, 60000);
+        };
+        byCol.onblur = byRow.onblur = function () {
+            blockRefresh = false;
+        };
 
         if (that.pieFilter.by === 'column') {
             byCol.value = that.pieFilter.id;
@@ -336,8 +346,8 @@ function QChart (container) {
             }
         }
         else {
-            row = dbData[id].slice();
             if (dbData[id].total) {                                         // this can be false if you save report and then data changes
+                row = dbData[id].slice();
                 var tableHeading = getTableHeading(),
                     totalCallsPos = qDB.colPos.indexOf(0) + 1,
                     loggedInPos = qDB.colPos.indexOf(COL_loggedIn) + 1;
@@ -532,9 +542,11 @@ function QChart (container) {
     
     function assignZoom (type, slide) {
         if (PERIOD > 0) {
-            var svgr = slide.getElementsByTagName('svg')[0].children[3].children[0];
-            svgr.style.cursor = 'col-resize';
-            charts[type].svgr = svgr;
+            var svgr = slide.getElementsByTagName('svg');
+            if (svgr) {
+                svgr[0].children[3].children[0].style.cursor = 'col-resize';
+                charts[type].svgr = svgr;
+            }
         }
     }
     
@@ -569,7 +581,7 @@ function QChart (container) {
                     assignZoom(type, slide);
                 }
                 else {
-                    if (type !== qMenu.type) {
+                    if (!blockRefresh) {
                         pieSourceChooser();
                     }
                     dataTable = getPieDataTable();
@@ -951,7 +963,7 @@ function QDataBase (visibleCols, visibleRows) {
         row.total = 0;
         row.calls = [];
         row.queueCalls = [];
-        row.queueRelevant = false;
+        row.isAgent = false;
         return row;
     }
 
@@ -1199,7 +1211,6 @@ function QDataBase (visibleCols, visibleRows) {
                 result.totalTime = duration;
             }
             total += result.total;
-//            result.isQueue = row.isQueue;
             result.isAgent = row.isAgent;
 
             table[i] = result;
@@ -1503,7 +1514,6 @@ function QDataBase (visibleCols, visibleRows) {
                 }
 
                 if (!multiRow) {
-                    row.isQueue = dest === 'queues';
                     row.isAgent = dest === 'agents';
                     table.push(row);
                 }
@@ -2051,6 +2061,8 @@ function QPolling (onFreshData) {
     document.addEventListener('visibilitychange', visibilityChange);
     this.update();
 }
+
+
 function QTable () {
     var that = this,
         container,
@@ -2067,7 +2079,7 @@ function QTable () {
     this.render = function (slide) {
         if (blockRefresh) {
             return;
-        }
+        } // todo deep vs shallow rerender
         
         var i,
             str = '',
