@@ -115,14 +115,16 @@ function QAgentEvents () {
 
 function QChart (container) {
     var that = this,
-        dbData,
+        dbTable,
+        loggedInTimeDivider,
+        tableHeader,
         dataTable,
         charts = {},
         zoomingOverlay = byId('zooming-overlay'),
         resetZoomBtn = byId('zoom-out'),
         rectSVG,
         startX,
-        endX,
+        endX = null,
         goodEvt,
         blockRefresh,
         chartArea = {
@@ -155,23 +157,6 @@ function QChart (container) {
         };
 
 
-    function getTableHeading () {
-        var result = [PERIOD ? 'Time' : 'Destination'],
-            colPos = qDB.colPos,
-            colLoggedInTimePos = qDB.colPos.indexOf(COL_loggedIn);
-
-        for (var i in colPos) {
-            if (+i === colLoggedInTimePos) {
-                result.push(COLUMNS[colPos[i]] + ' (hours)');
-            }
-            else {
-                result.push(COLUMNS[colPos[i]]);
-            }
-        }
-        return result;
-    }
-
-
     function centerPieSource () {
         var g = SLIDES.piechart.querySelectorAll('svg > g'),
             left = Infinity,
@@ -199,7 +184,7 @@ function QChart (container) {
     });
 
 
-    function pieSourceChooser () {
+    function renderPieSourceSelect () {
         if (!that.pieFilter) {
             var pieFilterSaved = byName('piesource');
             if (pieFilterSaved) {
@@ -227,8 +212,8 @@ function QChart (container) {
             }
         }
         str += '</select></label><label> or row <select id="piechart-by-row"><option value="">Choose row</option>';
-        for (i in dbData) {
-            var row = dbData[i],
+        for (i in dbTable) {
+            var row = dbTable[i],
                 totalVisible = 0;
 
             if (row.total) {
@@ -241,7 +226,7 @@ function QChart (container) {
                 }
 
                 if (totalVisible) {
-                    str += '<option value="' + i + '">' + dbData[i][0] + '</option>';
+                    str += '<option value="' + i + '">' + dbTable[i][0] + '</option>';
                 }
             }
         }
@@ -258,9 +243,7 @@ function QChart (container) {
                     id: this.value
                 };
                 byRow.value = '';
-                dataTable = getPieDataTable();
-                charts.piechart.draw(dataTable, chartOptions.piechart);
-                centerPieSource();
+                renderPieChart();
             }
         };
         byRow.onchange = function () {
@@ -270,9 +253,7 @@ function QChart (container) {
                     id: this.value
                 };
                 byCol.value = '';
-                dataTable = getPieDataTable();
-                charts.piechart.draw(dataTable, chartOptions.piechart);
-                centerPieSource();
+                renderPieChart();
             }
         };
         byCol.onfocus = byRow.onfocus = function () {
@@ -296,6 +277,40 @@ function QChart (container) {
             if (byRow.selectedIndex === -1) {
                 byRow.selectedIndex = 1;
             }
+        }
+    }
+
+
+    function cacheTableHeader () {
+        var divided = qDB.dividedMax * 6, //todo
+            timeUnit = '',
+            colPos = qDB.colPos,
+            loggedInPos = colPos.indexOf(COL_loggedIn) + 1;
+
+        if (divided > DAY) {
+            loggedInTimeDivider = DAY;
+            timeUnit = ' (days)';
+        }
+        else if (divided > 3600) {
+            loggedInTimeDivider = 3600;
+            timeUnit = ' (hours)';
+        }
+        else if (divided > 60) {
+            loggedInTimeDivider = 60;
+            timeUnit = ' (minutes)';
+        }
+        else if (divided > 0) {
+            loggedInTimeDivider = 1;
+            timeUnit = ' (seconds)';
+        }
+        else {
+            loggedInTimeDivider = Infinity;
+        }
+
+        tableHeader = [PERIOD ? 'Time' : 'Destination'];
+
+        for (var i in colPos) {
+            tableHeader.push(COLUMNS[colPos[i]] + ((+i + 1 === loggedInPos) ? timeUnit : ''));
         }
     }
 
@@ -331,11 +346,11 @@ function QChart (container) {
         if (that.pieFilter.by === 'column') {
             var pos = qDB.colPos.indexOf(id) + 1,
                 i = (!PERIOD && qOpts.getNum('allcalls')) ? 1 : 0,                // in Destination mode, don't show "All calls" in chart
-                n = dbData.length - (PERIOD && qOpts.totalRow ? 1 : 0),           // in Time mode, don't show "Total" row
+                n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0),           // in Time mode, don't show "Total" row
                 totalVisible = 0;
 
             for (; i < n; i++) {
-                row = dbData[i];
+                row = dbTable[i];
                 if (row.total) {
                     totalVisible += row[pos];
                     data.push([row[0], row[pos]]);
@@ -346,18 +361,17 @@ function QChart (container) {
             }
         }
         else {
-            if (dbData[id].total) {                                         // this can be false if you save report and then data changes
-                row = dbData[id].slice();
-                var tableHeading = getTableHeading(),
-                    totalCallsPos = qDB.colPos.indexOf(0) + 1,
+            if (dbTable[id].total) {                                         // this can be false if you save report and then data changes
+                row = dbTable[id].slice();
+                var totalCallsPos = qDB.colPos.indexOf(0) + 1,
                     loggedInPos = qDB.colPos.indexOf(COL_loggedIn) + 1;
                 
-                for (i = 1, n = tableHeading.length; i < n; i++) {
+                for (i = 1, n = tableHeader.length; i < n; i++) {
                     if (i !== totalCallsPos) { 
                         if (i === loggedInPos) {
-                            row[i] = +(row[i]/ 3600).toFixed(2);
+                            row[i] = +(row[i] / loggedInTimeDivider).toFixed(2);
                         }
-                        data.push([tableHeading[i], row[i]]);
+                        data.push([tableHeader[i], row[i]]);
                     }
                 }
             }
@@ -372,15 +386,15 @@ function QChart (container) {
 
     function getDataTable (type) {
         var colPos = qDB.colPos,
-            data = [getTableHeading()],
+            data = [tableHeader],
             hasNumericCols = false,
             hasDurationCols = false,
             cols = [],
             j = 0,
-            n = dbData.length - (PERIOD && qOpts.totalRow ? 1 : 0);            // in Time mode, don't show "Total" row
+            n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0);            // in Time mode, don't show "Total" row
 
         for (; j < n; j++) {
-            var row = dbData[j].slice();
+            var row = dbTable[j].slice();
             for (var i in colPos) {
                 var i1 = colPos[i],
                     j1 = +i + 1,
@@ -390,7 +404,7 @@ function QChart (container) {
                     row[j1] = arrayPeriod(row[j1]);
                 }
                 else if (i1 === COL_loggedIn) {
-                    row[j1] = +(row[j1]/ 3600).toFixed(2);
+                    row[j1] = +(row[j1] / loggedInTimeDivider).toFixed(2);
                 }
 
                 // once, check for column types
@@ -449,7 +463,7 @@ function QChart (container) {
     function move (direction) {
         var leftTime = START,
             rightTime = Math.min(Date.now() / 1000, END),
-            delta = (rightTime - leftTime) * 0.2 * direction;
+            delta = (rightTime - leftTime) * 0.1 * direction;
         setZoomBackup();
 
         START += delta;
@@ -488,7 +502,7 @@ function QChart (container) {
     
     function mouseup () {
         zoomingOverlay.style.display = 'none';
-        if (goodEvt) {
+        if (goodEvt && endX !== null) {
             var maxX = Math.max(startX, endX),
                 minX = Math.min(startX, endX);
 
@@ -510,6 +524,8 @@ function QChart (container) {
 
             container.onmousemove = null;
         }
+        
+        endX = null;
     }
 
     
@@ -540,14 +556,29 @@ function QChart (container) {
     }
 
     
-    function assignZoom (type, slide) {
+    function assignZoom (type) {
         if (PERIOD > 0) {
-            var svgr = slide.getElementsByTagName('svg');
+            var svgr = SLIDES[type].getElementsByTagName('svg');
             if (svgr) {
-                svgr[0].children[3].children[0].style.cursor = 'col-resize';
+                svgr = svgr[0].children[3].children[0];
+                svgr.style.cursor = 'col-resize';
                 charts[type].svgr = svgr;
             }
         }
+    }
+
+
+    function renderChart (type) {
+        dataTable = getDataTable(type);
+        charts[type].draw(dataTable, chartOptions[type]);
+        assignZoom(type);
+    }
+
+
+    function renderPieChart () {
+        dataTable = getPieDataTable();
+        charts.piechart.draw(dataTable, chartOptions.piechart);
+        centerPieSource();
     }
     
 
@@ -573,20 +604,17 @@ function QChart (container) {
                             break;
                     }
                 } 
-                dbData = qDB.getData();
+                dbTable = qDB.getData();
+                cacheTableHeader();
 
-                if (type !== 'piechart') {
-                    dataTable = getDataTable(type);
-                    charts[type].draw(dataTable, chartOptions[type]);
-                    assignZoom(type, slide);
+                if (type === 'piechart') {
+                    if (!blockRefresh) {
+                        renderPieSourceSelect();
+                    }
+                    renderPieChart();
                 }
                 else {
-                    if (!blockRefresh) {
-                        pieSourceChooser();
-                    }
-                    dataTable = getPieDataTable();
-                    charts.piechart.draw(dataTable, chartOptions.piechart);
-                    centerPieSource();
+                    renderChart(type);
                 }
 
                 eqHeight();
@@ -781,81 +809,6 @@ function QDataBase (visibleCols, visibleRows) {
     }
 
 
-    function calcSecondaryCols (row) {
-        var call, 
-            rowTotal = row.total,
-            minhold = Infinity,
-            avghold = 0,
-            maxhold = 0,
-            mintalk = Infinity,
-            avgtalk = 0,
-            maxtalk = 0,
-            mintotal = Infinity,
-            avgtotal = 0,
-            maxtotal = 0,
-            abandon = 0,
-            noagent = 0,
-            timeout = 0,
-            keypress = 0,
-            agent = 0,
-            caller = 0,
-            transfer = 0,
-            answeredCount = 0;
-
-        for (var i in row.calls) {
-            call = row.calls[i];
-            minhold = Math.min(minhold, call.hold);
-            avghold += call.hold;
-            maxhold = Math.max(maxhold, call.hold);
-            if (call.answer) {
-                mintalk = Math.min(mintalk, call.talk);
-                avgtalk += call.talk;
-                maxtalk = Math.max(maxtalk, call.talk);
-                answeredCount++;
-            }
-            mintotal = Math.min(mintotal, call.total);
-            avgtotal += call.total;
-            maxtotal = Math.max(maxtotal, call.total);
-        }
-
-        for (i in row.queueCalls) {
-            var q = row.queueCalls[i].queuestatus;
-            if (q === 'abandon') {
-                abandon++;
-            } else if (q === 'exitempty') {
-                noagent++;
-            } else if (q === 'exitwithintimeout') {
-                timeout++;
-            } else if (q === 'exitwithkey') {
-                keypress++;
-            } else if (q === 'completeagent') {
-                agent++;
-            } else if (q === 'completecaller') {
-                caller++;
-            } else if (q === 'transfer') {
-                transfer++;
-            }
-        }
-
-        if (minhold === Infinity) {
-            minhold = 0;
-        }
-        if (mintalk === Infinity) {
-            mintalk = 0;
-        }
-        if (mintotal === Infinity) {
-            mintotal = 0;
-        }
-        if (rowTotal) {
-            avghold /= rowTotal;
-            avgtalk = answeredCount ? avgtalk / answeredCount : 0;
-            avgtotal /= rowTotal;
-        }
-
-        row.splice(COL_timeStart + 1, 0, minhold, avghold, maxhold, mintalk, avgtalk, maxtalk, mintotal, avgtotal, maxtotal, abandon, noagent, timeout, keypress, agent, caller, transfer);
-    }
-
-    
     this.getTable = function (csv) {
         var result = new Array(table.length),
             inserts = 0,
@@ -1182,23 +1135,111 @@ function QDataBase (visibleCols, visibleRows) {
 
 
     function reduceTable () {
-        var duration = Math.min(Date.now() / 1000, END) - START,
-            total = 0,
-            showTotal = PERIOD && qOpts.totalRow;
+        
+        function calcSecondaryCols (row) {
+            var call,
+                rowTotal = row.total,
+                minhold = Infinity,
+                avghold = 0,
+                maxhold = 0,
+                mintalk = Infinity,
+                avgtalk = 0,
+                maxtalk = 0,
+                mintotal = Infinity,
+                avgtotal = 0,
+                maxtotal = 0,
+                abandon = 0,
+                noagent = 0,
+                timeout = 0,
+                keypress = 0,
+                agent = 0,
+                caller = 0,
+                transfer = 0,
+                answeredCount = 0;
 
-        if (showTotal) {
-            var colSum = new Array(that.colPos.length + 1).fill(0);
-            colSum[0] = 'Total';
+            for (var i in row.calls) {
+                call = row.calls[i];
+                
+                minhold = Math.min(minhold, call.hold);
+                avghold += call.hold;
+                maxhold = Math.max(maxhold, call.hold);
+                if (call.answer) {
+                    mintalk = Math.min(mintalk, call.talk);
+                    avgtalk += call.talk;
+                    maxtalk = Math.max(maxtalk, call.talk);
+                    answeredCount++;
+                }
+                mintotal = Math.min(mintotal, call.total);
+                avgtotal += call.total;
+                maxtotal = Math.max(maxtotal, call.total);
+            }
+
+            for (i in row.queueCalls) {
+                var q = row.queueCalls[i].queuestatus;
+                if (q === 'abandon') {
+                    abandon++;
+                } else if (q === 'exitempty') {
+                    noagent++;
+                } else if (q === 'exitwithintimeout') {
+                    timeout++;
+                } else if (q === 'exitwithkey') {
+                    keypress++;
+                } else if (q === 'completeagent') {
+                    agent++;
+                } else if (q === 'completecaller') {
+                    caller++;
+                } else if (q === 'transfer') {
+                    transfer++;
+                }
+            }
+
+            if (minhold === Infinity) {
+                minhold = 0;
+            }
+            if (mintalk === Infinity) {
+                mintalk = 0;
+            }
+            if (mintotal === Infinity) {
+                mintotal = 0;
+            }
+            if (rowTotal) {
+                avghold /= rowTotal;
+                avgtalk = answeredCount ? avgtalk / answeredCount : 0;
+                avgtotal /= rowTotal;
+            }
+
+            row.splice(COL_timeStart + 1, 0, minhold, avghold, maxhold, mintalk, avgtalk, maxtalk, mintotal, avgtotal, maxtotal, abandon, noagent, timeout, keypress, agent, caller, transfer);
         }
 
-        for (var i in table) {
-            var row = table[i],
-                result = [row[0]];
-
-            calcSecondaryCols(row);
-            for (var j in that.colPos) {
-                var el = row[that.colPos[j] + 1];
+        
+        function calcTotalRow () {
+            for (var j = 0, n = colPos.length; j < n; j++) {
+                var j1 = colPos[j];
+                if (COL_avg.indexOf(j1) !== -1) {
+                    colSum[j + 1] /= total;
+                }
+            }
+            colSum.total = total;
+            colSum.totalTime = duration;
+            table.push(colSum);
+        }
+        
+        
+        function reduceRow () {
+            var result = [row[0]];
+            
+            for (var j in colPos) {
+                var pos = colPos[j],
+                    el = row[pos + 1];
                 result.push(el);
+                if (pos < COL_timeStart || pos >= COL_timeEnd) {
+                    if (pos === COL_loggedIn) {
+                        maxLoggedIn = Math.max(maxLoggedIn, el);
+                    }
+                    else {
+                        maxNum = Math.max(maxNum, el);
+                    }
+                }
                 if (showTotal) {
                     colSum[+j + 1] += el;
                 }
@@ -1212,21 +1253,33 @@ function QDataBase (visibleCols, visibleRows) {
             }
             total += result.total;
             result.isAgent = row.isAgent;
+            return result;
+        }
+        
 
-            table[i] = result;
+        var duration = Math.min(Date.now() / 1000, END) - START,
+            colPos = that.colPos,
+            maxNum = 0,
+            maxLoggedIn = 0,
+            total = 0,
+            showTotal = PERIOD && qOpts.totalRow;
+
+        if (showTotal) {
+            var colSum = new Array(colPos.length + 1).fill(0);
+            colSum[0] = 'Total';
+        }
+
+        for (var i in table) {
+            var row = table[i];
+            calcSecondaryCols(row);
+            table[i] = reduceRow(row);
         }
 
         if (showTotal) {
-            for (var j = 0, n = that.colPos.length; j < n; j++) {
-                var j1 = that.colPos[j];
-                if (COL_avg.indexOf(j1) !== -1) {
-                    colSum[j + 1] /= table.length;
-                }
-            }
-            colSum.total = total; 
-            colSum.totalTime = duration;
-            table.push(colSum);
+            calcTotalRow();
         }
+        
+        that.dividedMax = maxLoggedIn / maxNum;
     }
     
     
@@ -2129,7 +2182,7 @@ function QTable () {
 
 
     this.resizeHeader = function () {
-        theadTr.style.fontSize = '13px';
+        theadTr.style.fontSize = '';
         var containerWidth = container.clientWidth,
             tableWidth = table.clientWidth,
             fontSize = 13;
@@ -2320,7 +2373,7 @@ window.addEventListener('resize', function () {
     clearTimeout(hndlr);
     
     hndlr = setTimeout(function () {
-        if (qMenu.type === 'table') {
+        if (window.qMenu && qMenu.type === 'table') {
             qTable.resizeHeader();
         }
         else {
@@ -2402,6 +2455,7 @@ function formatTime (time, format) {
 
 
 function formatPeriod (period, minPeriod) {
+    period = Math.round(period);
     var time = Math.floor(period / DAY),
         str = '';
 
@@ -2416,7 +2470,7 @@ function formatPeriod (period, minPeriod) {
     if (time || str) {
         str += pad(time) + ':';
     }
-    time = Math.floor(period % 60);
+    time = period % 60;
     str += pad(time);
     return str;
 }
