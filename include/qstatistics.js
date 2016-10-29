@@ -281,12 +281,14 @@ function QChart (container) {
     }
 
 
-    function cacheTableHeader () {
-        var divided = qDB.dividedMax * 22, //todo
-            timeUnit = '',
-            colPos = qDB.colPos,
-            loggedInPos = colPos.indexOf(COL_loggedIn) + 1;
+    function cacheTableHeader (totalRow) {
+        var colPos = qDB.colPos,
+            loggedInPos = colPos.indexOf(COL_loggedIn) + 1,
+            divided = totalRow ? dbTable[dbTable.length - 1][loggedInPos] : qDB.maxLoggedIn,
+            timeUnit = '';
 
+        divided /= qDB.maxNum / 22;
+        
         if (divided > DAY) {
             loggedInTimeDivider = DAY;
             timeUnit = ' (days)';
@@ -344,6 +346,7 @@ function QChart (container) {
         chartOptions.piechart.enableInteractivity = true;
 
         if (that.pieFilter.by === 'column') {
+            cacheTableHeader();
             var pos = qDB.colPos.indexOf(id) + 1,
                 i = (!PERIOD && qOpts.getNum('allcalls')) ? 1 : 0,                 // in Destination mode, don't show "All calls" in chart
                 n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0),           // in Time mode, don't show "Total" row
@@ -369,6 +372,7 @@ function QChart (container) {
         }
         else {
             if (dbTable[id].total) {                                         // this can be false if you save report and then data changes
+                cacheTableHeader(id === dbTable.length - 1);
                 row = dbTable[id];
                 var totalCallsPos = qDB.colPos.indexOf(0) + 1,
                     loggedInPos = qDB.colPos.indexOf(COL_loggedIn) + 1;
@@ -394,6 +398,7 @@ function QChart (container) {
 
 
     function getDataTable (type) {
+        cacheTableHeader();
         var colPos = qDB.colPos,
             data = [tableHeader],
             hasNumericCols = false,
@@ -614,8 +619,7 @@ function QChart (container) {
                     }
                 } 
                 dbTable = qDB.getData();
-                cacheTableHeader();
-
+              
                 if (type === 'piechart') {
                     if (!blockRefresh) {
                         renderPieSourceSelect();
@@ -679,7 +683,7 @@ var START,
     DESTINATIONS = [
         'All calls',
         'External callers',
-        'Internal callers',
+        'Internal call legs',
         'External destinations'
     ],
     
@@ -1288,7 +1292,8 @@ function QDataBase (visibleCols, visibleRows) {
             calcTotalRow();
         }
         
-        that.dividedMax = maxLoggedIn / maxNum;
+        that.maxNum = maxNum;
+        that.maxLoggedIn = maxLoggedIn;
     }
     
     
