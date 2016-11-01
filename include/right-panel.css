@@ -9,6 +9,7 @@
 
 #left-content {
 	margin: 0;
+	height: 0;  /* to remove initial bad-style-picture flickering */
 }
 
 #left-content h2 {
@@ -50,7 +51,8 @@
 	padding: 10px;
 }
 
-input[type="submit"] {
+#right-panel input[type="submit"] {
+	margin-top: 10px;
 	box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.5);
 }
 

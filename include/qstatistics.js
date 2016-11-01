@@ -117,6 +117,7 @@ function QChart (container) {
     var that = this,
         dbTable,
         loggedInTimeDivider,
+        timeUnit,
         tableHeader,
         dataTable,
         charts = {},
@@ -281,38 +282,66 @@ function QChart (container) {
     }
 
 
-    function cacheTableHeader (totalRow) {
+    function cacheTableHeader (pieChartRow, pieChartCol) {
         var colPos = qDB.colPos,
             loggedInPos = colPos.indexOf(COL_loggedIn) + 1,
-            divided = totalRow ? dbTable[dbTable.length - 1][loggedInPos] : qDB.maxLoggedIn,
-            timeUnit = '';
+            maxNum = 0,
+            maxLoggedIn = 0;
 
-        divided /= qDB.maxNum / 22;
-        
-        if (divided > DAY) {
+        // when table row is displayed as pie chart
+        if (pieChartRow !== undefined) {
+            for (var j in colPos) {
+                var pos = colPos[j],
+                    el = dbTable[pieChartRow][+j + 1];
+
+                if (pos === COL_loggedIn) {
+                    maxLoggedIn = Math.max(maxLoggedIn, el);
+                }
+                else {
+                    maxNum = Math.max(maxNum, el);
+                }
+            }
+            loggedInTimeDivider = maxLoggedIn / maxNum * 20;
+        }
+        // when logged in time column is displayed 
+        else if (pieChartCol) {
+            for (var i = 0, n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0); i < n; i++) {
+                maxLoggedIn += dbTable[i][loggedInPos];
+            }    
+            loggedInTimeDivider = maxLoggedIn / n;
+        }
+        // other cases
+        else {
+            loggedInTimeDivider = qDB.maxLoggedIn / qDB.maxNum * 20;
+        }
+
+        if (loggedInTimeDivider > DAY) {
             loggedInTimeDivider = DAY;
             timeUnit = ' (days)';
         }
-        else if (divided > 3600) {
+        else if (loggedInTimeDivider > 3600) {
             loggedInTimeDivider = 3600;
             timeUnit = ' (hours)';
         }
-        else if (divided > 60) {
+        else if (loggedInTimeDivider > 60) {
             loggedInTimeDivider = 60;
             timeUnit = ' (minutes)';
         }
-        else if (divided > 0) {
+        else if (loggedInTimeDivider > 0) {
             loggedInTimeDivider = 1;
             timeUnit = ' (seconds)';
         }
         else {
             loggedInTimeDivider = Infinity;
+            timeUnit = '';
         }
 
         tableHeader = [PERIOD ? 'Time' : 'Destination'];
 
-        for (var i in colPos) {
-            tableHeader.push(COLUMNS[colPos[i]] + ((+i + 1 === loggedInPos) ? timeUnit : ''));
+        if (!pieChartCol) {
+            for (i in colPos) {
+                tableHeader.push(COLUMNS[colPos[i]] + ((+i + 1 === loggedInPos) ? timeUnit : ''));
+            }
         }
     }
 
@@ -340,15 +369,15 @@ function QChart (container) {
         
         var row,
             id = +that.pieFilter.id,
-            data = [['', '']];                   // in pieChart, first row seems not to send any useful information
+            data = [['', '']];                        // in pieChart, first row seems not to have any useful information
             
         chartOptions.piechart.legend = null;
         chartOptions.piechart.enableInteractivity = true;
 
         if (that.pieFilter.by === 'column') {
-            cacheTableHeader();
+            cacheTableHeader(undefined, id === COL_loggedIn);
             var pos = qDB.colPos.indexOf(id) + 1,
-                i = (!PERIOD && qOpts.getNum('allcalls')) ? 1 : 0,                 // in Destination mode, don't show "All calls" in chart
+                i = (!PERIOD && +qOpts.get('allcalls')) ? 1 : 0,                 // in Destination mode, don't show "All calls" in chart
                 n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0),           // in Time mode, don't show "Total" row
                 totalVisible = 0;
 
@@ -362,7 +391,7 @@ function QChart (container) {
                 }
                 else {
                     if (row[pos] || row.isAgent) {
-                        data.push([row[0], +(row[pos] / loggedInTimeDivider).toFixed(2)]);
+                        data.push([row[0] + timeUnit, +(row[pos] / loggedInTimeDivider).toFixed(2)]);
                     }
                 }
             }
@@ -372,7 +401,7 @@ function QChart (container) {
         }
         else {
             if (dbTable[id].total) {                                         // this can be false if you save report and then data changes
-                cacheTableHeader(id === dbTable.length - 1);
+                cacheTableHeader(id);
                 row = dbTable[id];
                 var totalCallsPos = qDB.colPos.indexOf(0) + 1,
                     loggedInPos = qDB.colPos.indexOf(COL_loggedIn) + 1;
@@ -723,7 +752,6 @@ var START,
     COL_timeStart = 13,
     COL_timeEnd = 22,
     COL_loggedIn = 29,
-    COL_avg = [14, 17, 20],
     
     REARRANGE = [];
 
@@ -837,9 +865,9 @@ function QDataBase (visibleCols, visibleRows) {
                 j1 = j0 + inserts,
                 withPercentage = visibleCols[i1] === 2,
                 time = i1 >= COL_timeStart && i1 < COL_timeEnd,
-                loggedTime = i1 === COL_loggedIn;
+                loggedInCol = i1 === COL_loggedIn;
 
-            if (withPercentage || time || loggedTime) {
+            if (withPercentage || time || loggedInCol) {
                 for (i in result) {
                     var row = result[i],
                         perc;
@@ -847,14 +875,14 @@ function QDataBase (visibleCols, visibleRows) {
                     if (time) {
                         row[j1] = formatPeriod(row[j1], 3);
                     }
-                    else if (loggedTime) {
+                    else if (loggedInCol) {
                         row[j1] = (PERIOD || table[i].isAgent) ? formatPeriod(row[j1], 4) : '';
                     }
 
                     if (withPercentage) {
                         var tblRow = table[i];
-                        if (loggedTime) {
-                            perc = tblRow[j0] ? Math.round(100 * tblRow[j0] / tblRow.totalTime) : '';
+                        if (loggedInCol) {
+                            perc = (PERIOD || tblRow[j0] || tblRow.isAgent) ? Math.round(100 * tblRow[j0] / (tblRow.totalTime || Infinity)) : '';
                         }
                         else {
                             perc = tblRow.total ? Math.round(100 * tblRow[j0] / tblRow.total) : '';
@@ -934,12 +962,12 @@ function QDataBase (visibleCols, visibleRows) {
     }
 
 
-    function add2TableOrMultiRow (display, row, multiRow) {
-        if (visibleRows[display]) {
+    function add2TableOrMultiRow (rowIndex, row, multiRow) {
+        if (visibleRows[rowIndex]) {
             var i = 1,
                 n = row.length;
 
-            multiRow = multiRow || table[rowPos[display]];
+            multiRow = multiRow || table[rowPos[rowIndex]];
 
             for (; i < n; i++) {
                 multiRow[i] += row[i];
@@ -1148,6 +1176,10 @@ function QDataBase (visibleCols, visibleRows) {
 
 
     function reduceTable () {
+        var totalHold = 0,
+            totalTalk = 0,
+            totalTalkCount = 0,
+            totalTotal = 0;
         
         function calcSecondaryCols (row) {
             var call,
@@ -1168,7 +1200,7 @@ function QDataBase (visibleCols, visibleRows) {
                 agent = 0,
                 caller = 0,
                 transfer = 0,
-                answeredCount = 0;
+                talkCount = 0;
 
             for (var i in row.calls) {
                 call = row.calls[i];
@@ -1180,7 +1212,7 @@ function QDataBase (visibleCols, visibleRows) {
                     mintalk = Math.min(mintalk, call.talk);
                     avgtalk += call.talk;
                     maxtalk = Math.max(maxtalk, call.talk);
-                    answeredCount++;
+                    talkCount++;
                 }
                 mintotal = Math.min(mintotal, call.total);
                 avgtotal += call.total;
@@ -1193,7 +1225,7 @@ function QDataBase (visibleCols, visibleRows) {
                     abandon++;
                 } else if (q === 'exitempty') {
                     noagent++;
-                } else if (q === 'exitwithintimeout') {
+                } else if (q === 'exitwithtimeout') {
                     timeout++;
                 } else if (q === 'exitwithkey') {
                     keypress++;
@@ -1216,8 +1248,13 @@ function QDataBase (visibleCols, visibleRows) {
                 mintotal = 0;
             }
             if (rowTotal) {
+                totalHold += avghold;
+                totalTalk += avgtalk;
+                totalTalkCount += talkCount;
+                totalTotal += avgtotal;
+                
                 avghold /= rowTotal;
-                avgtalk = answeredCount ? avgtalk / answeredCount : 0;
+                avgtalk = talkCount ? avgtalk / talkCount : 0;
                 avgtotal /= rowTotal;
             }
 
@@ -1226,14 +1263,23 @@ function QDataBase (visibleCols, visibleRows) {
 
         
         function calcTotalRow () {
-            for (var j = 0, n = colPos.length; j < n; j++) {
-                var j1 = colPos[j];
-                if (COL_avg.indexOf(j1) !== -1) {
-                    colSum[j + 1] /= total;
+            var pos;
+            if (totalCallsCount) {
+                pos = colPos.indexOf(14);        // hold 
+                if (pos !== -1) {
+                    colSum[pos + 1] = totalHold / totalCallsCount;
+                }
+                pos = colPos.indexOf(17);        // talk
+                if (pos !== -1) {
+                    colSum[pos + 1] = totalTalkCount ? totalTalk / totalTalkCount : 0;
+                }
+                pos = colPos.indexOf(20);        // total
+                if (pos !== -1) {
+                    colSum[pos + 1] = totalTotal / totalCallsCount;
                 }
             }
-            colSum.total = total;
-            colSum.totalTime = duration;
+            colSum.total = totalCallsCount;
+            colSum.totalTime = reportDuration;
             table.push(colSum);
         }
         
@@ -1262,19 +1308,19 @@ function QDataBase (visibleCols, visibleRows) {
                 result.totalTime = row.totalTime;
             }
             else {
-                result.totalTime = duration;
+                result.totalTime = reportDuration;
             }
-            total += result.total;
+            totalCallsCount += result.total;
             result.isAgent = row.isAgent;
             return result;
         }
         
 
-        var duration = Math.min(Date.now() / 1000, END) - START,
+        var reportDuration = Math.min(Date.now() / 1000, END) - START,
             colPos = that.colPos,
             maxNum = 0,
             maxLoggedIn = 0,
-            total = 0,
+            totalCallsCount = 0,
             showTotal = PERIOD && qOpts.totalRow;
 
         if (showTotal) {
@@ -1357,27 +1403,46 @@ function QDataBase (visibleCols, visibleRows) {
     function byHours (period) {
         var now = Date.now() / 1000,
             startTime = START,
-            normalizedStart = START - START % period,
-            endTime = normalizedStart,
+            endTime = START - START % period,       // normalized
             calls,
             row,
             reportIndex,
-            date = new Date(START * 1000),
+            date = new Date(startTime * 1000),
             totalHours = DAY / period,
             isHalfHours = period === 1800,
             timeFormat = qOpts.config('timeformat'),
+            startHour = date.getHours();
         
-            startShift = date.getHours();
         if (isHalfHours) {
-            startShift = startShift * 2 + Math.round(date.getMinutes() / 30);
+            startHour = startHour * 2 + Math.floor(date.getMinutes() / 30);
         }
-        
 
         for (var i = 0; i < totalHours; i++) {
+            var hourString,
+                ampm = '';
             row = newRow();
             row.totalTime = 0;
-            date = new Date((i * period + normalizedStart) * 1000);
-            row[0] = formatTime(date, timeFormat);
+            
+            reportIndex = startHour + i;
+            if (reportIndex >= totalHours) {
+                reportIndex -= totalHours;
+            }
+            if (isHalfHours) {
+                reportIndex = Math.floor(reportIndex / 2);
+            }
+            if (timeFormat === '12') {
+                ampm = reportIndex >= 12 ? 'pm' : 'am';
+                reportIndex %= 12;
+            }
+            hourString = pad(reportIndex) + ':';
+            if (isHalfHours) {
+                hourString += ((i + startHour) % 2) ? '30' : '00';
+            }
+            else {
+                hourString += '00';
+            }
+
+            row[0] = hourString + ampm;
             table[i] = row;
         }
 
@@ -1390,7 +1455,7 @@ function QDataBase (visibleCols, visibleRows) {
             if (isHalfHours) {
                 reportIndex = reportIndex * 2 + Math.round(date.getMinutes() / 30);
             }
-            reportIndex -= startShift;
+            reportIndex -= startHour;
             if (reportIndex < 0) {
                 reportIndex = totalHours + reportIndex;
             }
@@ -1413,7 +1478,7 @@ function QDataBase (visibleCols, visibleRows) {
     function byDaysOfWeek () {
         var now = Date.now() / 1000,
             startTime = START,
-            endTime = getBeginningOfDay(START),
+            endTime = START,
             calls,
             row,
             reportIndex,
@@ -1471,7 +1536,7 @@ function QDataBase (visibleCols, visibleRows) {
             var dest = destinations[d],
                 ids = [],
                 arr,
-                destDisplay = qOpts.get(dest),
+                destFilter = qOpts.get(dest),
                 i, j, n;
 
             switch (dest) {
@@ -1486,7 +1551,7 @@ function QDataBase (visibleCols, visibleRows) {
                     break;
             }
 
-            if (destDisplay === 'use_include') {
+            if (destFilter === 'use_include') {
                 var options = byId(dest + 'include_selected').options;
                 for (i = 0, n = options.length; i < n; i++) {
                     ids.push(options[i].value);
@@ -1494,7 +1559,7 @@ function QDataBase (visibleCols, visibleRows) {
             }
             else {
                 for (i in arr) {
-                    if (destDisplay !== 'use_control_panel' || arr[i].getAttribute('panel') === '1') {
+                    if (destFilter !== 'use_control_panel' || arr[i].getAttribute('panel') === '1') {
                         ids.push(i);
                     }
                 }
@@ -1589,6 +1654,27 @@ function QDataBase (visibleCols, visibleRows) {
     }
 
 
+    function getDestinationQueueCalls () {
+        var allQueueCalls = [];
+
+        for (var i in table) {
+            allQueueCalls = allQueueCalls.concat(table[i].queueCalls);  // this array can contain duplicates
+        }
+
+        for (i in visibleRows) {
+            if (visibleRows[i]) {
+                var row = table[rowPos[i]],
+                    calls = row.calls;
+                for (var j in calls) {
+                    if (allQueueCalls.indexOf(calls[j]) !== -1) {
+                        row.queueCalls.push(calls[j]);
+                    }
+                }
+            }
+        }
+    }
+
+
     this.filter = function () {
         table = [];
 
@@ -1596,6 +1682,7 @@ function QDataBase (visibleCols, visibleRows) {
             var filteredCalls = that.filterByTime(START, END);
             byDestType(filteredCalls);
             byQueueAgentPhone(filteredCalls);
+            getDestinationQueueCalls();
         }
         else if (PERIOD > 0) {
             byTimePeriods()
@@ -1790,44 +1877,55 @@ function QOptions () {
     this.get = function (id) {
         return byId(id).value;
     };
-    this.getNum = function (id) {
-        return +byId(id).value;
-    };
+    
 
-
-    PERIOD = this.getNum('period');
+    PERIOD = +this.get('period');
     this.recursive = +byName('recursive');
     this.slaTime = +this.get('slatime');
     this.totalRow = +this.get('totalrow');
 
-
+    
+    // FORM
+    
     var form = $('form').last(),
         inputs = form.find('select, input'),
-        submitBtn = form.find('input[type="submit"]').css('margin-top', '10px')[0],
+        submitBtn = form.find('input[type="submit"]'),
+        originalName = form[0].name.value,
+        submitUpdate = submitBtn[0],
+        submitCopy = submitBtn[1],
+        copyButtonClicked,
         dirty,
         appended;
 
     setWatchers();
-////////////////////////
 
+    
     this.onFormDirty = function () {
         dirty = true;
-        submitBtn.disabled = false;
-        submitBtn.value = 'Save';
+        submitUpdate.disabled = false;
+        submitUpdate.value = 'Save report';
     };
     
     
     function onFormClean () {
-        submitBtn.disabled = true;
-        submitBtn.value = 'Saved';
+        submitUpdate.disabled = true;
+        submitUpdate.value = 'Report saved';
         dirty = false;
     }
-    onFormClean();
     
-
+ 
+    if (form[0].id.value) {
+        onFormClean();
+    }
     inputs.on('change', this.onFormDirty);
+    form.on('submit', submit);
+    submitCopy.addEventListener('click', function () {
+        copyButtonClicked = true;
+    });
 
-    form.on('submit', function () {
+
+    // submitting form
+    function submit () {
 
         function markAllOptions (mark) {
             var arr = ['queues', 'agents', 'phones'];
@@ -1849,10 +1947,9 @@ function QOptions () {
             return false;
         }
 
-        dirty = false;
-
         markAllOptions(true);
         qChart.resetZoom();
+
 
         if (appended) {
             for (var i = 0; i < 4; i++) {
@@ -1860,16 +1957,28 @@ function QOptions () {
             }
         }
         appended = true;
-
         form.append('<input type="hidden" name="startdate" value="' + START + '"/>' +
-                    '<input type="hidden" name="enddate" value="' + END + '"/>' +
-                    '<input type="hidden" name="starttime" value="' + (START - getBeginningOfDay(START)) + '"/>' +
-                    '<input type="hidden" name="endtime" value="' + (END - getBeginningOfDay(END)) + '"/>');
+            '<input type="hidden" name="enddate" value="' + END + '"/>' +
+            '<input type="hidden" name="starttime" value="' + (START - getBeginningOfDay(START)) + '"/>' +
+            '<input type="hidden" name="endtime" value="' + (END - getBeginningOfDay(END)) + '"/>');
 
         if (qChart.pieFilter && qChart.pieFilter.id) {
             form[0].piesource.value = qChart.pieFilter.by + '_' + qChart.pieFilter.id;
         }
+
+
         form[0].type.value = qMenu.type;
+
+
+        if (copyButtonClicked) {
+            form[0].id.value = 0;
+            if (form[0].name.value === originalName) {
+                form[0].name.value += ' (copy)';
+            }
+            copyButtonClicked = false;
+        }
+        originalName = form[0].name.value;
+
 
         $.post(form.attr('action'), form.serialize(), function (response) {
             var id = response.getElementsByTagName('return')[0].id;
@@ -1877,9 +1986,18 @@ function QOptions () {
             window.history.pushState('', form[0].name, '//' + location.host + location.pathname + '?id=' + id);
             onFormClean();
         });
+
+
         markAllOptions(false);
+        submitCopy.style.display = '';
+        eqHeight();
         return false;
-    });
+    }
+    
+    
+    if (!form[0].id.value) {
+        submitCopy.style.display = 'none';
+    }
 
 
     this.showNewTime = function () {
@@ -1948,33 +2066,36 @@ function QPolling (onFreshData) {
     function calcTimeFrame () {
         today = lastToday = getToday();
 
-        var startday = qOpts.getNum('startday');
+        var startday = +qOpts.get('startday');
         if (startday === 1) {
-            START = new Date(qOpts.getNum('start_year'), qOpts.getNum('start_month') - 1, qOpts.getNum('start_day')).getTime() / 1000;
+            START = new Date(+qOpts.get('start_year'), +qOpts.get('start_month') - 1, +qOpts.get('start_day'));
         }
         else {
             START = getDaysAhead(today, startday);
         }
-        START += qOpts.getNum('start_hour') * 3600 + qOpts.getNum('start_minute') * 60 + qOpts.getNum('start_second');
+        START.setHours(+qOpts.get('start_hour'), +qOpts.get('start_minute'), +qOpts.get('start_second'));
 
-        var endday = qOpts.getNum('endday');
+        var endday = +qOpts.get('endday');
         if (endday == 1) {
-            END = new Date(qOpts.getNum('end_year'), qOpts.getNum('end_month') - 1, qOpts.getNum('end_day')).getTime() / 1000;
+            END = new Date(+qOpts.get('end_year'), +qOpts.get('end_month') - 1, +qOpts.get('end_day'));
         }
         else {
             END = getDaysAhead(today, endday);
         }
-        END += qOpts.getNum('end_hour') * 3600 + qOpts.getNum('end_minute') * 60 + qOpts.getNum('end_second');
+        END.setHours(+qOpts.get('end_hour'), +qOpts.get('end_minute'), +qOpts.get('end_second'));
+        
+        START = START.getTime() / 1000;
+        END = END.getTime() / 1000;
 
         if (START >= END) {
             alert('Start time should be before end time.');
-            stopPolling();
+            stopPolling = true;
             throw 'start >= end';
         }
 
         else if (START > Date.now() / 1000) {
             alert('Start time should be before current moment.');
-            stopPolling();
+            stopPolling = true;
             throw 'start > now';
         }
 
