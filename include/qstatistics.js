@@ -1506,7 +1506,7 @@ function QDataBase (visibleCols, visibleRows) {
         }
 
         while (startTime < END && startTime < now) {
-            endTime = getDaysAhead(endTime, 1);
+            endTime = Math.floor(getDaysAhead(endTime, 1) / 1000);
             endTime = Math.min(endTime, now, END);
 
             dayOfWeek = new Date(startTime * 1000).getDay();
@@ -1655,19 +1655,14 @@ function QDataBase (visibleCols, visibleRows) {
 
 
     function getDestinationQueueCalls () {
-        var allQueueCalls = [];
-
-        for (var i in table) {
-            allQueueCalls = allQueueCalls.concat(table[i].queueCalls);  // this array can contain duplicates
-        }
-
-        for (i in visibleRows) {
+        for (var i in visibleRows) {
             if (visibleRows[i]) {
                 var row = table[rowPos[i]],
                     calls = row.calls;
                 for (var j in calls) {
-                    if (allQueueCalls.indexOf(calls[j]) !== -1) {
-                        row.queueCalls.push(calls[j]);
+                    var call = calls[j];
+                    if (call.dtype === 'queue' || call.stype === 'queue') {
+                        row.queueCalls.push(call);
                     }
                 }
             }
@@ -1922,7 +1917,9 @@ function QOptions () {
     submitCopy.addEventListener('click', function () {
         copyButtonClicked = true;
     });
-
+    window.addEventListener("popstate", function(e) {
+        location.reload();
+    });
 
     // submitting form
     function submit () {
@@ -2084,8 +2081,8 @@ function QPolling (onFreshData) {
         }
         END.setHours(+qOpts.get('end_hour'), +qOpts.get('end_minute'), +qOpts.get('end_second'));
         
-        START = START.getTime() / 1000;
-        END = END.getTime() / 1000;
+        START /= 1000;
+        END /= 1000;
 
         if (START >= END) {
             alert('Start time should be before end time.');
@@ -2181,10 +2178,10 @@ function QPolling (onFreshData) {
             today = getToday();
             if (today !== lastToday) {
                 if (qOpts.get('startday') === '0') {
-                    START = getDaysAhead(START, 1);
+                    START = Math.floor(getDaysAhead(START, 1) / 1000);
                 }
                 if (qOpts.get('endday') === '0') {
-                    END = getDaysAhead(END, 1);
+                    END = Math.floor(getDaysAhead(END, 1) / 1000);
                 }
             }
             lastToday = today;
@@ -2512,7 +2509,7 @@ function getToday () {
 function getDaysAhead (timestamp, days) {
     var date = new Date(timestamp * 1000);
     date.setDate(date.getDate() + days);
-    return Math.floor(date / 1000);
+    return date;
 }
 
 
@@ -2520,11 +2517,6 @@ function getBeginningOfDay (date) {
     return Math.floor(new Date(date * 1000).setHours(0,0,0,0) / 1000);
 }
 
-
-// function getSSinceMidnight (unix) {
-//     var e = new Date(unix * 1000);
-//     return unix - Math.floor(e.setHours(0,0,0,0) / 1000);
-// }
 
 function pad (s) {
     if (s < 10) {
