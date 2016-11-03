@@ -946,7 +946,12 @@ function QDataBase (visibleCols, visibleRows) {
         var fileName = (qOpts.get('name') || 'noname') + '.csv',
             csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
 
-        downloadBlob(fileName, csvBlob);
+        if (navigator.msSaveBlob) { // IE 10+
+            navigator.msSaveBlob(csvBlob, fileName);
+        }
+        else {
+            downloadUrl(URL.createObjectURL(csvBlob), fileName);
+        }
     };
 
 
@@ -1574,42 +1579,39 @@ function QDataBase (visibleCols, visibleRows) {
                     row = multiRow || newRow();
 
                 if (!multiRow) {
-                    switch (dest) {
-                        case 'queues':
-                            row[0] = 'Queue: ' + el.name;
-                            break;
-                        case 'agents':
-                        case 'phones':
-                            switch (phoneDisplay) {
-                                case 'name':
-                                    name = el.name;
-                                    break;
-                                case 'description':
-                                    name = el.description || el.name;
-                                    break;
-                                case 'internal':
-                                    name = el.callerid;
-                                    break;
-                                case 'name_description':
-                                    name = el.name + ' ' + (el.description || el.name);
-                                    break;
-                                case 'internal_description':
-                                    name = el.callerid + ' ' + (el.description || el.name);
-                                    break;
-                                case 'description_name':
-                                    name = (el.description || el.name) + ' ' + el.name;
-                                    break;
-                                case 'description_internal':
-                                    name = (el.description || el.name) + ' ' + el.callerid;
-                                    break;
-                            }
-                            if (dest === 'agents') {
-                                row[0] = 'Queue agent: ' + name;
-                            }
-                            else {
-                                row[0] = 'Ext: ' + name;
-                            }
-                            break;
+                    if (dest === 'queues') {
+                        row[0] = 'Queue: ' + escapeHtml(el.name);
+                    }
+                    else {
+                        switch (phoneDisplay) {
+                            case 'name':
+                                name = el.name;
+                                break;
+                            case 'description':
+                                name = el.description || el.name;
+                                break;
+                            case 'internal':
+                                name = el.callerid;
+                                break;
+                            case 'name_description':
+                                name = el.name + ' ' + (el.description || el.name);
+                                break;
+                            case 'internal_description':
+                                name = el.callerid + ' ' + (el.description || el.name);
+                                break;
+                            case 'description_name':
+                                name = (el.description || el.name) + ' ' + el.name;
+                                break;
+                            case 'description_internal':
+                                name = (el.description || el.name) + ' ' + el.callerid;
+                                break;
+                        }
+                        if (dest === 'agents') {
+                            row[0] = 'Queue agent: ' + escapeHtml(name);
+                        }
+                        else {
+                            row[0] = 'Ext: ' + escapeHtml(name);
+                        }
                     }
                 }
 
@@ -1619,14 +1621,14 @@ function QDataBase (visibleCols, visibleRows) {
                     switch (dest) {
                         case 'queues':
                             match = call.dtype === 'queue' && call.dnumber === id;
-                            if (match) {
+                            if (match && !PERIOD) {
                                 row.queueCalls.push(call);
                             }
                             break;
 
                         case 'agents':
                             match = call.stype === 'queue' && call.dnumber === el.dnumber && call.dtype === el.dtype;
-                            if (match) {
+                            if (match && !PERIOD) {
                                 row.queueCalls.push(call);
                             }
                             break;
@@ -1670,6 +1672,20 @@ function QDataBase (visibleCols, visibleRows) {
     }
 
 
+    function getTimeQueueCalls () {
+        for (var i in table) {
+            var row = table[i],
+                calls = row.calls;
+            for (var j in calls) {
+                var call = calls[j];
+                if (call.dtype === 'queue' || call.stype === 'queue') {
+                    row.queueCalls.push(call);
+                }
+            }
+        }
+    }
+
+
     this.filter = function () {
         table = [];
 
@@ -1689,6 +1705,7 @@ function QDataBase (visibleCols, visibleRows) {
             else {
                 byDaysOfWeek()
             }
+            getTimeQueueCalls();
         }
 
         reduceTable();
@@ -1795,6 +1812,9 @@ function QOptions () {
     function setWatchers() {
         var i;
 
+        byId('name').addEventListener('change', function () {
+            that.title.innerHTML = 'Call statistics :: ' + escapeHtml(this.value);
+        });
         byId('slatime').addEventListener('change', function () {
             that.slaTime = +this.value;
         });
@@ -1878,6 +1898,7 @@ function QOptions () {
     this.recursive = +byName('recursive');
     this.slaTime = +this.get('slatime');
     this.totalRow = +this.get('totalrow');
+    this.title = document.getElementsByTagName('title')[0];
 
     
     // FORM
@@ -1911,7 +1932,13 @@ function QOptions () {
  
     if (form[0].id.value) {
         onFormClean();
+        this.title.innerHTML = 'Call statistics :: ' + escapeHtml(form[0].name.value);
     }
+    else {
+        this.title.innerHTML = 'Call statistics :: New report';
+    }
+
+
     inputs.on('change', this.onFormDirty);
     form.on('submit', submit);
     submitCopy.addEventListener('click', function () {
@@ -1937,9 +1964,9 @@ function QOptions () {
         }
 
 
-        if (!qOpts.get('name')) {
+        if (!form[0].name.value) {
             window.scrollTo(0, 0);
-            byId('name').focus();
+            form[0].name.focus();
             alert('Please enter the report name.');
             return false;
         }
@@ -2592,16 +2619,6 @@ function arrayPeriod (period, length) {
 }
 
 
-function downloadBlob (fileName, blob) {
-    if (navigator.msSaveBlob) { // IE 10+
-        navigator.msSaveBlob(blob, fileName);
-    }
-    else {
-        downloadUrl(URL.createObjectURL(blob), fileName);
-    }
-}
-
-
 function downloadUrl (url, fileName) {
     var link = document.createElement('a');
     link.setAttribute('href', url);
@@ -2613,6 +2630,20 @@ function downloadUrl (url, fileName) {
         document.body.removeChild(link);
     }, 10000);
 }
+
+
+function escapeHtml(text) {
+    var map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+
+    return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+}
+
 
 document.addEventListener("DOMContentLoaded", function() {
 
