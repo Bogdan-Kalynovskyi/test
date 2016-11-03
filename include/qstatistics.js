@@ -238,24 +238,20 @@ function QChart (container) {
             byRow = byId('piechart-by-row');
 
         byCol.onchange = function () {
-            if (this.value) {
-                that.pieFilter = {
-                    by: 'column',
-                    id: this.value
-                };
-                byRow.value = '';
-                renderPieChart();
-            }
+            that.pieFilter = {
+                by: 'column',
+                id: this.value
+            };
+            byRow.value = '';
+            renderPieChart();
         };
         byRow.onchange = function () {
-            if (this.value) {
-                that.pieFilter = {
-                    by: 'row',
-                    id: this.value
-                };
-                byCol.value = '';
-                renderPieChart();
-            }
+            that.pieFilter = {
+                by: 'row',
+                id: this.value
+            };
+            byCol.value = '';
+            renderPieChart();
         };
         byCol.onfocus = byRow.onfocus = function () {
             blockRefresh = true;
@@ -504,16 +500,19 @@ function QChart (container) {
     
     
     function move (direction) {
-        var leftTime = START,
-            rightTime = Math.min(Date.now() / 1000, END),
+        var now = Date.now() / 1000,
+            leftTime = START,
+            rightTime = Math.min(now, END),
             delta = (rightTime - leftTime) * 0.1 * direction;
-        setZoomBackup();
+        if (delta < 0 || rightTime !== now) {
+            setZoomBackup();
 
-        START += delta;
-        END = rightTime + delta;
+            START += delta;
+            END = rightTime + delta;
 
-        qOpts.showNewTime();
-        qDB.filter();
+            qOpts.showNewTime();
+            qDB.filter();
+        }
     }
     
 
@@ -940,7 +939,15 @@ function QDataBase (visibleCols, visibleRows) {
 
         var data = qDB.getTable(true);
         for (i in data) {
-            str += data[i].join(',') + '\n';
+            row  = data[i];
+            for (var j in row) {
+                var cell = row[j].toString().replace(/"/g, '""');
+                if (cell.search(/("|,|\n)/g) >= 0) {
+                    cell = '"' + cell + '"';
+                }
+                str += +j > 0 ? (',' + cell) : cell;
+            }
+            str += '\n';
         }
 
         var fileName = (qOpts.get('name') || 'noname') + '.csv',
@@ -1944,7 +1951,7 @@ function QOptions () {
     submitCopy.addEventListener('click', function () {
         copyButtonClicked = true;
     });
-    window.addEventListener("popstate", function(e) {
+    window.addEventListener("popstate", function() {
         location.reload();
     });
 
