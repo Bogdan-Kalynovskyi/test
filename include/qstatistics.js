@@ -297,18 +297,18 @@ function QChart (container) {
                     maxNum = Math.max(maxNum, el);
                 }
             }
-            loggedInTimeDivider = maxLoggedIn / maxNum * 20;
+            loggedInTimeDivider = Math.min(maxLoggedIn / maxNum * 16, maxLoggedIn);
         }
         // when logged in time column is displayed 
         else if (pieChartCol) {
             for (var i = 0, n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0); i < n; i++) {
                 maxLoggedIn += dbTable[i][loggedInPos];
             }    
-            loggedInTimeDivider = maxLoggedIn / n;
+            loggedInTimeDivider = maxLoggedIn / n;      // average
         }
         // other cases
         else {
-            loggedInTimeDivider = qDB.maxLoggedIn / qDB.maxNum * 20;
+            loggedInTimeDivider = Math.min(qDB.maxLoggedIn / qDB.maxNum * 16, qDB.maxLoggedIn);
         }
 
         if (loggedInTimeDivider > DAY) {
@@ -881,7 +881,12 @@ function QDataBase (visibleCols, visibleRows) {
                     if (withPercentage) {
                         var tblRow = table[i];
                         if (loggedInCol) {
-                            perc = (PERIOD || tblRow[j0] || tblRow.isAgent) ? Math.round(100 * tblRow[j0] / (tblRow.totalTime || Infinity)) : '';
+                            if (PERIOD || tblRow[j0] || tblRow.isAgent) {
+                                perc = tblRow.totalTime ? Math.round(100 * tblRow[j0] / tblRow.totalTime) : 0;
+                            }
+                            else {
+                                perc = '';
+                            }
                         }
                         else {
                             perc = tblRow.total ? Math.round(100 * tblRow[j0] / tblRow.total) : '';
@@ -911,7 +916,6 @@ function QDataBase (visibleCols, visibleRows) {
 
     this.getData = function () {
         if (!table.length) {
-            debugger;
             return new Array(this.colPos.length).fill(0).unshift('');
         }
         else {
@@ -1121,41 +1125,78 @@ function QDataBase (visibleCols, visibleRows) {
         
         
         for (i = 0, n = newQueues.length; i < n; i++) {
-            var queue = newQueues[i];
-            if (!queues[queue.id]) {
-                queue.name = queue.getAttribute('name');
-                queues[queue.id] = queue;
+            var newQueue = newQueues[i],
+                queue = queues[newQueue.id];
+            if (!queue) {
+                newQueue.name = newQueue.getAttribute('name');
+                queues[newQueue.id] = queue = newQueue;
                 dbChanged = true;
+            }
+            queue.marked = true;
+        }
+        
+        for (i in queues) {
+            if (!queues[i].marked) {
+                delete queues[i];
+                dbChanged = true;
+            }
+            else {
+                queues[i].marked = false;
             }
         }
 
         
         for (i = 0, n = newAgents.length; i < n; i++) {
-            var agent = newAgents[i],
-                savedAgent = agents[agent.id];
-            if (!savedAgent) {
-                cacheFields(agent);
-                agent.dtype = agent.getAttribute('dtype');
-                agent.dnumber = agent.getAttribute('dnumber');
-                agent.events = new QAgentEvents();
-                agents[agent.id] = savedAgent = agent;
+            var newAgent = newAgents[i],
+                agent = agents[newAgent.id];
+            if (!agent) {
+                cacheFields(newAgent);
+                newAgent.dtype = newAgent.getAttribute('dtype');
+                newAgent.dnumber = newAgent.getAttribute('dnumber');
+                newAgent.events = new QAgentEvents();
+                agents[newAgent.id] = agent = newAgent;
                 dbChanged = true;
             }
+            agent.marked = true;
             
-            if ((savedAgent.events.add(agent.getElementsByTagName('event')) || savedAgent.events.isLoggedIn()) && visibleCols[COL_loggedIn]) {
+            if ((agent.events.add(newAgent.getElementsByTagName('event')) || agent.events.isLoggedIn()) && visibleCols[COL_loggedIn]) {
                 dbChanged = true;
+            }
+        }
+        
+        for (i in agents) {
+            if (!agents[i].marked) {
+                delete agents[i];
+                dbChanged = true;
+            }
+            else {
+                agents[i].marked = false;
             }
         }
 
+        
         for (i = 0, n = newPhones.length; i < n; i++) {
-            var phone = newPhones[i],
-                name = phone.getAttribute('name');
-            if (!phones[name]) {
-                cacheFields(phone);
-                phones[name] = phone;
+            var newPhone = newPhones[i],
+                name = newPhone.getAttribute('name'),
+                phone = phones[name];
+            if (!phone) {
+                cacheFields(newPhone);
+                phones[name] = phone = newPhone;
                 dbChanged = true;
             }
+            phone.marked = true;
         }
+        
+        for (i in phones) {
+            if (!phones[i].marked) {
+                delete phones[i];
+                dbChanged = true;
+            }
+            else {
+                phones[i].marked = false;
+            }
+        }
+        
         return dbChanged;
     };
 
@@ -1188,10 +1229,16 @@ function QDataBase (visibleCols, visibleRows) {
 
 
     function reduceTable () {
-        var totalHold = 0,
-            totalTalk = 0,
-            totalTalkCount = 0,
-            totalTotal = 0;
+        var minHold = Infinity,
+            minTalk = Infinity,
+            minTotal = Infinity,
+            maxHold = 0,
+            maxTalk = 0,
+            maxTotal = 0,
+            sumHold = 0,
+            sumTalk = 0,
+            talkCallsCount = 0,
+            sumTotal = 0;
         
         function calcSecondaryCols (row) {
             var call,
@@ -1218,17 +1265,23 @@ function QDataBase (visibleCols, visibleRows) {
                 call = row.calls[i];
                 
                 minhold = Math.min(minhold, call.hold);
+                minHold = Math.min(minHold, minhold);
                 avghold += call.hold;
                 maxhold = Math.max(maxhold, call.hold);
+                maxHold = Math.max(maxHold, maxhold);
                 if (call.answer) {
                     mintalk = Math.min(mintalk, call.talk);
+                    minTalk = Math.min(minTalk, mintalk);
                     avgtalk += call.talk;
                     maxtalk = Math.max(maxtalk, call.talk);
+                    maxTalk = Math.max(maxTalk, maxtalk);
                     talkCount++;
                 }
                 mintotal = Math.min(mintotal, call.total);
+                minTotal = Math.min(minTotal, mintotal);
                 avgtotal += call.total;
                 maxtotal = Math.max(maxtotal, call.total);
+                maxTotal = Math.max(maxTotal, maxtotal);
             }
 
             for (i in row.queueCalls) {
@@ -1260,10 +1313,10 @@ function QDataBase (visibleCols, visibleRows) {
                 mintotal = 0;
             }
             if (rowTotal) {
-                totalHold += avghold;
-                totalTalk += avgtalk;
-                totalTalkCount += talkCount;
-                totalTotal += avgtotal;
+                sumHold += avghold;
+                sumTalk += avgtalk;
+                talkCallsCount += talkCount;
+                sumTotal += avgtotal;
                 
                 avghold /= rowTotal;
                 avgtalk = talkCount ? avgtalk / talkCount : 0;
@@ -1275,19 +1328,33 @@ function QDataBase (visibleCols, visibleRows) {
 
         
         function calcTotalRow () {
-            var pos;
             if (totalCallsCount) {
-                pos = colPos.indexOf(14);        // hold 
-                if (pos !== -1) {
-                    colSum[pos + 1] = totalHold / totalCallsCount;
+                if (minHold === Infinity) {
+                    minHold = 0;
                 }
-                pos = colPos.indexOf(17);        // talk
-                if (pos !== -1) {
-                    colSum[pos + 1] = totalTalkCount ? totalTalk / totalTalkCount : 0;
+                if (minTalk === Infinity) {
+                    minTalk = 0;
                 }
-                pos = colPos.indexOf(20);        // total
-                if (pos !== -1) {
-                    colSum[pos + 1] = totalTotal / totalCallsCount;
+                if (minTotal === Infinity) {
+                    minTotal = 0;
+                }
+
+                var map = {
+                    13: minHold,
+                    14: sumHold / totalCallsCount,
+                    15: maxHold,
+                    16: minTalk,
+                    17: talkCallsCount ? sumTalk / talkCallsCount : 0,
+                    18: maxTalk,
+                    19: minTotal,
+                    20: sumTotal / totalCallsCount,
+                    21: maxTotal
+                };
+                for (var i in map) {
+                    var pos = colPos.indexOf(+i);
+                    if (pos !== -1) {
+                        colSum[pos + 1] = map[i];
+                    }
                 }
             }
             colSum.total = totalCallsCount;
@@ -1385,8 +1452,17 @@ function QDataBase (visibleCols, visibleRows) {
             throw 'too many rows to display';
         }
 
+        if (PERIOD >= DAY) {
+            var timeFromDayStart = START - getBeginningOfDay(START);
+        }
+
         while (startTime < END && startTime < now) {
-            endTime += PERIOD;
+            if (PERIOD < DAY) {
+                endTime += PERIOD;
+            }
+            else {
+                endTime = Math.floor(getDaysAhead(endTime, PERIOD / DAY) / 1000) + timeFromDayStart;
+            }
             endTime = Math.min(endTime, now, END);
 
             calls = that.filterByTime(startTime, endTime);
@@ -1465,7 +1541,7 @@ function QDataBase (visibleCols, visibleRows) {
             date = new Date(startTime * 1000);
             reportIndex = date.getHours();
             if (isHalfHours) {
-                reportIndex = reportIndex * 2 + Math.round(date.getMinutes() / 30);
+                reportIndex = reportIndex * 2 + Math.floor(date.getMinutes() / 30);
             }
             reportIndex -= startHour;
             if (reportIndex < 0) {
@@ -1892,7 +1968,7 @@ function QOptions () {
 
     
     this.config = function (field) {
-        return document['settings'][field].value;
+        return document.settings[field].value;
     };
 
 
@@ -1927,6 +2003,8 @@ function QOptions () {
         dirty = true;
         submitUpdate.disabled = false;
         submitUpdate.value = 'Save report';
+        submitCopy.disabled = false;
+        submitCopy.value = 'Copy report';
     };
     
     
@@ -1950,6 +2028,9 @@ function QOptions () {
     form.on('submit', submit);
     submitCopy.addEventListener('click', function () {
         copyButtonClicked = true;
+        submitCopy.disabled = true;
+        submitCopy.value = 'Report copied';
+        onFormClean();
     });
     window.addEventListener("popstate", function() {
         location.reload();
@@ -2530,8 +2611,8 @@ function byId (id) {
     return document.getElementById(id);
 }
 
-function byName (id) {
-    return document.getElementsByName(id)[0].value;
+function byName (name) {
+    return document.getElementsByName(name)[0].value;
 }
 
 
