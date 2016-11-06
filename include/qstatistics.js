@@ -212,22 +212,24 @@ function QChart (container) {
                 str += '<option value="' + i + '">' + COLUMNS[i] + '</option>';
             }
         }
+       
         str += '</select></label><label> or row <select id="piechart-by-row"><option value="">Choose row</option>';
+        var totalCallsPos = qDB.colPos.indexOf(0) + 1,
+            loggedInPos = qDB.colPos.indexOf(COL_loggedIn) + 1;
+        
         for (i in dbTable) {
             var row = dbTable[i],
                 totalVisible = 0;
 
             if (row.total) {
-                var totalCallsPos = qDB.colPos.indexOf(0) + 1;
-
                 for (var j = 1; j < colPosLen; j++) {
-                    if (j !== totalCallsPos) {
+                    if (j !== totalCallsPos && j !== loggedInPos) {
                         totalVisible += row[j];
                     }
                 }
 
                 if (totalVisible) {
-                    str += '<option value="' + i + '">' + dbTable[i][0] + '</option>';
+                    str += '<option value="' + i + '">' + row[0] + '</option>';
                 }
             }
         }
@@ -297,7 +299,7 @@ function QChart (container) {
                     maxNum = Math.max(maxNum, el);
                 }
             }
-            loggedInTimeDivider = Math.min(maxLoggedIn / maxNum * 16, maxLoggedIn);
+            loggedInTimeDivider = maxLoggedIn / maxNum * 18;
         }
         // when logged in time column is displayed 
         else if (pieChartCol) {
@@ -308,7 +310,7 @@ function QChart (container) {
         }
         // other cases
         else {
-            loggedInTimeDivider = Math.min(qDB.maxLoggedIn / qDB.maxNum * 16, qDB.maxLoggedIn);
+            loggedInTimeDivider = qDB.maxLoggedIn / qDB.maxNum * 18;
         }
 
         if (loggedInTimeDivider > DAY) {
@@ -407,7 +409,7 @@ function QChart (container) {
                         if (i !== loggedInPos) {
                             data.push([tableHeader[i], row[i]]);
                         }
-                        else {
+                        else if (PERIOD || row[i]) {
                             data.push([tableHeader[i], +(row[i] / loggedInTimeDivider).toFixed(2)]);
                         }
                     }
@@ -679,7 +681,7 @@ function QChart (container) {
 
 
     this.downloadPNG = function () {
-        var fileName = (qOpts.get('name') || 'noname') + '.png';
+        var fileName = (qOpts.get('name').replace(/[^\w\s]/g, '_') || 'noname') + '.png';
         downloadUrl(charts[qMenu.type].getImageURI(), fileName);
     };
 
@@ -954,7 +956,7 @@ function QDataBase (visibleCols, visibleRows) {
             str += '\n';
         }
 
-        var fileName = (qOpts.get('name') || 'noname') + '.csv',
+        var fileName = (qOpts.get('name').replace(/[^\w\s]/g, '_') || 'noname') + '.csv',
             csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
 
         if (navigator.msSaveBlob) { // IE 10+
@@ -972,8 +974,8 @@ function QDataBase (visibleCols, visibleRows) {
         var row = new Array(COL_timeStart + 1 + (visibleCols[COL_loggedIn] ? 1 : 0)).fill(0);
         row.total = 0;
         row.calls = [];
-        row.queueCalls = [];
         row.isAgent = false;
+        row.isPhone = false;
         return row;
     }
 
@@ -1282,24 +1284,30 @@ function QDataBase (visibleCols, visibleRows) {
                 avgtotal += call.total;
                 maxtotal = Math.max(maxtotal, call.total);
                 maxTotal = Math.max(maxTotal, maxtotal);
-            }
 
-            for (i in row.queueCalls) {
-                var q = row.queueCalls[i].queuestatus;
-                if (q === 'abandon') {
-                    abandon++;
-                } else if (q === 'exitempty') {
-                    noagent++;
-                } else if (q === 'exitwithtimeout') {
-                    timeout++;
-                } else if (q === 'exitwithkey') {
-                    keypress++;
-                } else if (q === 'completeagent') {
-                    agent++;
-                } else if (q === 'completecaller') {
-                    caller++;
-                } else if (q === 'transfer') {
-                    transfer++;
+                var dtypeQueue = call.dtype === 'queue',
+                    stypeQueue = call.stype === 'queue';
+
+                if (!row.isPhone && (dtypeQueue || stypeQueue)) {
+                    var q = call.queuestatus;
+                    
+                    if (q === 'abandon') {
+                        abandon++;
+                    } else if (q === 'exitwithtimeout') {
+                        timeout++;
+                    } else if (q === 'completeagent') {
+                        agent++;
+                    } else if (q === 'completecaller') {
+                        caller++;
+                    } else if (q === 'transfer') {
+                        transfer++;
+                    } else if (dtypeQueue) {
+                        if (q === 'exitempty') {
+                            noagent++;
+                        } else if (q === 'exitwithkey') {
+                            keypress++;
+                        }
+                    }
                 }
             }
 
@@ -1449,6 +1457,7 @@ function QDataBase (visibleCols, visibleRows) {
         if ((Math.min(now, END) - START) / PERIOD > Math.max(900, window.innerWidth - 390)) {
             alert('Too many rows to display. Please set bigger time period.');
             byId('period').value = '0';
+            PERIOD = 0;
             throw 'too many rows to display';
         }
 
@@ -1559,7 +1568,6 @@ function QDataBase (visibleCols, visibleRows) {
 
             startTime = endTime;
         }
-
     }
 
 
@@ -1704,16 +1712,10 @@ function QDataBase (visibleCols, visibleRows) {
                     switch (dest) {
                         case 'queues':
                             match = call.dtype === 'queue' && call.dnumber === id;
-                            if (match && !PERIOD) {
-                                row.queueCalls.push(call);
-                            }
                             break;
 
                         case 'agents':
                             match = call.stype === 'queue' && call.dnumber === el.dnumber && call.dtype === el.dtype;
-                            if (match && !PERIOD) {
-                                row.queueCalls.push(call);
-                            }
                             break;
 
                         case 'phones':
@@ -1732,37 +1734,8 @@ function QDataBase (visibleCols, visibleRows) {
 
                 if (!multiRow) {
                     row.isAgent = dest === 'agents';
+                    row.isPhone = dest === 'phones';
                     table.push(row);
-                }
-            }
-        }
-    }
-
-
-    function getDestinationQueueCalls () {
-        for (var i in visibleRows) {
-            if (visibleRows[i]) {
-                var row = table[rowPos[i]],
-                    calls = row.calls;
-                for (var j in calls) {
-                    var call = calls[j];
-                    if (call.dtype === 'queue' || call.stype === 'queue') {
-                        row.queueCalls.push(call);
-                    }
-                }
-            }
-        }
-    }
-
-
-    function getTimeQueueCalls () {
-        for (var i in table) {
-            var row = table[i],
-                calls = row.calls;
-            for (var j in calls) {
-                var call = calls[j];
-                if (call.dtype === 'queue' || call.stype === 'queue') {
-                    row.queueCalls.push(call);
                 }
             }
         }
@@ -1776,7 +1749,6 @@ function QDataBase (visibleCols, visibleRows) {
             var filteredCalls = that.filterByTime(START, END);
             byDestType(filteredCalls);
             byQueueAgentPhone(filteredCalls);
-            getDestinationQueueCalls();
         }
         else if (PERIOD > 0) {
             byTimePeriods()
@@ -1788,7 +1760,6 @@ function QDataBase (visibleCols, visibleRows) {
             else {
                 byDaysOfWeek()
             }
-            getTimeQueueCalls();
         }
 
         reduceTable();
@@ -2011,6 +1982,10 @@ function QOptions () {
     function onFormClean () {
         submitUpdate.disabled = true;
         submitUpdate.value = 'Report saved';
+        if (copyButtonClicked) {
+            submitCopy.disabled = true;
+            submitCopy.value = 'Report copied';
+        }
         dirty = false;
     }
     
@@ -2028,9 +2003,6 @@ function QOptions () {
     form.on('submit', submit);
     submitCopy.addEventListener('click', function () {
         copyButtonClicked = true;
-        submitCopy.disabled = true;
-        submitCopy.value = 'Report copied';
-        onFormClean();
     });
     window.addEventListener("popstate", function() {
         location.reload();
@@ -2087,7 +2059,6 @@ function QOptions () {
             if (form[0].name.value === originalName) {
                 form[0].name.value += ' (copy)';
             }
-            copyButtonClicked = false;
         }
         originalName = form[0].name.value;
 
@@ -2097,6 +2068,7 @@ function QOptions () {
             form[0].id.value = id;
             window.history.pushState('', form[0].name, '//' + location.host + location.pathname + '?id=' + id);
             onFormClean();
+            copyButtonClicked = false;
         });
 
 
