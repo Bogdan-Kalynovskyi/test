@@ -174,7 +174,7 @@ function QChart (container) {
             left = Infinity,
             right = 0;
 
-        for (var i = (chartOptions.piechart.legend === null ? 1 : 0); i < g.length - 1; i++) {
+        for (var i = (chartOptions.piechart.legend === null ? 2 : 1); i < g.length - 1; i++) {
             var rect = g[i].getBoundingClientRect();
             left = Math.min(left, rect.left);
             right = Math.max(right, rect.right);
@@ -319,7 +319,7 @@ function QChart (container) {
             for (var i = 0, n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0); i < n; i++) {
                 maxLoggedIn += dbTable[i][loggedInPos];
             }    
-            loggedInTimeDivider = maxLoggedIn / n;      // average
+            loggedInTimeDivider = maxLoggedIn / n * 22;      // average
         }
         // other cases
         else {
@@ -927,7 +927,7 @@ function QDataBase (visibleCols, visibleRows) {
                             else {
                                 divide = tblRow.total;
                             }
-                            perc = divide ? Math.round(100 * tblRow[j0] / divide) : '';
+                            tblRow.total = divide ? Math.round(100 * tblRow[j0] / divide) : '';
                         }
 
                         if (csv) {
@@ -1140,22 +1140,25 @@ function QDataBase (visibleCols, visibleRows) {
         
         for (var i = 0, n = newCalls.length; i < n; i++) {
             var call = newCalls[i];
-            if (!callIds[call.id]) {
-                callIds[call.id] = true;
-                call.start = +call.getAttribute('start');
-                call.answer = +call.getAttribute('answered');
-                call.end = +call.getAttribute('end');
-                call.dtype = call.getAttribute('dtype');
-                call.stype = call.getAttribute('stype');
-                call.dnumber = call.getAttribute('dnumber');
-                call.snumber = call.getAttribute('snumber');
-                call.queuestatus = call.getAttribute('queuestatus');
-                call.hold = +call.getAttribute('holdtime');
-                call.talk = +call.getAttribute('talktime');
-                call.total = +call.getAttribute('totaltime');
-                calls.push(call);
-                dbChanged = true;
+            call.start = +call.getAttribute('start');
+            call.answer = +call.getAttribute('answered');
+            call.end = +call.getAttribute('end');
+            call.dtype = call.getAttribute('dtype');
+            call.stype = call.getAttribute('stype');
+            call.dnumber = call.getAttribute('dnumber');
+            call.snumber = call.getAttribute('snumber');
+            call.queuestatus = call.getAttribute('queuestatus');
+            call.hold = +call.getAttribute('holdtime');
+            call.talk = +call.getAttribute('talktime');
+            call.total = +call.getAttribute('totaltime');
+            
+            var oldCall = callIds[call.id];
+            if (oldCall) {
+                calls.splice(calls.indexOf(oldCall), 1);
             }
+            callIds[call.id] = call;
+            calls.push(call);
+            dbChanged = true;
         }
         if (dbChanged) {
             calls.sort(byEnd);
@@ -1169,13 +1172,10 @@ function QDataBase (visibleCols, visibleRows) {
         
         
         for (i = 0, n = newQueues.length; i < n; i++) {
-            var newQueue = newQueues[i],
-                queue = queues[newQueue.id];
-            if (!queue) {
-                newQueue.name = newQueue.getAttribute('name');
-                queues[newQueue.id] = queue = newQueue;
-                dbChanged = true;
-            }
+            // todo: now I simply overwrite queues. Todo detect queue changes  
+            var queue = newQueues[i];
+            queue.name = queue.getAttribute('name');
+            queues[queue.id] = queue;
             queue.marked = true;
         }
         
@@ -1191,19 +1191,16 @@ function QDataBase (visibleCols, visibleRows) {
 
         
         for (i = 0, n = newAgents.length; i < n; i++) {
-            var newAgent = newAgents[i],
-                agent = agents[newAgent.id];
-            if (!agent) {
-                cacheFields(newAgent);
-                newAgent.dtype = newAgent.getAttribute('dtype');
-                newAgent.dnumber = newAgent.getAttribute('dnumber');
-                newAgent.events = new QAgentEvents();
-                agents[newAgent.id] = agent = newAgent;
-                dbChanged = true;
-            }
+            // todo: now I simply overwrite queues. Todo detect queue changes  
+            var agent = newAgents[i];
+            cacheFields(agent);
+            agent.dtype = agent.getAttribute('dtype');
+            agent.dnumber = agent.getAttribute('dnumber');
+            agent.events = new QAgentEvents();
+            agents[agent.id] = agent;
             agent.marked = true;
             
-            if ((agent.events.add(newAgent.getElementsByTagName('event')) || agent.events.isLoggedIn()) && visibleCols[COL_loggedIn]) {
+            if ((agent.events.add(agent.getElementsByTagName('event')) || agent.events.isLoggedIn()) && visibleCols[COL_loggedIn]) {
                 dbChanged = true;
             }
         }
@@ -1220,16 +1217,14 @@ function QDataBase (visibleCols, visibleRows) {
 
         
         for (i = 0, n = newPhones.length; i < n; i++) {
-            var newPhone = newPhones[i],
-                name = newPhone.getAttribute('name'),
-                phone = phones[name];
-            if (!phone) {
-                cacheFields(newPhone);
-                phones[name] = phone = newPhone;
-                dbChanged = true;
-            }
+            // todo: now I imply overwrite queues. Todo detect queue changes  
+            var phone = newPhones[i],
+                name = phone.getAttribute('name');
+            cacheFields(phone);
+            phones[name] = phone;
             phone.marked = true;
         }
+        // tosdo update dropdowns 
         
         for (i in phones) {
             if (!phones[i].marked) {
@@ -1449,7 +1444,7 @@ function QDataBase (visibleCols, visibleRows) {
                 }
             }
             result.queueCount = row.queueCount;
-            result.aqueueCount = row.agentCount;
+            result.agentCount = row.agentCount;
             result.total = row.total;
             if (PERIOD) {
                 result.totalTime = row.totalTime;
@@ -2042,7 +2037,7 @@ function QOptions () {
         submitUpdate.disabled = false;
         submitUpdate.value = 'Save report';
         submitCopy.disabled = false;
-        submitCopy.value = 'Copy report';
+        submitCopy.value = 'Save as copy';
     };
     
     
@@ -2110,8 +2105,8 @@ function QOptions () {
         appended = true;
         form.append('<input type="hidden" name="startdate" value="' + START + '"/>' +
             '<input type="hidden" name="enddate" value="' + END + '"/>' +
-            '<input type="hidden" name="starttime" value="' + (START - moment.unix(START).startOf('day')).unix() + '"/>' +
-            '<input type="hidden" name="endtime" value="' + (END - moment.unix(END).startOf('day')).unix() + '"/>');
+            '<input type="hidden" name="starttime" value="' + (START - moment.unix(START).startOf('day').unix()) + '"/>' +
+            '<input type="hidden" name="endtime" value="' + (END - moment.unix(END).startOf('day').unix()) + '"/>');
 
         if (qChart.pieFilter && qChart.pieFilter.id) {
             form[0].piesource.value = qChart.pieFilter.by + '_' + qChart.pieFilter.id;
