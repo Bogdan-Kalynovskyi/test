@@ -914,7 +914,7 @@ function QDataBase (visibleCols, visibleRows) {
                                 perc = '';
                             }
                         }
-                        else {
+                        else if (tblRow.total) {
                             var divide;
                             if (i1 >= COL_timeEnd && !loggedInCol) {
                                 if (i1 === 23 || i1 === 25) {   // exit with key, exit empty
@@ -927,7 +927,10 @@ function QDataBase (visibleCols, visibleRows) {
                             else {
                                 divide = tblRow.total;
                             }
-                            tblRow.total = divide ? Math.round(100 * tblRow[j0] / divide) : '';
+                            perc = Math.round(100 * tblRow[j0] / divide);
+                        }
+                        else {
+                            perc = '';
                         }
 
                         if (csv) {
