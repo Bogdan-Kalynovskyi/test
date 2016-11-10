@@ -129,13 +129,13 @@ function QChart (container) {
         goodEvt,
         blockRefresh,
         chartArea = {
-            top: 36,
+            top: 68,
             left: '8%',
             right: '16%'
         },
         title = qOpts.get('name'),
         animation = {
-            duration: 500,
+            duration: 400,
             easing: 'out'
         },
         chartOptions = {
@@ -163,8 +163,6 @@ function QChart (container) {
             piechart: {
                 animation: animation,
                 is3D: true,
-                pieSliceText: 'value',
-                //pieStartAngle: 100,
                 sliceVisibilityThreshold: 0,
                 chartArea: chartArea
             }
@@ -360,36 +358,39 @@ function QChart (container) {
 
 
     function getPieDataTable () {
+        var pieChartOptions = chartOptions.piechart,
+            pf = that.pieFilter;
+        
         function setEmptyChart () {
             data = [['', ''], ['No calls', 1]];
-            chartOptions.piechart.legend = 'none';
-            chartOptions.piechart.enableInteractivity = false;
+            pieChartOptions.legend = 'none';
+            pieChartOptions.pieSliceText = 'label';
+            pieChartOptions.enableInteractivity = false;
         }
         
-        that.pieFilter.id = qOpts.get('piechart-by-column');
-        that.pieFilter.by = 'column';
-        chartOptions.title = COLUMNS[that.pieFilter.id];
+        pf.id = qOpts.get('piechart-by-column');
+        pf.by = 'column';
         
-        if (that.pieFilter.id === '') {
-            that.pieFilter.id = qOpts.get('piechart-by-row');
-            that.pieFilter.by = 'row';
-            chartOptions.title = dbTable[that.pieFilter.id][0];
+        if (pf.id === '') {
+            pf.by = 'row';
+            pf.id = qOpts.get('piechart-by-row');
         }
         
-        if (that.pieFilter.id === '') {
-            that.pieFilter.by = 'column';
-            byId('piechart-by-column').value = that.pieFilter.id = qDB.colPos[0];
-            chartOptions.title = COLUMNS[that.pieFilter.id];
+        if (pf.id === '') {
+            pf.by = 'column';
+            byId('piechart-by-column').value = pf.id = qDB.colPos[0];
         }
         
         var row,
-            id = +that.pieFilter.id,
+            id = +pf.id,
             data = [['', '']];                        // in pieChart, first row seems not to have any useful information
             
-        chartOptions.piechart.legend = null;
-        chartOptions.piechart.enableInteractivity = true;
+        pieChartOptions.legend = null;
+        pieChartOptions.pieSliceText = 'percentage';
+        pieChartOptions.enableInteractivity = true;
 
-        if (that.pieFilter.by === 'column') {
+        if (pf.by === 'column') {
+            pieChartOptions.title = 'Column: ' + COLUMNS[pf.id];
             cacheTableHeader(undefined, id === COL_loggedIn);
             var pos = qDB.colPos.indexOf(id) + 1,
                 i = (!PERIOD && +qOpts.get('allcalls')) ? 1 : 0,                 // in Destination mode, don't show "All calls" in chart
@@ -415,6 +416,7 @@ function QChart (container) {
             }
         }
         else {
+            pieChartOptions.title = 'Row: ' + dbTable[pf.id][0];
             if (dbTable[id].total) {                                         // this can be false if you save report and then data changes
                 cacheTableHeader(id);
                 row = dbTable[id];
@@ -523,14 +525,16 @@ function QChart (container) {
             leftTime = START,
             rightTime = Math.min(now, END),
             delta = (rightTime - leftTime) * 0.1 * direction;
-        if (delta < 0 || rightTime !== now) {
+        if (direction < 0 || rightTime !== now) {
             setZoomBackup();
 
             START += delta;
             END = rightTime + delta;
 
+            chartOptions[qMenu.type].animation.duration = 0;
             qOpts.showNewTime();
             qDB.filter();
+            chartOptions[qMenu.type].animation.duration = 400;
         }
     }
     
@@ -619,12 +623,14 @@ function QChart (container) {
     
     function assignZoom (type) {
         if (PERIOD > 0) {
-            var svgr = SLIDES[type].getElementsByTagName('svg');
-            if (svgr) {
-                svgr = svgr[0].children[3].children[0];
-                svgr.style.cursor = 'col-resize';
-                charts[type].svgr = svgr;
-            }
+            setTimeout(function () {
+                var svgr = SLIDES[type].getElementsByTagName('svg');
+                if (svgr) {
+                    svgr = svgr[0].children[4].children[0] || svgr[0].children[3].children[0];
+                    svgr.style.cursor = 'col-resize';
+                    charts[type].svgr = svgr;
+                }
+            }, 500);
         }
     }
 
@@ -780,14 +786,13 @@ for (PERIOD = 0; PERIOD < COLUMNS.length; PERIOD++) {  // here PERIOD is just co
 
 function QDataBase (visibleCols, visibleRows) {
     var that = this,
-        calls,
-        queues,
-        agents,
-        phones,
+        callIds = {},
+        calls = [],
+        queues = {},
+        agents = {},
+        phones = {},
         rowPos,
-        table,
-        queueCallsCount,
-        queueAgentCallsCount;
+        table;
 
 
     function byEnd (a, b) {
@@ -873,8 +878,6 @@ function QDataBase (visibleCols, visibleRows) {
     this.getTable = function (csv) {
         var result = new Array(table.length),
             inserts = 0,
-            showTotal = PERIOD && qOpts.totalRow,
-            tblLast = table.length - 1,
             i, j;
 
         for (i in table) {
@@ -913,14 +916,12 @@ function QDataBase (visibleCols, visibleRows) {
                         }
                         else {
                             var divide;
-                            if (showTotal && +i === tblLast) {
-                                if (i1 >= COL_timeEnd && !loggedInCol) {
-                                    if (i1 === 23 || i1 === 25) {   // exit with key, exit empty
-                                        divide = queueCallsCount;
-                                    }
-                                    else {
-                                        divide = queueAgentCallsCount;
-                                    }
+                            if (i1 >= COL_timeEnd && !loggedInCol) {
+                                if (i1 === 23 || i1 === 25) {   // exit with key, exit empty
+                                    divide = tblRow.queueCount;
+                                }
+                                else {
+                                    divide = tblRow.agentCount;
                                 }
                             }
                             else {
@@ -1139,19 +1140,22 @@ function QDataBase (visibleCols, visibleRows) {
         
         for (var i = 0, n = newCalls.length; i < n; i++) {
             var call = newCalls[i];
-            call.start = +call.getAttribute('start');
-            call.answer = +call.getAttribute('answered');
-            call.end = +call.getAttribute('end');
-            call.dtype = call.getAttribute('dtype');
-            call.stype = call.getAttribute('stype');
-            call.dnumber = call.getAttribute('dnumber');
-            call.snumber = call.getAttribute('snumber');
-            call.queuestatus = call.getAttribute('queuestatus');
-            call.hold = +call.getAttribute('holdtime');
-            call.talk = +call.getAttribute('talktime');
-            call.total = +call.getAttribute('totaltime');
-            calls.push(call);
-            dbChanged = true;
+            if (!callIds[call.id]) {
+                callIds[call.id] = true;
+                call.start = +call.getAttribute('start');
+                call.answer = +call.getAttribute('answered');
+                call.end = +call.getAttribute('end');
+                call.dtype = call.getAttribute('dtype');
+                call.stype = call.getAttribute('stype');
+                call.dnumber = call.getAttribute('dnumber');
+                call.snumber = call.getAttribute('snumber');
+                call.queuestatus = call.getAttribute('queuestatus');
+                call.hold = +call.getAttribute('holdtime');
+                call.talk = +call.getAttribute('talktime');
+                call.total = +call.getAttribute('totaltime');
+                calls.push(call);
+                dbChanged = true;
+            }
         }
         if (dbChanged) {
             calls.sort(byEnd);
@@ -1279,7 +1283,8 @@ function QDataBase (visibleCols, visibleRows) {
             sumTalk = 0,
             talkCallsCount = 0,
             sumTotal = 0;
-        
+
+
         function calcSecondaryCols (row) {
             var call,
                 rowTotal = row.calls.length,
@@ -1328,7 +1333,7 @@ function QDataBase (visibleCols, visibleRows) {
             row.total = rowTotal;
 
             for (i in row.queueCalls) {
-                call = row.queueCalls;
+                call = row.queueCalls[i];
 
                 var dtypeQueue = call.dtype === 'queue',
                     stypeQueue = call.stype === 'queue';
@@ -1359,8 +1364,8 @@ function QDataBase (visibleCols, visibleRows) {
                     }
                 }
             }
-            queueCallsCount += queueCount;
-            queueAgentCallsCount += row.queueCalls.length;
+            row.queueCount = queueCount;
+            row.agentCount = row.queueCalls.length;
 
             if (minhold === Infinity) {
                 minhold = 0;
@@ -1416,6 +1421,8 @@ function QDataBase (visibleCols, visibleRows) {
                     }
                 }
             }
+            colSum.queueCount = queueCallsCount;
+            colSum.agentCount = agentCallsCount;
             colSum.total = totalCallsCount;
             colSum.totalTime = reportDuration;
             table.push(colSum);
@@ -1441,6 +1448,8 @@ function QDataBase (visibleCols, visibleRows) {
                     colSum[+j + 1] += el;
                 }
             }
+            result.queueCount = row.queueCount;
+            result.aqueueCount = row.agentCount;
             result.total = row.total;
             if (PERIOD) {
                 result.totalTime = row.totalTime;
@@ -1448,6 +1457,8 @@ function QDataBase (visibleCols, visibleRows) {
             else {
                 result.totalTime = reportDuration;
             }
+            queueCallsCount += result.queueCount;
+            agentCallsCount += result.agentCount;
             totalCallsCount += result.total;
             result.isAgent = row.isAgent;
             return result;
@@ -1458,14 +1469,14 @@ function QDataBase (visibleCols, visibleRows) {
             colPos = that.colPos,
             maxNum = 0,
             maxLoggedIn = 0,
+            queueCallsCount = 0,
+            agentCallsCount = 0,
             totalCallsCount = 0,
             showTotal = PERIOD && qOpts.totalRow;
 
         if (showTotal) {
             var colSum = new Array(colPos.length + 1).fill(0);
             colSum[0] = 'Total';
-            queueCallsCount = 0;
-            queueAgentCallsCount = 0;
         }
 
         for (var i in table) {
@@ -1498,13 +1509,12 @@ function QDataBase (visibleCols, visibleRows) {
 
 
     function byTimePeriods () {
-        var start = moment.unix(START),
+        var now = moment().unix(),
+            start = moment.unix(START),
             startTime = START,
             end,
             endTime = START,
-            finishTime = Math.min(moment().unix(), END),
-            // finish = moment.min(moment(), moment.unix(END)),
-            // finishTime = finish.unix(),
+            finishTime = Math.min(now, END),
             calls,
             row,
             dateFormat = qOpts.config('dateformat'),
@@ -1512,8 +1522,8 @@ function QDataBase (visibleCols, visibleRows) {
         
         timeFormat = (timeFormat === '12') ? 'hh:mma' : 'HH:mm';
  
-        if ((Math.min(now, END) - START) / PERIOD > Math.max(900, window.innerWidth - 390)) {
-            alert('Too many rows to display. Please set bigger time period.');
+        if ((Math.min(now, END) - START) / PERIOD > Math.max(900, window.innerWidth - 380)) {
+            alert('Too many rows to display. Please set bigger interval.');
             byId('period').value = '0';
             PERIOD = 0;
             throw 'too many rows to display';
@@ -1524,7 +1534,7 @@ function QDataBase (visibleCols, visibleRows) {
                 endTime += PERIOD;
             }
             else {
-                end = start.add(PERIOD / DAY, 'days');
+                end = start.clone().add(PERIOD / DAY, 'days');
                 endTime = start.unix();
             }
             endTime = Math.min(endTime, finishTime);
@@ -1661,7 +1671,7 @@ function QDataBase (visibleCols, visibleRows) {
         }
 
         while (startTime < finishTime) {
-            end = end.add(1, 'days');
+            end.add(1, 'days');
             end = moment.min(end, finish);
             endTime = end.unix();
 
@@ -1832,10 +1842,6 @@ function QDataBase (visibleCols, visibleRows) {
     this.calculateColPos();
     calculateRowPos();
 
-    calls = [];
-    queues = {};
-    agents = {};
-    phones = {};
     this.minTime = Infinity;
     this.maxTime = 0;
 }
@@ -2104,8 +2110,8 @@ function QOptions () {
         appended = true;
         form.append('<input type="hidden" name="startdate" value="' + START + '"/>' +
             '<input type="hidden" name="enddate" value="' + END + '"/>' +
-            '<input type="hidden" name="starttime" value="' + (START - moment.unix(START).startOf('day')) + '"/>' +
-            '<input type="hidden" name="endtime" value="' + (END - moment.unix(END).startOf('day')) + '"/>');
+            '<input type="hidden" name="starttime" value="' + (START - moment.unix(START).startOf('day')).unix() + '"/>' +
+            '<input type="hidden" name="endtime" value="' + (END - moment.unix(END).startOf('day')).unix() + '"/>');
 
         if (qChart.pieFilter && qChart.pieFilter.id) {
             form[0].piesource.value = qChart.pieFilter.by + '_' + qChart.pieFilter.id;
@@ -2340,7 +2346,7 @@ function QPolling (onFreshData) {
 
             // Handle the change of day at midnight. If the start or end day is not a specific date then the report period will change every day.
             var today = moment().startOf('day');
-            if (today !== lastToday) {
+            if (today.unix() !== lastToday.unix()) {
                 if (startDay === '0') {
                     START = moment.unix(START).add(1, 'days').unix();
                 }
@@ -2831,7 +2837,8 @@ var onnload = function() {
     document.head.appendChild(s);
 })();
 
-(function () {
+
+document.addEventListener("DOMContentLoaded", function() {
     var s = document.createElement('script');
     s.onload = function () {
         var s = document.createElement('script');
@@ -2841,7 +2848,7 @@ var onnload = function() {
     };
     s.src = 'http://momentjs.com/downloads/moment.js';
     document.head.appendChild(s);
-})();
+});
 
 
 
