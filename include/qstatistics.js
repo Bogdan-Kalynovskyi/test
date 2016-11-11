@@ -316,10 +316,7 @@ function QChart (container) {
         }
         // when logged in time column is displayed 
         else if (pieChartCol) {
-            for (var i = 0, n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0); i < n; i++) {
-                maxLoggedIn += dbTable[i][loggedInPos];
-            }    
-            loggedInTimeDivider = maxLoggedIn / n * 22;      // average
+            loggedInTimeDivider = qDB.maxLoggedIn;      // average
         }
         // other cases
         else {
@@ -350,7 +347,7 @@ function QChart (container) {
         tableHeader = [PERIOD ? 'Time' : 'Destination'];
 
         if (!pieChartCol) {
-            for (i in colPos) {
+            for (var i in colPos) {
                 tableHeader.push(COLUMNS[colPos[i]] + ((+i + 1 === loggedInPos) ? timeUnit : ''));
             }
         }
@@ -927,7 +924,7 @@ function QDataBase (visibleCols, visibleRows) {
                             else {
                                 divide = tblRow.total;
                             }
-                            perc = Math.round(100 * tblRow[j0] / divide);
+                            perc = divide ? Math.round(100 * tblRow[j0] / divide) : '';
                         }
                         else {
                             perc = '';
@@ -1030,6 +1027,7 @@ function QDataBase (visibleCols, visibleRows) {
                 multiRow[i] += row[i];
             }
             multiRow.calls = multiRow.calls.concat(row.calls);
+            multiRow.queueCalls = multiRow.queueCalls.concat(row.queueCalls);
         }
     }
 
@@ -1177,6 +1175,9 @@ function QDataBase (visibleCols, visibleRows) {
         for (i = 0, n = newQueues.length; i < n; i++) {
             // todo: now I simply overwrite queues. Todo detect queue changes  
             var queue = newQueues[i];
+            if (!queues[queue.id]) {
+                dbChanged = true;
+            }
             queue.name = queue.getAttribute('name');
             queues[queue.id] = queue;
             queue.marked = true;
@@ -1196,6 +1197,9 @@ function QDataBase (visibleCols, visibleRows) {
         for (i = 0, n = newAgents.length; i < n; i++) {
             // todo: now I simply overwrite queues. Todo detect queue changes  
             var agent = newAgents[i];
+            if (!agents[agent.id]) {
+                dbChanged = true;
+            }
             cacheFields(agent);
             agent.dtype = agent.getAttribute('dtype');
             agent.dnumber = agent.getAttribute('dnumber');
@@ -1223,6 +1227,9 @@ function QDataBase (visibleCols, visibleRows) {
             // todo: now I imply overwrite queues. Todo detect queue changes  
             var phone = newPhones[i],
                 name = phone.getAttribute('name');
+            if (!phones[name]) {
+                dbChanged = true;
+            }
             cacheFields(phone);
             phones[name] = phone;
             phone.marked = true;
@@ -1508,9 +1515,7 @@ function QDataBase (visibleCols, visibleRows) {
 
     function byTimePeriods () {
         var now = moment().unix(),
-            start = moment.unix(START),
             startTime = START,
-            end,
             endTime = START,
             finishTime = Math.min(now, END),
             calls,
@@ -1528,25 +1533,24 @@ function QDataBase (visibleCols, visibleRows) {
         }
 
         while (startTime < finishTime) {
-            if (PERIOD < DAY) {
-                endTime += PERIOD;
-            }
-            else {
-                end = start.clone().add(PERIOD / DAY, 'days');
-                endTime = start.unix();
-            }
-            endTime = Math.min(endTime, finishTime);
-
-            calls = that.filterByTime(startTime, endTime);
             row = newRow();
 
-            start = start || moment.unix(startTime);
+            var start = moment.unix(startTime);
             if (PERIOD < DAY) {
                 row[0] = start.format(dateFormat + ' ' + timeFormat);
             }
             else {
                 row[0] = start.format(dateFormat);
             }
+            if (PERIOD < DAY) {
+                endTime += PERIOD;
+            }
+            else {
+                endTime = start.add(PERIOD / DAY, 'days').unix();
+            }
+            endTime = Math.min(endTime, finishTime);
+
+            calls = that.filterByTime(startTime, endTime);
 
             for (var i in calls) {
                 decode(calls[i], row);
@@ -1556,7 +1560,6 @@ function QDataBase (visibleCols, visibleRows) {
             table.push(row);
 
             startTime = endTime;
-            start = end;
         }
     }
 
@@ -2251,6 +2254,11 @@ function QPolling (onFreshData) {
 
         START = START.unix();
         END = END.unix();
+        
+        var temp1 = Math.min(START, END);
+        var temp2 = Math.max(START, END);
+        START = temp1;
+        END = temp2;
 
         if (START >= END) {
             //alert('Start time should be before end time.');
