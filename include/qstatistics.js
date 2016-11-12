@@ -129,7 +129,7 @@ function QChart (container) {
         goodEvt,
         blockRefresh,
         chartArea = {
-            top: 68,
+            top: 99,
             left: '8%',
             right: '16%'
         },
@@ -623,11 +623,14 @@ function QChart (container) {
             setTimeout(function () {
                 var svgr = SLIDES[type].getElementsByTagName('svg');
                 if (svgr) {
-                    svgr = svgr[0].children[4].children[0] || svgr[0].children[3].children[0];
+                    svgr = svgr[0];
+                    var title = svgr.children[2].children[0];
+                    title.setAttribute('y', 32);
+                    svgr = svgr.children[4].children[0] || svgr.children[3].children[0];
                     svgr.style.cursor = 'col-resize';
                     charts[type].svgr = svgr;
                 }
-            }, 500);
+            }, 650);
         }
     }
 
@@ -715,6 +718,12 @@ function QChart (container) {
             qOpts.showNewTime();
             byId('startday').value = orig.startOpt;
             byId('endday').value = orig.endOpt;
+            if (orig.startOpt !== '1') {
+                byId('startdate').style.display = 'none';
+            }
+            if (orig.endOpt !== '1') {
+                byId('enddate').style.display = 'none';
+            }
             this.originalZoom = null;
             resetZoomBtn.style.display = 'none';
             qDB.filter();
