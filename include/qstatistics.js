@@ -626,7 +626,7 @@ function QChart (container) {
                     svgr = svgr[0];
                     var title = svgr.children[2].children[0];
                     title.setAttribute('y', 32);
-                    svgr = svgr.children[4].children[0] || svgr.children[3].children[0];
+                    svgr = (svgr.children[4] && svgr.children[4].children[0]) || svgr.children[3].children[0];
                     svgr.style.cursor = 'col-resize';
                     charts[type].svgr = svgr;
                 }
@@ -920,23 +920,9 @@ function QDataBase (visibleCols, visibleRows) {
                                 perc = '';
                             }
                         }
-                        else if (tblRow.total) {
-                            var divide;
-                            if (i1 >= COL_timeEnd && !loggedInCol) {
-                                if (i1 === 23 || i1 === 25) {   // exit with key, exit empty
-                                    divide = tblRow.queueCount;
-                                }
-                                else {
-                                    divide = tblRow.agentCount;
-                                }
-                            }
-                            else {
-                                divide = tblRow.total;
-                            }
-                            perc = divide ? Math.round(100 * tblRow[j0] / divide) : '';
-                        }
                         else {
-                            perc = '';
+                            var divide = tblRow.total;
+                            perc = divide ? Math.round(100 * tblRow[j0] / divide) : '';
                         }
 
                         if (csv) {
@@ -1233,7 +1219,7 @@ function QDataBase (visibleCols, visibleRows) {
 
         
         for (i = 0, n = newPhones.length; i < n; i++) {
-            // todo: now I imply overwrite queues. Todo detect queue changes  
+            // todo: now I simply overwrite queues. Todo detect queue changes
             var phone = newPhones[i],
                 name = phone.getAttribute('name');
             if (!phones[name]) {
