@@ -133,7 +133,6 @@ function QChart (container) {
             left: '8%',
             right: '16%'
         },
-        title = qOpts.get('name'),
         animation = {
             duration: 400,
             easing: 'out'
@@ -141,20 +140,17 @@ function QChart (container) {
         chartOptions = {
             linechart: {
                 animation: animation,
-                title: title,
                 sliceVisibilityThreshold: 0,
                 chartArea: chartArea
             },
             barchart: {
                 animation: animation,
-                title: title,
                 sliceVisibilityThreshold: 0,
                 chartArea: chartArea,
                 bar: {groupWidth: "90%"}
             },
             stacked: {
                 animation: animation,
-                title: title,
                 isStacked: true,
                 sliceVisibilityThreshold: 0,
                 chartArea: chartArea,
@@ -436,6 +432,7 @@ function QChart (container) {
             }
         }
 
+        chartOptions[qMenu.type].title = qOpts.get('name');
         return google.visualization.arrayToDataTable(data);
     }
 
@@ -2790,7 +2787,10 @@ var onnload = function() {
 
 
         function eqHeight () {
-            var maxHeight = Math.max(navbarHeight, window.innerHeight - 196, isExpanded ? (rightPanel.scrollHeight + 9) : 0, isExpanded ? (SLIDES[qMenu.type].scrollHeight + 16) : 0);
+            var rightPanelHeight = isExpanded ? (rightPanel.scrollHeight + 9) : 0,
+                centerPanelHeight = (isExpanded || qMenu.type !== 'table') ? (SLIDES[qMenu.type].scrollHeight + 16) : 0,
+                //headerHeight = 196,
+                maxHeight = Math.max(navbarHeight, window.innerHeight - 196, rightPanelHeight, centerPanelHeight);
 
             leftContent.style.height = maxHeight + 'px';
             document.getElementsByTagName('slide')[0].style.maxHeight = maxHeight + 'px';
