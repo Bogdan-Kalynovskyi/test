@@ -432,7 +432,6 @@ function QChart (container) {
             }
         }
 
-        chartOptions[qMenu.type].title = qOpts.get('name');
         return google.visualization.arrayToDataTable(data);
     }
 
@@ -496,6 +495,7 @@ function QChart (container) {
             data.push(row);
         }
 
+        chartOptions[type].title = qOpts.get('name');
         return google.visualization.arrayToDataTable(data);
     }
     
@@ -2788,7 +2788,7 @@ var onnload = function() {
 
         function eqHeight () {
             var rightPanelHeight = isExpanded ? (rightPanel.scrollHeight + 9) : 0,
-                centerPanelHeight = (isExpanded || qMenu.type !== 'table') ? (SLIDES[qMenu.type].scrollHeight + 16) : 0,
+                centerPanelHeight = (isExpanded || qMenu.type !== 'table') ? (SLIDES[qMenu.type].scrollHeight + 1) : 0,
                 //headerHeight = 196,
                 maxHeight = Math.max(navbarHeight, window.innerHeight - 196, rightPanelHeight, centerPanelHeight);
 
