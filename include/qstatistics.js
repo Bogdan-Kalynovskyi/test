@@ -308,7 +308,7 @@ function QChart (container) {
                     maxNum = Math.max(maxNum, el);
                 }
             }
-            loggedInTimeDivider = maxLoggedIn / maxNum * 21;
+            loggedInTimeDivider = maxNum ? (maxLoggedIn / maxNum * 21) : maxLoggedIn;
         }
         // when logged in time column is displayed 
         else if (pieChartCol) {
@@ -316,7 +316,7 @@ function QChart (container) {
         }
         // other cases
         else {
-            loggedInTimeDivider = qDB.maxLoggedIn / qDB.maxNum * 21;
+            loggedInTimeDivider = qDB.maxNum ? (qDB.maxLoggedIn / qDB.maxNum * 21) : qDB.maxLoggedIn;
         }
 
         if (loggedInTimeDivider > DAY) {
@@ -2252,14 +2252,8 @@ function QPolling (onFreshData) {
         START = temp1;
         END = temp2;
 
-        if (START >= END) {
-            //alert('Start time should be before end time.');
-            stopPolling = true;
-            throw 'start >= end';
-        }
-
-        else if (START > moment().unix()) {
-            //alert('Start time should be before current moment.');
+        if (START > moment().unix()) {
+            alert('Start time should be before current moment.');
             stopPolling = true;
             throw 'start > now';
         }
