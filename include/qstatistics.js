@@ -2438,7 +2438,7 @@ function QTable () {
                 str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
             }
         }
-        slide.innerHTML = '<table cellpadding="0" cellspacing="0"><thead><tr class="head">' + createHeader() + '</tr></thead><tbody>' + str + '</tbody></table><br><br>All times showed in timezone <b>' + qOpts.config('timezone') + '</b>';
+        slide.innerHTML = '<table cellpadding="0" cellspacing="0"><thead><tr class="head">' + createHeader() + '</tr></thead><tbody>' + str + '</tbody></table>';
 
         table = slide.children[0];
         theadTr = table.children[0].children[0];
