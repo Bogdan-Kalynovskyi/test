@@ -578,8 +578,10 @@ function QChart (container) {
             END = rightTime - (rightTime - leftTime) * (rectSVG.right + window.scrollX - maxX) / rectSVG.width;
             PERIOD = that.originalZoom.period * (Math.min(now, END) - START) / (Math.min(now, that.originalZoom.end) - that.originalZoom.start);
 
+            chartOptions[qMenu.type].animation.duration = 0;
             qOpts.showNewTime();
             qDB.filter();
+            chartOptions[qMenu.type].animation.duration = 400;
 
             container.onmousemove = null;
         }
@@ -605,9 +607,11 @@ function QChart (container) {
             START += (rightTime - leftTime) * left / rectSVG.width * zoom;
             END = rightTime - (rightTime - leftTime) * right / rectSVG.width * zoom;
             PERIOD = that.originalZoom.period * (Math.min(now, END) - START) / (Math.min(now, that.originalZoom.end) - that.originalZoom.start);
-            
+
+            chartOptions[qMenu.type].animation.duration = 0;
             qOpts.showNewTime();
             qDB.filter();
+            chartOptions[qMenu.type].animation.duration = 400;
             
             evt.preventDefault();
             return false;
