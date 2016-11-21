@@ -386,8 +386,8 @@ function QChart (container) {
             pieChartOptions.title = 'Column: ' + COLUMNS[pf.id];
             cacheTableHeader(undefined, id === COL_loggedIn);
             var pos = qDB.colPos.indexOf(id) + 1,
-                i = (!PERIOD && +qOpts.get('allcalls')) ? 1 : 0,                 // in Destination mode, don't show "All calls" in chart
-                n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0),           // in Time mode, don't show "Total" row
+                i = (!PERIOD && +qOpts.get('allcalls')) ? 1 : 0,              // in Destination mode, don't show "All calls" in chart
+                n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0),      // in Time mode, don't show "Total" row
                 totalVisible = 0;
 
             for (; i < n; i++) {
@@ -404,7 +404,7 @@ function QChart (container) {
                     }
                 }
             }
-            if (!totalVisible) {                                            // all cols should be given as an option, but they don't always contain data
+            if (!totalVisible) {                                       // all cols should be given as an option, but they don't always contain data
                 setEmptyChart();
             }
         }
@@ -454,9 +454,15 @@ function QChart (container) {
                     isTime = i1 >= COL_timeStart && i1 < COL_timeEnd;
                 
                 if (isTime) {
-                    row[j1] = arrayPeriod(row[j1]);
+                    row[j1] = googleTimeFormat(row[j1]);
                 }
                 else if (i1 === COL_loggedIn) {
+                    // If agent was logged in for the whole time, the "logged in" chart should look as a straight line.
+                    // For time-period-based report type, row[0] is a Date object
+                    if (PERIOD > 0 && j === n - 1) {
+                        row[j1] *= PERIOD / (Math.min(END * 1000, Date.now()) - row[0].getTime()) * 1000;
+                    }
+                    // show time in the most suitable unit of measure
                     row[j1] = +(row[j1] / loggedInTimeDivider).toFixed(2);
                 }
 
@@ -473,9 +479,9 @@ function QChart (container) {
                 }
             }
             
-            // then reflect col types in options
+            // then reflect column types in options
             if (j === 0) {
-                if (hasNumericCols && hasDurationCols) {
+                if (hasNumericCols && hasDurationCols) {   // then display two axes, right is timeOfDay
                     var series = {};
                     for (i in colPos) {
                         series[i] = {targetAxisIndex: cols[i]};
@@ -495,7 +501,22 @@ function QChart (container) {
             data.push(row);
         }
 
+        // google charts display time on x axis better than I do, because they know font and the scale
+        if (PERIOD > 0) {
+            chartOptions[type].hAxis = {
+                format: getGoogleApiFormat(),
+                viewWindow: {
+                    min: new Date(START * 1000),
+                    max: new Date(Math.min(Date.now(), END * 1000))
+                }
+            };
+        }
+        else {
+            delete chartOptions[type].hAxis;
+        }
+
         chartOptions[type].title = qOpts.get('name');
+
         return google.visualization.arrayToDataTable(data);
     }
     
@@ -512,6 +533,14 @@ function QChart (container) {
             resetZoomBtn.style.display = 'block';
         }
     }
+
+
+    function reRenderWithoutAnimation () {
+        qOpts.showNewTime();
+        chartOptions[qMenu.type].animation.duration = 0;
+        qDB.filter();
+        chartOptions[qMenu.type].animation.duration = 400;
+    }
     
     
     function move (direction) {
@@ -525,10 +554,7 @@ function QChart (container) {
             START += delta;
             END = rightTime + delta;
 
-            chartOptions[qMenu.type].animation.duration = 0;
-            qOpts.showNewTime();
-            qDB.filter();
-            chartOptions[qMenu.type].animation.duration = 400;
+            reRenderWithoutAnimation();
         }
     }
     
@@ -578,10 +604,7 @@ function QChart (container) {
             END = rightTime - (rightTime - leftTime) * (rectSVG.right + window.scrollX - maxX) / rectSVG.width;
             PERIOD = that.originalZoom.period * (Math.min(now, END) - START) / (Math.min(now, that.originalZoom.end) - that.originalZoom.start);
 
-            chartOptions[qMenu.type].animation.duration = 0;
-            qOpts.showNewTime();
-            qDB.filter();
-            chartOptions[qMenu.type].animation.duration = 400;
+            reRenderWithoutAnimation();
 
             container.onmousemove = null;
         }
@@ -608,10 +631,7 @@ function QChart (container) {
             END = rightTime - (rightTime - leftTime) * right / rectSVG.width * zoom;
             PERIOD = that.originalZoom.period * (Math.min(now, END) - START) / (Math.min(now, that.originalZoom.end) - that.originalZoom.start);
 
-            chartOptions[qMenu.type].animation.duration = 0;
-            qOpts.showNewTime();
-            qDB.filter();
-            chartOptions[qMenu.type].animation.duration = 400;
+            reRenderWithoutAnimation();
             
             evt.preventDefault();
             return false;
@@ -627,7 +647,8 @@ function QChart (container) {
                     svgr = svgr[0];
                     var title = svgr.children[2].children[0];
                     title.setAttribute('y', 32);
-                    svgr = (svgr.children[4] && svgr.children[4].children[0]) || svgr.children[3].children[0];
+                    // a tricky part of Google charts integration. Find rectangle inside which the chart is rendered
+                    svgr = (svgr.children[4] && svgr.children[4].children[0]) || (svgr.children[3] && svgr.children[3].children[0]) || svgr.children[2].children[0];
                     svgr.style.cursor = 'col-resize';
                     charts[type].svgr = svgr;
                 }
@@ -716,7 +737,9 @@ function QChart (container) {
             START = orig.start;
             END = orig.end;
             PERIOD = orig.period;
-            qOpts.showNewTime();
+            this.originalZoom = null;
+            resetZoomBtn.style.display = 'none';
+            reRenderWithoutAnimation();
             byId('startday').value = orig.startOpt;
             byId('endday').value = orig.endOpt;
             if (orig.startOpt !== '1') {
@@ -725,9 +748,6 @@ function QChart (container) {
             if (orig.endOpt !== '1') {
                 byId('enddate').style.display = 'none';
             }
-            this.originalZoom = null;
-            resetZoomBtn.style.display = 'none';
-            qDB.filter();
         }
     }
 }
@@ -905,10 +925,10 @@ function QDataBase (visibleCols, visibleRows) {
                         perc;
 
                     if (time) {
-                        row[j1] = formatPeriod(row[j1], 3);
+                        row[j1] = timeFormat(row[j1], 3);
                     }
                     else if (loggedInCol) {
-                        row[j1] = (PERIOD || table[i].isAgent) ? formatPeriod(row[j1], 4) : '';
+                        row[j1] = (PERIOD || table[i].isAgent) ? timeFormat(row[j1], 4) : '';
                     }
 
                     if (withPercentage) {
@@ -1230,7 +1250,7 @@ function QDataBase (visibleCols, visibleRows) {
             phones[name] = phone;
             phone.marked = true;
         }
-        // tosdo update dropdowns 
+        // todo: ask David if we should update dropdowns
         
         for (i in phones) {
             if (!phones[i].marked) {
@@ -1516,10 +1536,7 @@ function QDataBase (visibleCols, visibleRows) {
             finishTime = Math.min(now, END),
             calls,
             row,
-            dateFormat = qOpts.config('dateformat'),
-            timeFormat = qOpts.config('timeformat');
-        
-        timeFormat = (timeFormat === '12') ? 'hh:mma' : 'HH:mm';
+            formatStr = getMomentJSFormat();
  
         if ((Math.min(now, END) - START) / PERIOD > Math.max(900, window.innerWidth - 380)) {
             alert('Too many rows to display. Please set bigger interval.');
@@ -1532,12 +1549,8 @@ function QDataBase (visibleCols, visibleRows) {
             row = newRow();
 
             var start = moment.unix(startTime);
-            if (PERIOD < DAY) {
-                row[0] = start.format(dateFormat + ' ' + timeFormat);
-            }
-            else {
-                row[0] = start.format(dateFormat);
-            }
+            row[0] = (qMenu.type === 'table') ? start.format(formatStr) : start.toDate();
+
             if (PERIOD < DAY) {
                 endTime += PERIOD;
             }
@@ -2340,7 +2353,8 @@ function QPolling (onFreshData) {
             firstRequest = false;
             hidePreloader();
 
-            // Handle the change of day at midnight. If the start or end day is not a specific date then the report period will change every day.
+            // Handle the change of day at midnight. If the start or end day is not a specific date then the report
+            // period will change every day.
             var today = moment().startOf('day');
             if (today.unix() !== lastToday.unix()) {
                 if (startDay === '0') {
@@ -2675,7 +2689,28 @@ function pad (s) {
 }
 
 
-function formatPeriod (period, minPeriod) {
+function getMomentJSFormat () {
+    if (PERIOD < DAY) {
+        return qOpts.config('dateformat') + ' ' + (qOpts.config('timeformat') === '12' ? 'hh:mma' : 'HH:mm');
+    }
+    else {
+        return qOpts.config('dateformat');
+    }
+}
+
+
+function getGoogleApiFormat () {
+    var df = qOpts.config('dateformat').replace('YYYY', 'yyyy').replace('DD', 'dd');
+    if (PERIOD < DAY) {
+        return df + ' ' + (qOpts.config('timeformat') === '12' ? 'hh:mmaa' : 'HH:mm');
+    }
+    else {
+        return df;
+    }
+}
+
+
+function timeFormat (period, minPeriod) {
     period = Math.round(period);
     var time = Math.floor(period / DAY),
         str = '';
@@ -2697,7 +2732,7 @@ function formatPeriod (period, minPeriod) {
 }
 
 
-function arrayPeriod (period, length) {
+function googleTimeFormat (period, length) {
     var result = [];
 
     if (length === 4) {
