@@ -211,7 +211,7 @@ function QChart (container) {
         }
         
         var str = 'Display:<label> column <select id="piechart-by-column"><option value="">Choose column</option>',
-            visibleCols = qOpts.getColumns(),
+            visibleCols = qUtils.getColumns(),
             colPosLen = qDB.colPos.length + 1;
         
         for (var i in COLUMNS) {
@@ -386,7 +386,8 @@ function QChart (container) {
             pieChartOptions.title = 'Column: ' + COLUMNS[pf.id];
             cacheTableHeader(undefined, id === COL_loggedIn);
             var pos = qDB.colPos.indexOf(id) + 1,
-                i = (!PERIOD && +qOpts.get('allcalls')) ? 1 : 0,              // in Destination mode, don't show "All calls" in chart
+                i = (!PERIOD && +qOpts.get('allcalls')) ? 1 : 0,              // in Destination mode, don't show "All
+                                                                              // calls" in chart
                 n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0),      // in Time mode, don't show "Total" row
                 totalVisible = 0;
 
@@ -454,7 +455,7 @@ function QChart (container) {
                     isTime = i1 >= COL_timeStart && i1 < COL_timeEnd;
                 
                 if (isTime) {
-                    row[j1] = googleTimeFormat(row[j1]);
+                    row[j1] = qUtils.googleTimeFormat(row[j1]);
                 }
                 else if (i1 === COL_loggedIn) {
                     // If agent was logged in for the whole time, the "logged in" chart should look as a straight line.
@@ -504,7 +505,7 @@ function QChart (container) {
         // google charts display time on x axis better than I do, because they know font and the scale
         if (PERIOD > 0) {
             chartOptions[type].hAxis = {
-                format: getGoogleApiFormat(),
+                format: qUtils.getGoogleApiFormat(),
                 viewWindow: {
                     min: new Date(START * 1000),
                     max: new Date(Math.min(Date.now(), END * 1000))
@@ -705,7 +706,7 @@ function QChart (container) {
                     renderChart(type);
                 }
 
-                qOpts.eqHeight();
+                qUtils.eqHeight();
             });
         }
     };
@@ -925,10 +926,10 @@ function QDataBase (visibleCols, visibleRows) {
                         perc;
 
                     if (time) {
-                        row[j1] = timeFormat(row[j1], 3);
+                        row[j1] = qUtils.timeFormat(row[j1], 3);
                     }
                     else if (loggedInCol) {
-                        row[j1] = (PERIOD || table[i].isAgent) ? timeFormat(row[j1], 4) : '';
+                        row[j1] = (PERIOD || table[i].isAgent) ? qUtils.timeFormat(row[j1], 4) : '';
                     }
 
                     if (withPercentage) {
@@ -1015,7 +1016,7 @@ function QDataBase (visibleCols, visibleRows) {
             navigator.msSaveBlob(csvBlob, fileName);
         }
         else {
-            downloadUrl(URL.createObjectURL(csvBlob), fileName);
+            qUtils.downloadUrl(URL.createObjectURL(csvBlob), fileName);
         }
     };
 
@@ -1026,7 +1027,7 @@ function QDataBase (visibleCols, visibleRows) {
         var row = new Array(COL_timeStart + 1 + (visibleCols[COL_loggedIn] ? 1 : 0)).fill(0);
         row.total = 0;
         row.calls = [];
-        row.queueCalls = [];
+        row.qnaCalls = [];
         row.isAgent = false;
         return row;
     }
@@ -1043,7 +1044,7 @@ function QDataBase (visibleCols, visibleRows) {
                 multiRow[i] += row[i];
             }
             multiRow.calls = multiRow.calls.concat(row.calls);
-            multiRow.queueCalls = multiRow.queueCalls.concat(row.queueCalls);
+            multiRow.qnaCalls = multiRow.qnaCalls.concat(row.qnaCalls);
         }
     }
 
@@ -1069,7 +1070,7 @@ function QDataBase (visibleCols, visibleRows) {
 
         // rather weird requirement not to count queuestatus for calls that came from "Telephone lines" filter
         if (!cameFromPhoneFilter) {
-            row.queueCalls.push(call);
+            row.qnaCalls.push(call);
         }
 
         // total calls
@@ -1353,8 +1354,8 @@ function QDataBase (visibleCols, visibleRows) {
             }
             row.total = rowTotal;
 
-            for (i in row.queueCalls) {
-                call = row.queueCalls[i];
+            for (i in row.qnaCalls) {
+                call = row.qnaCalls[i];
 
                 var dtypeQueue = call.dtype === 'queue',
                     stypeQueue = call.stype === 'queue';
@@ -1386,7 +1387,7 @@ function QDataBase (visibleCols, visibleRows) {
                 }
             }
             row.queueCount = queueCount;
-            row.agentCount = row.queueCalls.length;
+            row.agentCount = row.qnaCalls.length;
 
             if (minhold === Infinity) {
                 minhold = 0;
@@ -1536,7 +1537,7 @@ function QDataBase (visibleCols, visibleRows) {
             finishTime = Math.min(now, END),
             calls,
             row,
-            formatStr = getMomentJSFormat();
+            formatStr = qUtils.getMomentJSFormat();
  
         if ((Math.min(now, END) - START) / PERIOD > Math.max(900, window.innerWidth - 380)) {
             alert('Too many rows to display. Please set bigger interval.');
@@ -1607,7 +1608,7 @@ function QDataBase (visibleCols, visibleRows) {
                 ampm = reportIndex >= 12 ? 'pm' : 'am';
                 reportIndex %= 12;
             }
-            hourString = pad(reportIndex) + ':';
+            hourString = qUtils.pad(reportIndex) + ':';
             if (isHalfHours) {
                 hourString += ((i + startHour) % 2) ? '30' : '00';
             }
@@ -1752,7 +1753,7 @@ function QDataBase (visibleCols, visibleRows) {
 
                 if (!multiRow) {
                     if (dest === 'queues') {
-                        row[0] = 'Queue: ' + escapeHtml(el.name);
+                        row[0] = 'Queue: ' + qUtils.escapeHtml(el.name);
                     }
                     else {
                         switch (phoneDisplay) {
@@ -1779,10 +1780,10 @@ function QDataBase (visibleCols, visibleRows) {
                                 break;
                         }
                         if (dest === 'agents') {
-                            row[0] = 'Queue agent: ' + escapeHtml(name);
+                            row[0] = 'Queue agent: ' + qUtils.escapeHtml(name);
                         }
                         else {
-                            row[0] = 'Ext: ' + escapeHtml(name);
+                            row[0] = 'Ext: ' + qUtils.escapeHtml(name);
                         }
                     }
                 }
@@ -1943,7 +1944,7 @@ function QOptions () {
         var i;
 
         byId('name').addEventListener('change', function () {
-            that.title.innerHTML = 'Call statistics :: ' + escapeHtml(this.value);
+            that.title.innerHTML = 'Call statistics :: ' + qUtils.escapeHtml(this.value);
         });
         byId('slatime').addEventListener('change', function () {
             that.slaTime = +this.value;
@@ -1982,9 +1983,7 @@ function QOptions () {
         byId('period').addEventListener('change', function () {
             PERIOD = +this.value;
             byId('heading_rows').innerHTML = PERIOD ? 'Sum of destinations:' : 'Display destinations:';
-            var showMoveLeftRight = (PERIOD <= 0 || qMenu.type === 'table' || qMenu.type === 'piechart') ? 'none' : 'block';
-            byId('left-overlay').style.display = showMoveLeftRight;
-            byId('right-overlay').style.display = showMoveLeftRight;
+            qUtils.toggleLROverlay(qMenu.type);
             qDB.filter();
             that.preventScroll();
         });
@@ -1996,24 +1995,6 @@ function QOptions () {
     }
 
 
-    this.getColumns = function () {
-        var result = [];
-        for (var i in columnControls) {
-            result[i] = +this.get(columnControls[i]);
-        }
-        return result;
-    };
-
-
-    this.getRows = function () {
-        var result = [];
-        for (var i in destControls) {
-            result[i] = +this.get(destControls[i]);
-        }
-        return result;
-    };
-
-    
     this.config = function (field) {
         return document.settings[field].value;
     };
@@ -2069,7 +2050,7 @@ function QOptions () {
  
     if (form[0].id.value) {
         onFormClean();
-        this.title.innerHTML = 'Call statistics :: ' + escapeHtml(form[0].name.value);
+        this.title.innerHTML = 'Call statistics :: ' + qUtils.escapeHtml(form[0].name.value);
     }
     else {
         this.title.innerHTML = 'Call statistics :: New report';
@@ -2151,7 +2132,7 @@ function QOptions () {
 
         markAllOptions(false);
         submitCopy.style.display = '';
-        qOpts.eqHeight();
+        qUtils.eqHeight();
         return false;
     }
     
@@ -2466,7 +2447,7 @@ function QTable () {
         this.resizeHeader();
         assignHeaderEvents();
         
-        qOpts.eqHeight();
+        qUtils.eqHeight();
         qOpts.preventScroll();
     };
 
@@ -2650,16 +2631,14 @@ function QMenu (container) {
             }
         }
         else {
-            qOpts.eqHeight();
+            qUtils.eqHeight();
         }
         upToDate[nextSlideIndex] = true;
 
         byId('go-png').disabled = (nextType === 'table');
         byId('piechart-chooser').style.display = nextType === 'piechart' ? 'block' : 'none';
         byId('go-' + nextType).className = 'active';
-        var showMoveLeftRight = (PERIOD <= 0 || nextType === 'table' || nextType === 'piechart') ? 'none' : 'block';
-        byId('left-overlay').style.display = showMoveLeftRight;
-        byId('right-overlay').style.display = showMoveLeftRight;
+        qUtils.toggleLROverlay(nextType);
 
         slideIndex = nextSlideIndex;
         this.type = nextType;
@@ -2673,6 +2652,164 @@ function QMenu (container) {
 }
 
 
+function QUtils () {
+
+    this.getColumns = function () {
+        var result = [];
+        for (var i in columnControls) {
+            result[i] = +qOpts.get(columnControls[i]);
+        }
+        return result;
+    };
+
+
+    this.getRows = function () {
+        var result = [];
+        for (var i in destControls) {
+            result[i] = +qOpts.get(destControls[i]);
+        }
+        return result;
+    };
+
+
+    this.pad = function pad (s) {
+        if (s < 10) {
+            s = '0' + s;
+        }
+        return s;
+    };
+
+
+    this.getMomentJSFormat = function () {
+        if (PERIOD < DAY) {
+            return qOpts.config('dateformat') + ' ' + (qOpts.config('timeformat') === '12' ? 'hh:mma' : 'HH:mm');
+        }
+        else {
+            return qOpts.config('dateformat');
+        }
+    };
+
+
+    this.getGoogleApiFormat = function () {
+        var df = qOpts.config('dateformat').replace('YYYY', 'yyyy').replace('DD', 'dd');
+        if (PERIOD < DAY) {
+            return df + ' ' + (qOpts.config('timeformat') === '12' ? 'hh:mmaa' : 'HH:mm');
+        }
+        else {
+            return df;
+        }
+    };
+
+
+    this.timeFormat = function (period, minPeriod) {
+        period = Math.round(period);
+        var time = Math.floor(period / DAY),
+            str = '';
+
+        if (time || minPeriod === 4) {
+            str = pad(time) + ':';
+        }
+        time = Math.floor((period % DAY) / 3600);
+        if (time || str || minPeriod === 3) {
+            str += pad(time) + ':';
+        }
+        time = Math.floor((period % 3600) / 60);
+        if (time || str) {
+            str += pad(time) + ':';
+        }
+        time = period % 60;
+        str += pad(time);
+        return str;
+    };
+
+
+    this.googleTimeFormat = function (period, length) {
+        var result = [];
+
+        if (length === 4) {
+            result.push(Math.floor(period / DAY));
+        }
+
+        result.push(Math.floor((period % DAY) / 3600), Math.floor((period % 3600) / 60), Math.floor(period % 60));
+        return result;
+    };
+
+
+    this.downloadUrl = function (url, fileName) {
+        var link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', fileName);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+
+    this.escapeHtml = function (text) {
+        var map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+
+        return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+    };
+
+
+    this.toggleLROverlay = function (nextType) {
+        var showMoveLeftRight = (PERIOD <= 0 || nextType === 'table' || nextType === 'piechart') ? 'none' : 'block';
+        byId('left-overlay').style.display = showMoveLeftRight;
+        byId('right-overlay').style.display = showMoveLeftRight;
+    };
+
+
+    var openButton = byId('panel-open-button'),
+        optionsHeading = byId('options-heading'),
+        navbar = byId('nav_bar'),
+        navbarHeight = navbar.offsetHeight,
+        leftContent = byId('left-content'),
+        rightPanel = byId('right-panel'),
+        isExpanded = false;
+
+
+    this.eqHeight = function () {
+        var rightPanelHeight = isExpanded ? (rightPanel.scrollHeight + 9) : 0,
+            centerPanelHeight = (isExpanded || qMenu.type !== 'table') ? (SLIDES[qMenu.type].scrollHeight + 1) : 0,
+        //headerHeight = 196,
+            maxHeight = Math.max(navbarHeight, window.innerHeight - 196, rightPanelHeight, centerPanelHeight);
+
+        leftContent.style.height = maxHeight + 'px';
+        document.getElementsByTagName('slide')[0].style.maxHeight = maxHeight + 'px';
+    };
+
+
+    function toggle () {
+        isExpanded = !isExpanded;
+        if (isExpanded) {
+            rightPanel.classList.add('expanded');
+            openButton.classList.add('expanded');
+        }
+        else {
+            rightPanel.classList.remove('expanded');
+            openButton.classList.remove('expanded');
+        }
+        qUtils.eqHeight();
+    }
+
+    openButton.addEventListener('click', toggle);
+    optionsHeading.addEventListener('click', toggle);
+
+    openButton.innerHTML = '';      // bad initial html
+
+    isExpanded = true;
+    rightPanel.classList.add('expanded');
+    openButton.classList.add('expanded');
+}
+
+
 function byId (id) {
     return document.getElementById(id);
 }
@@ -2682,115 +2819,21 @@ function byName (name) {
 }
 
 
-function pad (s) {
-    if (s < 10) {
-        s = '0' + s;
-    }
-    return s;
-}
-
-
-function getMomentJSFormat () {
-    if (PERIOD < DAY) {
-        return qOpts.config('dateformat') + ' ' + (qOpts.config('timeformat') === '12' ? 'hh:mma' : 'HH:mm');
-    }
-    else {
-        return qOpts.config('dateformat');
-    }
-}
-
-
-function getGoogleApiFormat () {
-    var df = qOpts.config('dateformat').replace('YYYY', 'yyyy').replace('DD', 'dd');
-    if (PERIOD < DAY) {
-        return df + ' ' + (qOpts.config('timeformat') === '12' ? 'hh:mmaa' : 'HH:mm');
-    }
-    else {
-        return df;
-    }
-}
-
-
-function timeFormat (period, minPeriod) {
-    period = Math.round(period);
-    var time = Math.floor(period / DAY),
-        str = '';
-
-    if (time || minPeriod === 4) {
-        str = pad(time) + ':';
-    }
-    time = Math.floor((period % DAY) / 3600);
-    if (time || str || minPeriod === 3) {
-        str += pad(time) + ':';
-    }
-    time = Math.floor((period % 3600) / 60);
-    if (time || str) {
-        str += pad(time) + ':';
-    }
-    time = period % 60;
-    str += pad(time);
-    return str;
-}
-
-
-function googleTimeFormat (period, length) {
-    var result = [];
-
-    if (length === 4) {
-        result.push(Math.floor(period / DAY));
-    }
-
-    result.push(Math.floor((period % DAY) / 3600), Math.floor((period % 3600) / 60), Math.floor(period % 60));
-    return result;
-}
-
-
-function downloadUrl (url, fileName) {
-    var link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', fileName);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    setTimeout(function () {
-        document.body.removeChild(link);
-    }, 10000);
-}
-
-
-function escapeHtml(text) {
-    var map = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-    };
-
-    return text.replace(/[&<>"']/g, function(m) { return map[m]; });
-}
-
-
-var onnload = function() {
-
-
-};
-
 
 function qstatistics_begin () {
     window.qOpts = new QOptions();
     window.qMenu = new QMenu(byId('left-content'));
 
-    window.qDB = new QDataBase(qOpts.getColumns(), qOpts.getRows());
+    window.qDB = new QDataBase(qUtils.getColumns(), qUtils.getRows());
 
     window.qTable = new QTable();
     window.qChart = new QChart(byId('left-content'));
+    window.qUtils = new QUtils();
 
     window.qPolling = window.qsPolling = new QPolling(function () {
         qDB.filter();
     });
 
-    byId('panel-open-button').innerHTML = '';
 
     // patch move_selected
     var savedMoveselect = move_selects;
@@ -2811,56 +2854,7 @@ function qstatistics_begin () {
             else {
                 qChart.resize();
             }
+            qUtils.eqHeight();
         }, 100);
     });
-
-
-    // todo: move thsi to separate class!
-    var openButton = byId('panel-open-button'),
-        optionsHeading = byId('options-heading'),
-        navbar = byId('nav_bar'),
-        navbarHeight = navbar.offsetHeight,
-        leftContent = byId('left-content'),
-        rightPanel = byId('right-panel'),
-        isExpanded = false;
-
-
-    function eqHeight () {
-        var rightPanelHeight = isExpanded ? (rightPanel.scrollHeight + 9) : 0,
-            centerPanelHeight = (isExpanded || qMenu.type !== 'table') ? (SLIDES[qMenu.type].scrollHeight + 1) : 0,
-        //headerHeight = 196,
-            maxHeight = Math.max(navbarHeight, window.innerHeight - 196, rightPanelHeight, centerPanelHeight);
-
-        leftContent.style.height = maxHeight + 'px';
-        document.getElementsByTagName('slide')[0].style.maxHeight = maxHeight + 'px';
-    }
-
-
-    qOpts.eqHeight = eqHeight;
-
-
-    function toggle () {
-        isExpanded = !isExpanded;
-        if (isExpanded) {
-            rightPanel.classList.add('expanded');
-            openButton.classList.add('expanded');
-        }
-        else {
-            rightPanel.classList.remove('expanded');
-            openButton.classList.remove('expanded');
-        }
-        eqHeight();
-    }
-
-    openButton.addEventListener('click', toggle);
-    optionsHeading.addEventListener('click', toggle);
-
-    window.addEventListener('resize', function () {
-        eqHeight();
-    });
-
-
-    isExpanded = true;
-    rightPanel.classList.add('expanded');
-    openButton.classList.add('expanded');
 }
