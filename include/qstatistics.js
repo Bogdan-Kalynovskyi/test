@@ -705,7 +705,7 @@ function QChart (container) {
                     renderChart(type);
                 }
 
-                eqHeight();
+                qOpts.eqHeight();
             });
         }
     };
@@ -2151,7 +2151,7 @@ function QOptions () {
 
         markAllOptions(false);
         submitCopy.style.display = '';
-        eqHeight();
+        qOpts.eqHeight();
         return false;
     }
     
@@ -2466,7 +2466,7 @@ function QTable () {
         this.resizeHeader();
         assignHeaderEvents();
         
-        eqHeight();
+        qOpts.eqHeight();
         qOpts.preventScroll();
     };
 
@@ -2649,6 +2649,9 @@ function QMenu (container) {
                 qChart.render(nextType, nextSlide);
             }
         }
+        else {
+            qOpts.eqHeight();
+        }
         upToDate[nextSlideIndex] = true;
 
         byId('go-png').disabled = (nextType === 'table');
@@ -2660,8 +2663,6 @@ function QMenu (container) {
 
         slideIndex = nextSlideIndex;
         this.type = nextType;
-
-        eqHeight();
     };
 
 
@@ -2772,6 +2773,11 @@ function escapeHtml(text) {
 
 var onnload = function() {
 
+
+};
+
+
+function qstatistics_begin () {
     window.qOpts = new QOptions();
     window.qMenu = new QMenu(byId('left-content'));
 
@@ -2793,7 +2799,7 @@ var onnload = function() {
         qDB.filter();
     };
 
-    
+
     var handler;
     window.addEventListener('resize', function () {
         clearTimeout(handler);
@@ -2809,83 +2815,52 @@ var onnload = function() {
     });
 
 
-    (function () {
-        var openButton = byId('panel-open-button'),
-            optionsHeading = byId('options-heading'),
-            navbar = byId('nav_bar'),
-            navbarHeight = navbar.offsetHeight,
-            leftContent = byId('left-content'),
-            rightPanel = byId('right-panel'),
-            isExpanded = false;
+    // todo: move thsi to separate class!
+    var openButton = byId('panel-open-button'),
+        optionsHeading = byId('options-heading'),
+        navbar = byId('nav_bar'),
+        navbarHeight = navbar.offsetHeight,
+        leftContent = byId('left-content'),
+        rightPanel = byId('right-panel'),
+        isExpanded = false;
 
 
-        function eqHeight () {
-            var rightPanelHeight = isExpanded ? (rightPanel.scrollHeight + 9) : 0,
-                centerPanelHeight = (isExpanded || qMenu.type !== 'table') ? (SLIDES[qMenu.type].scrollHeight + 1) : 0,
-                //headerHeight = 196,
-                maxHeight = Math.max(navbarHeight, window.innerHeight - 196, rightPanelHeight, centerPanelHeight);
+    function eqHeight () {
+        var rightPanelHeight = isExpanded ? (rightPanel.scrollHeight + 9) : 0,
+            centerPanelHeight = (isExpanded || qMenu.type !== 'table') ? (SLIDES[qMenu.type].scrollHeight + 1) : 0,
+        //headerHeight = 196,
+            maxHeight = Math.max(navbarHeight, window.innerHeight - 196, rightPanelHeight, centerPanelHeight);
 
-            leftContent.style.height = maxHeight + 'px';
-            document.getElementsByTagName('slide')[0].style.maxHeight = maxHeight + 'px';
+        leftContent.style.height = maxHeight + 'px';
+        document.getElementsByTagName('slide')[0].style.maxHeight = maxHeight + 'px';
+    }
+
+
+    qOpts.eqHeight = eqHeight;
+
+
+    function toggle () {
+        isExpanded = !isExpanded;
+        if (isExpanded) {
+            rightPanel.classList.add('expanded');
+            openButton.classList.add('expanded');
         }
-        
-        
-        window.eqHeight = eqHeight;
-
-
-        function toggle () {
-            isExpanded = !isExpanded;
-            if (isExpanded) {
-                rightPanel.classList.add('expanded');
-                openButton.classList.add('expanded');
-            }
-            else {
-                rightPanel.classList.remove('expanded');
-                openButton.classList.remove('expanded');
-            }
-            eqHeight();
+        else {
+            rightPanel.classList.remove('expanded');
+            openButton.classList.remove('expanded');
         }
+        eqHeight();
+    }
 
-        openButton.addEventListener('click', toggle);
-        optionsHeading.addEventListener('click', toggle);
-        
-        window.addEventListener('resize', function () {
-            eqHeight();
-        });
+    openButton.addEventListener('click', toggle);
+    optionsHeading.addEventListener('click', toggle);
 
-
-        isExpanded = true;
-        rightPanel.classList.add('expanded');
-        openButton.classList.add('expanded');
-    })();
-
-};
+    window.addEventListener('resize', function () {
+        eqHeight();
+    });
 
 
-(function () {
-    var s = document.createElement('script');
-    s.onload = function () {
-        google.charts.load('current', {packages: ['corechart']});
-    };
-    s.src = '//www.gstatic.com/charts/loader.js';
-    document.head.appendChild(s);
-})();
-
-
-document.addEventListener("DOMContentLoaded", function() {
-    var s = document.createElement('script');
-    s.onload = function () {
-        var s = document.createElement('script');
-        s.onload = onnload;
-        s.src = 'http://momentjs.com/downloads/moment-timezone-with-data-2010-2020.js';
-        document.head.appendChild(s);
-    };
-    s.src = 'http://momentjs.com/downloads/moment.js';
-    document.head.appendChild(s);
-});
-
-
-
-function qstatistics_begin () {
-
+    isExpanded = true;
+    rightPanel.classList.add('expanded');
+    openButton.classList.add('expanded');
 }
