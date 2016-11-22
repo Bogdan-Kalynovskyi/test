@@ -211,7 +211,7 @@ function QChart (container) {
         }
         
         var str = 'Display:<label> column <select id="piechart-by-column"><option value="">Choose column</option>',
-            visibleCols = qUtils.getColumns(),
+            visibleCols = qOpts.getColumns(),
             colPosLen = qDB.colPos.length + 1;
         
         for (var i in COLUMNS) {
@@ -1995,6 +1995,24 @@ function QOptions () {
     }
 
 
+    this.getColumns = function () {
+        var result = [];
+        for (var i in columnControls) {
+            result[i] = +this.get(columnControls[i]);
+        }
+        return result;
+    };
+
+
+    this.getRows = function () {
+        var result = [];
+        for (var i in destControls) {
+            result[i] = +this.get(destControls[i]);
+        }
+        return result;
+    };
+
+
     this.config = function (field) {
         return document.settings[field].value;
     };
@@ -2010,7 +2028,7 @@ function QOptions () {
     this.slaTime = +this.get('slatime');
     this.totalRow = +this.get('totalrow');
     this.title = document.getElementsByTagName('title')[0];
-    moment.tz.setDefault(this.config('timezone'));
+   // moment.tz.setDefault(this.config('timezone'));
 
     
     // FORM
@@ -2654,24 +2672,6 @@ function QMenu (container) {
 
 function QUtils () {
 
-    this.getColumns = function () {
-        var result = [];
-        for (var i in columnControls) {
-            result[i] = +qOpts.get(columnControls[i]);
-        }
-        return result;
-    };
-
-
-    this.getRows = function () {
-        var result = [];
-        for (var i in destControls) {
-            result[i] = +qOpts.get(destControls[i]);
-        }
-        return result;
-    };
-
-
     this.pad = function pad (s) {
         if (s < 10) {
             s = '0' + s;
@@ -2821,14 +2821,14 @@ function byName (name) {
 
 
 function qstatistics_begin () {
+    window.qUtils = new QUtils();
     window.qOpts = new QOptions();
     window.qMenu = new QMenu(byId('left-content'));
 
-    window.qDB = new QDataBase(qUtils.getColumns(), qUtils.getRows());
+    window.qDB = new QDataBase(qOpts.getColumns(), qOpts.getRows());
 
     window.qTable = new QTable();
     window.qChart = new QChart(byId('left-content'));
-    window.qUtils = new QUtils();
 
     window.qPolling = window.qsPolling = new QPolling(function () {
         qDB.filter();
