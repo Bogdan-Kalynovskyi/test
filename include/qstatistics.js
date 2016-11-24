@@ -448,7 +448,13 @@ function QChart (container) {
             n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0);            // in Time mode, don't show "Total" row
 
         for (; j < n; j++) {
-            var row = dbTable[j].slice();
+            var dbRow = dbTable[j],
+                row = dbRow.slice(),
+                start = dbRow.start;
+            // for time - based reports
+            if (start) {
+                row[0] = start;
+            }
             for (var i in colPos) {
                 var i1 = colPos[i],
                     j1 = +i + 1,
@@ -460,8 +466,8 @@ function QChart (container) {
                 else if (i1 === COL_loggedIn) {
                     // If agent was logged in for the whole time, the "logged in" chart should look as a straight line.
                     // For time-period-based report type, row[0] is a Date object
-                    if (PERIOD > 0 && j === n - 1) {
-                        row[j1] *= PERIOD / (Math.min(END * 1000, Date.now()) - row[0].getTime()) * 1000;
+                    if (start && j === n - 1) {
+                        row[j1] *= PERIOD / (Math.min(END * 1000, Date.now()) - start.getTime()) * 1000;
                     }
                     // show time in the most suitable unit of measure
                     row[j1] = +(row[j1] / loggedInTimeDivider).toFixed(2);
@@ -1470,6 +1476,7 @@ function QDataBase (visibleCols, visibleRows) {
                     colSum[+j + 1] += el;
                 }
             }
+            result.start = row.start;
             result.queueCount = row.queueCount;
             result.agentCount = row.agentCount;
             result.total = row.total;
@@ -1550,7 +1557,8 @@ function QDataBase (visibleCols, visibleRows) {
             row = newRow();
 
             var start = moment.unix(startTime);
-            row[0] = (qMenu.type === 'table') ? start.format(formatStr) : start.toDate();
+            row.start = start.toDate();
+            row[0] = start.format(formatStr);
 
             if (PERIOD < DAY) {
                 endTime += PERIOD;
@@ -2028,7 +2036,7 @@ function QOptions () {
     this.slaTime = +this.get('slatime');
     this.totalRow = +this.get('totalrow');
     this.title = document.getElementsByTagName('title')[0];
-   // moment.tz.setDefault(this.config('timezone'));
+    moment.tz.setDefault(this.config('timezone'));
 
     
     // FORM
@@ -2672,7 +2680,7 @@ function QMenu (container) {
 
 function QUtils () {
 
-    this.pad = function pad (s) {
+    this.pad = function (s) {
         if (s < 10) {
             s = '0' + s;
         }
@@ -2707,18 +2715,18 @@ function QUtils () {
             str = '';
 
         if (time || minPeriod === 4) {
-            str = pad(time) + ':';
+            str = this.pad(time) + ':';
         }
         time = Math.floor((period % DAY) / 3600);
         if (time || str || minPeriod === 3) {
-            str += pad(time) + ':';
+            str += this.pad(time) + ':';
         }
         time = Math.floor((period % 3600) / 60);
         if (time || str) {
-            str += pad(time) + ':';
+            str += this.pad(time) + ':';
         }
         time = period % 60;
-        str += pad(time);
+        str += this.pad(time);
         return str;
     };
 
