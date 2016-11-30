@@ -1,3 +1,7 @@
+/*global google*/
+/*global URL*/
+/*global qstatistics_begin*/
+
 function QAgentEvents () {
     var events = [];            // should be sorted
 
@@ -24,11 +28,11 @@ function QAgentEvents () {
             var node = nodes[i],
                 event = {
                     time: +node.getAttribute('time'),
-                    isLogged: node.getAttribute('type') === 'agentlogin'
+                    isLogin: node.getAttribute('type') === 'agentlogin'
                 };
 
             for (var j in events) {
-                if (events[j].time === event.time && events[j].isLogged === event.isLogged) {
+                if (events[j].time === event.time && events[j].isLogin === event.isLogin) {
                     event = null;
                     break;
                 }
@@ -55,22 +59,22 @@ function QAgentEvents () {
             end,                // is composed out of a pair of events.
             clear,              // marker that we're done with current start-end pair, so start over again 
             i = 0,
-            n = events.length,
-            total = 0;
+            total = 0,
+            event = events[0];
 
         // when first event is logoff, and it is inside bounds, then virtually add login event before it
-        if (n && !events[0].isLogged && events[0].time >= periodStart) {           
+        if (event && !event.isLogin && event.time >= periodStart) {
             start = periodStart;
         }
 
-        while (i < n) {
+        while (event && event.time < periodEnd) {
             clear = false;
             
-            if (events[i].isLogged) {
-                start = events[i].time;
+            if (events.isLogin) {
+                start = events.time;
             }
             else {
-                end = events[i].time;
+                end = events.time;
             }
             
             if (end <= periodStart) {                           // completely out of bounds 
@@ -81,15 +85,13 @@ function QAgentEvents () {
                 clear = true;
             }
 
-            if (start > periodEnd || end > periodEnd) {         // no more pairs in bounds, because array is sorted
-                break;
-            }
             if (clear) {                                        // clear that pair, and search for a new one
                 start = undefined;
                 end = undefined;
             }
 
             i++;
+            event = events[i];
         }
         
         if (start && start < periodEnd && !end) {               // unfinished pair in bounds, agent is still logged in 
@@ -104,7 +106,7 @@ function QAgentEvents () {
     this.isLoggedIn = function () {
         var n = events.length;
         if (n) {
-            return events[n - 1].isLogged;
+            return events[n - 1].isLogin;
         }  
         else {
             return false;
@@ -445,16 +447,18 @@ function QChart (container) {
             hasDurationCols = false,
             cols = [],
             j = 0,
-            n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0);            // in Time mode, don't show "Total" row
+            n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0);            // for time-based reports, don't show "Total" row
 
         for (; j < n; j++) {
             var dbRow = dbTable[j],
                 row = dbRow.slice(),
                 start = dbRow.start;
+
             // for time - based reports
-            if (start) {
+            if (start && SAME_TZ) {
                 row[0] = start;
             }
+
             for (var i in colPos) {
                 var i1 = colPos[i],
                     j1 = +i + 1,
@@ -509,7 +513,7 @@ function QChart (container) {
         }
 
         // google charts display time on x axis better than I do, because they know font and the scale
-        if (PERIOD > 0) {
+        if (SAME_TZ && PERIOD > 0) {
             chartOptions[type].hAxis = {
                 format: qUtils.getGoogleApiFormat(),
                 viewWindow: {
@@ -734,7 +738,7 @@ function QChart (container) {
 
     this.downloadPNG = function () {
         var fileName = (qOpts.get('name').replace(/[^\w\s]/g, '_') || 'noname') + '.png';
-        downloadUrl(charts[qMenu.type].getImageURI(), fileName);
+        qUtils.downloadUrl(charts[qMenu.type].getImageURI(), fileName);
     };
 
 
@@ -810,8 +814,9 @@ var START,
     COL_timeStart = 13,
     COL_timeEnd = 22,
     COL_loggedIn = 29,
-    
-    REARRANGE = [];
+
+    SAME_TZ,            // same timezone
+    REARRANGE = [];     // works when dragndrop columns
 
 for (PERIOD = 0; PERIOD < COLUMNS.length; PERIOD++) {  // here PERIOD is just counter, and will be changed later
     REARRANGE[PERIOD] = PERIOD;
@@ -1219,14 +1224,20 @@ function QDataBase (visibleCols, visibleRows) {
         
         for (i = 0, n = newAgents.length; i < n; i++) {
             // todo: now I simply overwrite queues. Todo detect queue changes  
-            var agent = newAgents[i];
-            if (!agents[agent.id]) {
+            var agent = newAgents[i],
+                oldAgent = agents[agent.id];
+
+            if (!oldAgent) {
                 dbChanged = true;
             }
+            else {
+                var oldAgentEvents = oldAgent.events;
+            }
+
             cacheFields(agent);
             agent.dtype = agent.getAttribute('dtype');
             agent.dnumber = agent.getAttribute('dnumber');
-            agent.events = new QAgentEvents();
+            agent.events = oldAgentEvents || new QAgentEvents();
             agents[agent.id] = agent;
             agent.marked = true;
             
@@ -2037,6 +2048,8 @@ function QOptions () {
     this.totalRow = +this.get('totalrow');
     this.title = document.getElementsByTagName('title')[0];
     moment.tz.setDefault(this.config('timezone'));
+    SAME_TZ = (new Date()).getTimezoneOffset() === -moment().utcOffset();
+    // todo will not work so good in periods with daylight time saving
 
     
     // FORM
