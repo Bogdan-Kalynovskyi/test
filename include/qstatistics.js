@@ -70,11 +70,11 @@ function QAgentEvents () {
         while (event && event.time < periodEnd) {
             clear = false;
             
-            if (events.isLogin) {
-                start = events.time;
+            if (event.isLogin) {
+                start = event.time;
             }
             else {
-                end = events.time;
+                end = event.time;
             }
             
             if (end <= periodStart) {                           // completely out of bounds 
@@ -2048,7 +2048,7 @@ function QOptions () {
     this.totalRow = +this.get('totalrow');
     this.title = document.getElementsByTagName('title')[0];
     moment.tz.setDefault(this.config('timezone'));
-    SAME_TZ = (new Date()).getTimezoneOffset() === -moment().utcOffset();
+    SAME_TZ = (new Date()).getTimezoneOffset() === moment().utcOffset();
     // todo will not work so good in periods with daylight time saving
 
     
@@ -2290,7 +2290,8 @@ function QPolling (onFreshData) {
         END = temp2;
 
         if (START > moment().unix()) {
-            alert('Start time should be before current moment.');
+            alert('We are not supporting reports which start in the future.');
+            // todo
             stopPolling = true;
             throw 'start > now';
         }
