@@ -2426,7 +2426,7 @@ function QPolling (onFreshData) {
     function showPreloader () {
         preloaderShown = true;
         var img = document.createElement('IMG');
-        img.src = '/local/bohdan/include/img/ajax.gif';
+        img.src = '/local/qstatistics/include/img/ajax.gif';
         img.alt = '';
         img.id = 'ajax-preloader';
         document.body.appendChild(img);
