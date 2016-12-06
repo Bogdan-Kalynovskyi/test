@@ -195,6 +195,7 @@ function QChart (container) {
 
 
     function renderPieSourceSelect () {
+        // init pieFilter property from server data
         if (!that.pieFilter) {
             var pieFilterSaved = byName('piesource');
             if (pieFilterSaved) {
@@ -211,8 +212,9 @@ function QChart (container) {
                 };
             }
         }
-        
-        var str = 'Display:<label> column <select id="piechart-by-column"><option value="">Choose column</option>',
+
+        // render dropdown
+        var str = 'Display:<label> column <select id="piechart-by-column"><option value>Choose column</option>',
             visibleCols = qOpts.getColumns(),
             colPosLen = qDB.colPos.length + 1;
         
@@ -222,7 +224,7 @@ function QChart (container) {
             }
         }
        
-        str += '</select></label><label> or row <select id="piechart-by-row"><option value="">Choose row</option>';
+        str += '</select></label><label> or row <select id="piechart-by-row"><option value>Choose row</option>';
         var totalCallsPos = qDB.colPos.indexOf(0) + 1,
             loggedInPos = qDB.colPos.indexOf(COL_loggedIn) + 1;
         
@@ -230,24 +232,35 @@ function QChart (container) {
             var row = dbTable[i],
                 totalVisible = 0;
 
-            if (row.total) {
-                for (var j = 1; j < colPosLen; j++) {
-                    if (j !== totalCallsPos && j !== loggedInPos) {
-                        totalVisible += row[j];
-                    }
-                }
+            for (var j = 1; j < colPosLen; j++) {
+                totalVisible += row[j];
+            }
 
-                if (totalVisible) {
-                    str += '<option value="' + i + '">' + row[0] + '</option>';
-                }
+            if (totalVisible) {
+                str += '<option value="' + i + '">' + row[0] + '</option>';
             }
         }
         str += '</select></label>';
         byId('piechart-chooser').innerHTML = str;
 
+        // init dropdown
         var byCol = byId('piechart-by-column'),
             byRow = byId('piechart-by-row');
 
+        if (that.pieFilter.by === 'column') {
+            byCol.value = that.pieFilter.id;
+            if (byCol.selectedIndex === -1) {
+                byCol.selectedIndex = 1;
+            }
+        }
+        else {
+            byRow.value = that.pieFilter.id;
+            if (byRow.selectedIndex === -1) {
+                byRow.selectedIndex = 1;
+            }
+        }
+
+        // set dropdown behaviour
         byCol.onchange = function () {
             that.pieFilter = {
                 by: 'column',
@@ -275,19 +288,6 @@ function QChart (container) {
         byCol.onblur = byRow.onblur = function () {
             blockRefresh = false;
         };
-
-        if (that.pieFilter.by === 'column') {
-            byCol.value = that.pieFilter.id;
-            if (byCol.selectedIndex === -1) {
-                byCol.selectedIndex = 1;
-            }
-        }
-        else {
-            byRow.value = that.pieFilter.id;
-            if (byRow.selectedIndex === -1) {
-                byRow.selectedIndex = 1;
-            }
-        }
     }
 
 
