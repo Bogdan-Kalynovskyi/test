@@ -112,16 +112,6 @@ function QAgentEvents () {
             return false;
         }
     };
-
-
-    this.firstTime = function () {
-        if (!events[0]) {
-            return 0;
-        }
-        else {
-            return events[0].time;
-        }
-    }
 }
 
 
@@ -1034,13 +1024,69 @@ function QDataBase (visibleCols, visibleRows) {
     };
 
 
-    this.hasUnknownEvents = function () {
-        for (var i in agents) {
-            if (agents[i].events.firstTime() > START) {
-                return true;
+
+
+
+    this.phoneAgentDisplay = function (phoneDisplay) {
+        var destinations = [agents, phones],
+            as = byId('agentsinclude_selected'),
+            au = byId('agentsinclude_unselected'),
+            ps = byId('phonesinclude_selected'),
+            pu = byId('phonesinclude_unselected');
+
+
+        for (var j in destinations) {
+            var dest = destinations[j],
+                selected = +j ? ps : as,
+                unselected = +j ? pu : au,
+                strUnselected = '',
+                strSelected = '';
+
+            for (var i in dest) {
+                var el = dest[i],
+                    ids = [],
+                    name,
+                    str;
+
+                for (var o = 0, n = selected.length; o < n; o++) {
+                    ids.push(selected[o].value);
+                }
+
+                switch (phoneDisplay) {
+                    case 'name':
+                        name = el.name;
+                        break;
+                    case 'description':
+                        name = el.description || el.name;
+                        break;
+                    case 'internal':
+                        name = el.callerid;
+                        break;
+                    case 'name_description':
+                        name = el.name + ' ' + (el.description || el.name);
+                        break;
+                    case 'internal_description':
+                        name = el.callerid + ' ' + (el.description || el.name);
+                        break;
+                    case 'description_name':
+                        name = (el.description || el.name) + ' ' + el.name;
+                        break;
+                    case 'description_internal':
+                        name = (el.description || el.name) + ' ' + el.callerid;
+                        break;
+                }
+                str = '<option value="' + i + '">' + qUtils.escapeHtml(name) + '</option>';
+                if (ids.indexOf(i) !== -1) {
+                    strSelected += str;
+                }
+                else {
+                    strUnselected += str;
+                }
             }
+
+            unselected.innerHTML = strUnselected;
+            selected.innerHTML = strSelected;
         }
-        return false;
     };
 
 
@@ -1173,6 +1219,7 @@ function QDataBase (visibleCols, visibleRows) {
         var newAgents = update.getElementsByTagName('agent');
         var newPhones = update.getElementsByTagName('phone');
         var dbChanged = false;
+        var agentPhoneChanged = false;
 
         this.minTime = Math.min(this.minTime, start);
         this.maxTime = Math.max(this.maxTime, end);
@@ -1239,6 +1286,7 @@ function QDataBase (visibleCols, visibleRows) {
 
             if (!oldAgent) {
                 dbChanged = true;
+                agentPhoneChanged = true;
             }
             else {
                 var oldAgentEvents = oldAgent.events;
@@ -1260,6 +1308,7 @@ function QDataBase (visibleCols, visibleRows) {
             if (!agents[i].marked) {
                 delete agents[i];
                 dbChanged = true;
+                agentPhoneChanged = true;
             }
             else {
                 agents[i].marked = false;
@@ -1273,6 +1322,7 @@ function QDataBase (visibleCols, visibleRows) {
                 name = phone.getAttribute('name');
             if (!phones[name]) {
                 dbChanged = true;
+                agentPhoneChanged = true;
             }
             cacheFields(phone);
             phones[name] = phone;
@@ -1284,10 +1334,15 @@ function QDataBase (visibleCols, visibleRows) {
             if (!phones[i].marked) {
                 delete phones[i];
                 dbChanged = true;
+                agentPhoneChanged = true;
             }
             else {
                 phones[i].marked = false;
             }
+        }
+
+        if (agentPhoneChanged) {
+            qDB.phoneAgentDisplay(byId('phonetitle').value);
         }
 
         return dbChanged;
@@ -2024,6 +2079,10 @@ function QOptions () {
             that.preventScroll();
         });
 
+        byId('phonetitle').addEventListener('change', function () {
+            qDB.phoneAgentDisplay(this.value);
+        });
+
         form.find('input[type="button"]').on('click', function () {
             qDB.filter();
             that.preventScroll();
@@ -2330,7 +2389,7 @@ function QPolling (onFreshData) {
 
     function tryNewRequest () {
         if (!stopPolling && !document.hidden) {
-            var request = '?_username=' + username + ';_password=' + password + ';start=' + requestStart + ';end=' + requestEnd + ';recursive=' + qOpts.recursive + ';initial=' + (firstRequest ? 1 : 0);
+            var request = '?_username=' + username + ';_password=' + password + ';start=' + requestStart + ';end=' + requestEnd + ';recursive=' + qOpts.recursive;
             ajaxGet(request, response, function () {    // on error, poll again
                 timeoutHandle = setTimeout(tryNewRequest, qMenu.type === 'table' ? pollDelay : Math.max(20000, pollDelay));
             });
@@ -2346,31 +2405,28 @@ function QPolling (onFreshData) {
         calcTimeFrame();
 
         stopPolling = false;
+        firstRequest = true;
 
         // if all required data is in the cache, don't query server 
         if (START >= qDB.minTime && END <= qDB.maxTime) {
             onFreshData();
-            firstRequest = false;
             stopPolling = true;
             return;    
         }
         // query only what is missing (but only from the beginning)
         else if (START < qDB.minTime && END >= qDB.minTime) {
             onFreshData();
-            firstRequest = qDB.hasUnknownEvents();
             requestStart = START;
             requestEnd = qDB.minTime;
         }
         // query only what is missing (but only from the end)
         else if (START <= qDB.maxTime && END > qDB.maxTime) {
             onFreshData();
-            firstRequest = false;
             requestStart = qDB.maxTime;
             requestEnd = END;
         }
         // if missing data is on both sides, just query everything
         else {
-            firstRequest = qDB.hasUnknownEvents();
             requestStart = START;
             requestEnd = END;
         }
