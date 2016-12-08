@@ -2011,10 +2011,7 @@ function QOptions () {
             'totalrow',
             'queues',
             'agents',
-            'phones',
-            'queuesinclude',
-            'agentsinclude',
-            'phonesinclude'
+            'phones'
         ],
         savedScrollX,
         savedScrollY;
@@ -2084,6 +2081,7 @@ function QOptions () {
         });
 
         form.find('input[type="button"]').on('click', function () {
+            onFormDirty();
             qDB.filter();
             that.preventScroll();
         });
@@ -2131,7 +2129,7 @@ function QOptions () {
     // FORM
     
     var form = $('form').last(),
-        inputs = form.find('select, input'),
+        inputs = form.find('select[multiple!=multiple], input'),
         submitBtn = form.find('input[type="submit"]'),
         originalName = form[0].name.value,
         submitUpdate = submitBtn[0],
@@ -2204,7 +2202,7 @@ function QOptions () {
             }
         }
 
-        if (!dirty && !typeChanged) {
+        if (!dirty && !typeChanged && !copyButtonClicked) {
             return false;
         }
 
@@ -2947,13 +2945,6 @@ function qstatistics_begin () {
         qDB.filter();
     });
 
-
-    // patch move_selected
-    var savedMoveselect = move_selects;
-    window.move_selects = function () {
-        savedMoveselect.apply(window, arguments);
-        qDB.filter();
-    };
 
 
     var handler;
