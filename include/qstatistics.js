@@ -1036,7 +1036,7 @@ function QDataBase (visibleCols, visibleRows) {
 
     this.hasUnknownEvents = function () {
         for (var i in agents) {
-            if (agents.firstEvent() > START) {
+            if (agents[i].events.firstTime() > START) {
                 return true;
             }
         }
