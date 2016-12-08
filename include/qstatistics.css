@@ -266,6 +266,10 @@ text {
 	padding: 0;
 	border: 0;
 	outline: 0!important;
+	-ms-user-select: none;
+	-moz-user-select: none;
+	-webkit-user-select: none;
+	user-select: none
 }
 
 #panel-open-button {
