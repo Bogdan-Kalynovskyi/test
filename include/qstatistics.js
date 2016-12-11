@@ -2912,11 +2912,12 @@ function QUtils () {
         optionsHeading = byId('options-heading'),
         mainContent = byId('main-content'),
         rightPanel = byId('right-panel'),
+        rightMenuHeight = 280 + 39, //byId('right-menu').offsetHeight,
         isExpanded = false;
 
 
     this.eqHeight = function () {
-        mainContent.style.height = Math.max(SLIDES[qMenu.type].scrollHeight, isExpanded ? (rightPanel.scrollHeight + 9) : 0) + 'px';
+        mainContent.style.height = Math.max(SLIDES[qMenu.type].scrollHeight, rightMenuHeight, isExpanded ? (rightPanel.scrollHeight + 9) : 0) + 'px';
     };
 
 
