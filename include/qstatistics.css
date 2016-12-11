@@ -112,6 +112,7 @@ form input.text {
 }
 
 .results .head th {
+	position: relative;
 	padding-left: .4em;
 	padding-right: .4em;
 }
@@ -361,7 +362,7 @@ text {
 #right-menu > button:before {
 	position: absolute;
 	opacity: 0;
-	top: 9px;
+	top: 8px;
 	right: 49px;
 	padding: 5px 9px;
 	border-radius: 18px;
@@ -372,7 +373,7 @@ text {
 	transition: opacity 0.3s;
 }
 #panel-open-button:before {
-	top: 5px;
+	top: 6px;
 }
 
 #panel-open-button:hover:before,

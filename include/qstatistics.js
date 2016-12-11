@@ -390,7 +390,7 @@ function QChart (container) {
             var pos = qDB.colPos.indexOf(id) + 1,
                 i = (!PERIOD && +qOpts.get('allcalls')) ? 1 : 0,              // in Destination mode, don't show "All
                                                                               // calls" in chart
-                n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0),      // in Time mode, don't show "Total" row
+                n = dbTable.length - (qOpts.totalRow ? 1 : 0),                // in Time mode, don't show "Total" row
                 totalVisible = 0;
 
             for (; i < n; i++) {
@@ -413,7 +413,7 @@ function QChart (container) {
         }
         else {
             pieChartOptions.title = 'Row: ' + dbTable[pf.id][0];
-            if (dbTable[id].total) {                                         // this can be false if you save report and then data changes
+            if (dbTable[id].total) {                                   // this can be false if you save report and then data changes
                 cacheTableHeader(id);
                 row = dbTable[id];
                 var totalCallsPos = qDB.colPos.indexOf(0) + 1,
@@ -447,7 +447,7 @@ function QChart (container) {
             hasDurationCols = false,
             cols = [],
             j = 0,
-            n = dbTable.length - (PERIOD && qOpts.totalRow ? 1 : 0);            // for time-based reports, don't show "Total" row
+            n = dbTable.length - (qOpts.totalRow ? 1 : 0);            // for time-based reports, don't show "Total" row
 
         for (; j < n; j++) {
             var dbRow = dbTable[j],
@@ -855,7 +855,7 @@ function QDataBase (visibleCols, visibleRows) {
 
 
     this.sort = function () {
-        if (PERIOD && qOpts.totalRow) {
+        if (qOpts.totalRow) {
             var totalRow = table.pop();
         }
         if (qTable.sortingCol > 0) {
@@ -864,7 +864,7 @@ function QDataBase (visibleCols, visibleRows) {
         else if (qTable.sortingOrder === -1) {
             table.reverse();
         }
-        if (PERIOD && qOpts.totalRow) {
+        if (qOpts.totalRow) {
             table.push(totalRow);
         }
     };
@@ -1577,7 +1577,7 @@ function QDataBase (visibleCols, visibleRows) {
             queueCallsCount = 0,
             agentCallsCount = 0,
             totalCallsCount = 0,
-            showTotal = PERIOD && qOpts.totalRow;
+            showTotal = qOpts.totalRow;
 
         if (showTotal) {
             var colSum = new Array(colPos.length + 1).fill(0);
@@ -2539,7 +2539,7 @@ function QTable () {
         container,
         table,
         theadTr,
-        ths,
+        theadChildren,
         tbody,
         blockRefresh;
 
@@ -2566,7 +2566,7 @@ function QTable () {
 
         table = slide.children[0];
         theadTr = table.children[0].children[0];
-        ths = theadTr.children;
+        theadChildren = theadTr.children;
         tbody = table.children[1];
 
         this.resizeHeader();
@@ -2588,11 +2588,11 @@ function QTable () {
         }
         
 
-        var str = '<th id="0col" align="left"' + getSorting(0) + '>' + (PERIOD ? 'Time' : 'Destination') + '</th>';
+        var str = '<th style="position: relative" id="0col" align="left"' + getSorting(0) + '>' + (PERIOD ? 'Time' : 'Destination') + '</th>';
         
         for (var i in qDB.colPos) {
             var newI = qDB.colPos[i];
-            str += '<th id="' + (newI + 1) + 'col" draggable="true" ondragover="return false" align="left"' + getSorting(newI + 1) + '>' + COLUMNS[newI] + '</th>';
+            str += '<th style="position: relative" id="' + (newI + 1) + 'col" draggable="true" ondragover="return false" align="left"' + getSorting(newI + 1) + '>' + COLUMNS[newI] + '</th>';
         }
 
         return str;
@@ -2655,8 +2655,8 @@ function QTable () {
         tr.addEventListener('dragover', function (evt) {
             var target = evt.target;
 
-            for (var i = 0, n = ths.length; i < n; i++) {
-                var el = ths[i];
+            for (var i = 0, n = theadChildren.length; i < n; i++) {
+                var el = theadChildren[i];
                 if (el !== startTh && el !== target) {
                     el.style.opacity = '';
                 }
@@ -2677,8 +2677,8 @@ function QTable () {
 
         tr.addEventListener('dragend', function () {
             blockRefresh = false;
-            for (var i = 0, n = ths.length; i < n; i++) {
-                ths[i].style.opacity = '';
+            for (var i = 0, n = theadChildren.length; i < n; i++) {
+                theadChildren[i].style.opacity = '';
                 startTh.style.outline = '';
             }
         });
@@ -2701,7 +2701,38 @@ function QTable () {
         });
     }
 
+
+    var rightMenu = byId('right-menu'),
+        panelOpenBtn = byId('panel-open-button');
+
+
+    this.onscroll = function () {
+        var scroll = window.scrollY - 146;
+
+        if (scroll > 0) {
+            panelOpenBtn.style.top = scroll + 'px';
+            rightMenu.style.top = scroll + 39 + 'px';
+            if (qMenu.type === 'table') {
+                for (var i = 0, n = theadChildren.length; i < n; i++) {
+                    theadChildren[i].style.top = scroll + 'px';
+                }
+            }
+        }
+        else {
+            panelOpenBtn.style.top = '';
+            rightMenu.style.top = '';
+            if (qMenu.type === 'table') {
+                for (i = 0, n = theadChildren.length; i < n; i++) {
+                    theadChildren[i].style.top = '';
+                }
+            }
+        }
+    };
+
+    window.addEventListener('scroll', this.onscroll);
 }
+
+
 function QMenu (container) {
     this.types = ['table', 'linechart', 'barchart', 'stacked', 'piechart'];
 
@@ -2759,9 +2790,6 @@ function QMenu (container) {
                 qChart.render(nextType, nextSlide);
             }
         }
-        else {
-            qUtils.eqHeight();
-        }
         upToDate[nextSlideIndex] = true;
 
         byId('go-png').disabled = (nextType === 'table');
@@ -2771,6 +2799,9 @@ function QMenu (container) {
 
         slideIndex = nextSlideIndex;
         this.type = nextType;
+
+        qUtils.eqHeight();
+        qTable.onscroll();
     };
 
 
@@ -2879,21 +2910,13 @@ function QUtils () {
 
     var openButton = byId('panel-open-button'),
         optionsHeading = byId('options-heading'),
-        navbar = byId('nav_bar'),
-        navbarHeight = navbar.offsetHeight,
-        leftContent = byId('left-content'),
+        mainContent = byId('main-content'),
         rightPanel = byId('right-panel'),
         isExpanded = false;
 
 
     this.eqHeight = function () {
-        var rightPanelHeight = isExpanded ? (rightPanel.scrollHeight + 9) : 0,
-            centerPanelHeight = (isExpanded || qMenu.type !== 'table') ? (SLIDES[qMenu.type].scrollHeight + 1) : 0,
-        //headerHeight = 196,
-            maxHeight = Math.max(navbarHeight, window.innerHeight - 196, rightPanelHeight, centerPanelHeight);
-
-        leftContent.style.height = maxHeight + 'px';
-        document.getElementsByTagName('slide')[0].style.maxHeight = maxHeight + 'px';
+        mainContent.style.height = Math.max(SLIDES[qMenu.type].scrollHeight, isExpanded ? (rightPanel.scrollHeight + 9) : 0) + 'px';
     };
 
 
