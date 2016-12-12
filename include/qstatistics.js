@@ -822,6 +822,7 @@ function QDataBase (visibleCols, visibleRows) {
         queues = {},
         agents = {},
         phones = {},
+        reportEnd,
         rowPos,
         table;
 
@@ -1557,8 +1558,7 @@ function QDataBase (visibleCols, visibleRows) {
             result.queueCount = row.queueCount;
             result.agentCount = row.agentCount;
             result.total = row.total;
-            result.totalTime = row.totalTime;
-
+            result.totalTime = PERIOD ? row.totalTime : reportDuration;
             queueCallsCount += result.queueCount;
             agentCallsCount += result.agentCount;
             totalCallsCount += result.total;
@@ -1567,7 +1567,7 @@ function QDataBase (visibleCols, visibleRows) {
         }
 
 
-        var reportDuration = Math.min(moment().unix(), END) - START,
+        var reportDuration = reportEnd - START,
             colPos = that.colPos,
             maxNum = 0,
             maxLoggedIn = 0,
@@ -1604,13 +1604,10 @@ function QDataBase (visibleCols, visibleRows) {
             'External destinations'
         ];
 
-        var reportDuration = Math.min(moment().unix(), END) - START;
-
         for (var i in destinations) {
             if (visibleRows[i]) {
                 var row = newRow();
                 row[0] = destinations[i];
-                row.totalTime = reportDuration;
                 table.push(row);
             }
         }
@@ -1621,15 +1618,14 @@ function QDataBase (visibleCols, visibleRows) {
 
 
     function byTimePeriods () {
-        var now = moment().unix(),
-            startTime = START,
+        var startTime = START,
             endTime = START,
-            finishTime = Math.min(now, END),
+            finishTime = reportEnd,
             calls,
             row,
             formatStr = qUtils.getMomentJSFormat();
 
-        if ((Math.min(now, END) - START) / PERIOD > Math.max(900, window.innerWidth - 380)) {
+        if ((reportEnd - START) / PERIOD > Math.max(900, window.innerWidth - 380)) {
             alert('Too many rows to display. Please set bigger interval.');
             byId('period').value = '0';
             PERIOD = 0;
@@ -1666,8 +1662,7 @@ function QDataBase (visibleCols, visibleRows) {
 
 
     function byHours (period) {
-        var now = moment().unix(),
-            startTime = START,
+        var startTime = START,
             endTime = START - START % period,       // normalized
             calls,
             row,
@@ -1711,9 +1706,9 @@ function QDataBase (visibleCols, visibleRows) {
             table[i] = row;
         }
 
-        while (startTime < END && startTime < now) {
+        while (startTime < reportEnd) {
             endTime += period;
-            endTime = Math.min(endTime, now, END);
+            endTime = Math.min(endTime, reportEnd);
 
             date = moment.unix(startTime);
             reportIndex = date.hour();
@@ -1916,6 +1911,7 @@ function QDataBase (visibleCols, visibleRows) {
 
     this.filter = function () {
         table = [];
+        reportEnd = Math.min(moment().unix(), END);
 
         if (PERIOD === 0) {
             var filteredCalls = that.filterByTime(START, END);
@@ -2720,7 +2716,7 @@ function QTable () {
         }
         else {
             panelOpenBtn.style.top = '';
-            rightMenu.style.top = '5px';
+            rightMenu.style.top = '43px';
             if (qMenu.type === 'table') {
                 for (i = 0, n = theadChildren.length; i < n; i++) {
                     theadChildren[i].style.top = '';
@@ -2986,4 +2982,6 @@ function qstatistics_begin () {
             qUtils.eqHeight();
         }, 100);
     });
+
 }
+
