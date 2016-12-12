@@ -2711,7 +2711,7 @@ function QTable () {
 
         if (scroll > 0) {
             panelOpenBtn.style.top = scroll + 'px';
-            rightMenu.style.top = scroll + 39 + 'px';
+            rightMenu.style.top = scroll + 43 + 'px';
             if (qMenu.type === 'table') {
                 for (var i = 0, n = theadChildren.length; i < n; i++) {
                     theadChildren[i].style.top = scroll + 'px';
@@ -2752,7 +2752,7 @@ function QMenu (container) {
     container.innerHTML = str +
         '<div id="piechart-chooser"></div><button id="zoom-out" onclick="qChart.resetZoom()" class="universal">Reset chart</button>' +
         '<div id="zooming-overlay" ondragstart="return false"></div><div id="left-overlay">&#10096;</div><div id="right-overlay">&#10097;</div>';
-    container.insertAdjacentHTML('afterend', '<section id="right-menu"><button id="go-table" onclick="qMenu.goTo(\'table\')"></button><button id="go-linechart" onclick="qMenu.goTo(\'linechart\')"></button><button id="go-barchart" onclick="qMenu.goTo(\'barchart\')"></button><button id="go-stacked" onclick="qMenu.goTo(\'stacked\')"></button><button id="go-piechart" onclick="qMenu.goTo(\'piechart\')"></button><button id="go-csv" onclick="qDB.downloadCSV()"></button><button id="go-png" onclick="qChart.downloadPNG()"></button></section>');
+    byId('main-content').insertAdjacentHTML('afterend', '<section style="right: 5px; top: 43px" id="right-menu"><button id="go-table" onclick="qMenu.goTo(\'table\')"></button><button id="go-linechart" onclick="qMenu.goTo(\'linechart\')"></button><button id="go-barchart" onclick="qMenu.goTo(\'barchart\')"></button><button id="go-stacked" onclick="qMenu.goTo(\'stacked\')"></button><button id="go-piechart" onclick="qMenu.goTo(\'piechart\')"></button><button id="go-csv" onclick="qDB.downloadCSV()"></button><button id="go-png" onclick="qChart.downloadPNG()"></button></section>');
     // todo put this in thml
 
     var slides = container.children;
@@ -2912,12 +2912,12 @@ function QUtils () {
         optionsHeading = byId('options-heading'),
         mainContent = byId('main-content'),
         rightPanel = byId('right-panel'),
-        rightMenuHeight = 280 + 39, //byId('right-menu').offsetHeight,
+        rightMenuHeight = 280 + 38,
         isExpanded = false;
 
 
     this.eqHeight = function () {
-        mainContent.style.height = Math.max(SLIDES[qMenu.type].scrollHeight, rightMenuHeight, isExpanded ? (rightPanel.scrollHeight + 9) : 0) + 'px';
+        mainContent.style.height = Math.max(SLIDES[qMenu.type].offsetHeight, rightMenuHeight, isExpanded ? (rightPanel.clientHeight + 9) : 0) + 'px';
     };
 
 
@@ -2956,14 +2956,15 @@ function byName (name) {
 
 
 function qstatistics_begin () {
+    var leftContent = byId('left-content');
     window.qUtils = new QUtils();
     window.qOpts = new QOptions();
-    window.qMenu = new QMenu(byId('left-content'));
+    window.qMenu = new QMenu(leftContent);
 
     window.qDB = new QDataBase(qOpts.getColumns(), qOpts.getRows());
 
     window.qTable = new QTable();
-    window.qChart = new QChart(byId('left-content'));
+    window.qChart = new QChart(leftContent);
 
     window.qPolling = window.qsPolling = new QPolling(function () {
         qDB.filter();

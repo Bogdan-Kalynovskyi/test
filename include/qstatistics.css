@@ -250,8 +250,8 @@ text {
 
 #right-menu {
 	position: absolute;
-	right: 0;
-	top: 39px;
+	right: 5px;
+	top: 43px;
 	width: 40px;
 	z-index: 1555;
 }
@@ -362,7 +362,7 @@ text {
 #right-menu > button:before {
 	position: absolute;
 	opacity: 0;
-	top: 8px;
+	top: 9px;
 	right: 49px;
 	padding: 5px 9px;
 	border-radius: 18px;
