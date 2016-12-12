@@ -225,6 +225,9 @@ function QChart (container) {
         }
        
         str += '</select></label><label> or row <select id="piechart-by-row"><option value>Choose row</option>';
+
+        // never display total calls column in a row, because with it all the other call-count columns will loose sense
+        // never display rows that have only non-zero logged-in-time. Because it will be no sense to display chart with 100%
         var totalCallsPos = qDB.colPos.indexOf(0) + 1,
             loggedInPos = qDB.colPos.indexOf(COL_loggedIn) + 1;
         
@@ -233,7 +236,9 @@ function QChart (container) {
                 totalVisible = 0;
 
             for (var j = 1; j < colPosLen; j++) {
-                totalVisible += row[j];
+                if (j !== totalCallsPos && j !== loggedInPos) {
+                    totalVisible += row[j];
+                }
             }
 
             if (totalVisible) {

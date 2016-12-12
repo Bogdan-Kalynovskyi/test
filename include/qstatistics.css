@@ -246,6 +246,7 @@ text {
 	right: 0;
 	z-index: 1000;
 	text-align: center;
+	white-space: nowrap;
 }
 
 #right-menu {
