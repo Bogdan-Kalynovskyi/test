@@ -402,7 +402,7 @@ function QChart (container) {
                     }
                 }
                 else {
-                    if (row[pos] || row.isAgent) {
+                    if (row[pos] || row.hasLIT) {
                         data.push([row[0] + timeUnit, +(row[pos] / loggedInTimeDivider).toFixed(2)]);
                     }
                 }
@@ -932,13 +932,13 @@ function QDataBase (visibleCols, visibleRows) {
                         row[j1] = qUtils.timeFormat(row[j1], 3);
                     }
                     else if (loggedInCol) {
-                        row[j1] = (PERIOD || table[i].isAgent) ? qUtils.timeFormat(row[j1], 4) : '';
+                        row[j1] = (PERIOD || table[i].hasLIT) ? qUtils.timeFormat(row[j1], 4) : '';
                     }
 
                     if (withPercentage) {
                         var tblRow = table[i];
                         if (loggedInCol) {
-                            if (PERIOD || tblRow[j0] || tblRow.isAgent) {
+                            if (tblRow[j0] || tblRow.hasLIT) {
                                 perc = tblRow.totalTime ? Math.round(100 * tblRow[j0] / tblRow.totalTime) : 0;
                             }
                             else {
@@ -1095,7 +1095,7 @@ function QDataBase (visibleCols, visibleRows) {
         row.total = 0;
         row.calls = [];
         row.qnaCalls = [];
-        row.isAgent = false;
+        row.hasLIT = false;
         return row;
     }
 
@@ -1525,6 +1525,7 @@ function QDataBase (visibleCols, visibleRows) {
                     }
                 }
             }
+            colSum.hasLIT = true;
             colSum.queueCount = queueCallsCount;
             colSum.agentCount = agentCallsCount;
             colSum.total = totalCallsCount;
@@ -1556,16 +1557,12 @@ function QDataBase (visibleCols, visibleRows) {
             result.queueCount = row.queueCount;
             result.agentCount = row.agentCount;
             result.total = row.total;
-            if (PERIOD) {
-                result.totalTime = row.totalTime;
-            }
-            else {
-                result.totalTime = reportDuration;
-            }
+            result.totalTime = row.totalTime;
+
             queueCallsCount += result.queueCount;
             agentCallsCount += result.agentCount;
             totalCallsCount += result.total;
-            result.isAgent = row.isAgent;
+            result.hasLIT = row.hasLIT;
             return result;
         }
 
@@ -1607,10 +1604,13 @@ function QDataBase (visibleCols, visibleRows) {
             'External destinations'
         ];
 
+        var reportDuration = Math.min(moment().unix(), END) - START;
+
         for (var i in destinations) {
             if (visibleRows[i]) {
                 var row = newRow();
                 row[0] = destinations[i];
+                row.totalTime = reportDuration;
                 table.push(row);
             }
         }
@@ -1906,7 +1906,7 @@ function QDataBase (visibleCols, visibleRows) {
                 }
 
                 if (!multiRow) {
-                    row.isAgent = dest === 'agents';
+                    row.hasLIT = dest === 'agents';
                     table.push(row);
                 }
             }
@@ -2720,7 +2720,7 @@ function QTable () {
         }
         else {
             panelOpenBtn.style.top = '';
-            rightMenu.style.top = '';
+            rightMenu.style.top = '5px';
             if (qMenu.type === 'table') {
                 for (i = 0, n = theadChildren.length; i < n; i++) {
                     theadChildren[i].style.top = '';
@@ -2752,7 +2752,7 @@ function QMenu (container) {
     container.innerHTML = str +
         '<div id="piechart-chooser"></div><button id="zoom-out" onclick="qChart.resetZoom()" class="universal">Reset chart</button>' +
         '<div id="zooming-overlay" ondragstart="return false"></div><div id="left-overlay">&#10096;</div><div id="right-overlay">&#10097;</div>';
-    byId('main-content').insertAdjacentHTML('afterend', '<section style="right: 5px; top: 43px" id="right-menu"><button id="go-table" onclick="qMenu.goTo(\'table\')"></button><button id="go-linechart" onclick="qMenu.goTo(\'linechart\')"></button><button id="go-barchart" onclick="qMenu.goTo(\'barchart\')"></button><button id="go-stacked" onclick="qMenu.goTo(\'stacked\')"></button><button id="go-piechart" onclick="qMenu.goTo(\'piechart\')"></button><button id="go-csv" onclick="qDB.downloadCSV()"></button><button id="go-png" onclick="qChart.downloadPNG()"></button></section>');
+    byId('main-content').insertAdjacentHTML('afterend', '<section style="right: 5px; top: 43px;" id="right-menu"><button id="go-table" onclick="qMenu.goTo(\'table\')"></button><button id="go-linechart" onclick="qMenu.goTo(\'linechart\')"></button><button id="go-barchart" onclick="qMenu.goTo(\'barchart\')"></button><button id="go-stacked" onclick="qMenu.goTo(\'stacked\')"></button><button id="go-piechart" onclick="qMenu.goTo(\'piechart\')"></button><button id="go-csv" onclick="qDB.downloadCSV()"></button><button id="go-png" onclick="qChart.downloadPNG()"></button></section>');
     // todo put this in thml
 
     var slides = container.children;
