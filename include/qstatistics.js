@@ -2734,27 +2734,33 @@ function QTable () {
 
     var rightMenu = byId('right-menu'),
         panelOpenBtn = byId('panel-open-button'),
-        bannerHeight;
+        banner = byId('h_title'),
+        bannerHeight = banner.clientHeight;
 
     this.onscroll = function () {
-        var scroll = window.pageYOffset - 53 - bannerHeight || (bannerHeight = byId('h_title').clientHeight);
-        var i = 0, n = theadChildren.length;
+        if (!bannerHeight) {
+            bannerHeight = banner.clientHeight;
+        }
+        if (bannerHeight) {
+            var scroll = window.pageYOffset - 53 - bannerHeight;
+            var i = 0, n = theadChildren.length;
 
-        if (scroll > 0) {
-            panelOpenBtn.style.top = scroll + 'px';
-            rightMenu.style.top = scroll + 43 + 'px';
-            if (qMenu.type === 'table') {
-                for (; i < n; i++) {
-                    theadChildren[i].style.top = scroll + 'px';
+            if (scroll > 0) {
+                panelOpenBtn.style.top = scroll + 'px';
+                rightMenu.style.top = scroll + 43 + 'px';
+                if (qMenu.type === 'table') {
+                    for (; i < n; i++) {
+                        theadChildren[i].style.top = scroll + 'px';
+                    }
                 }
             }
-        }
-        else {
-            panelOpenBtn.style.top = '';
-            rightMenu.style.top = '43px';
-            if (qMenu.type === 'table') {
-                for (; i < n; i++) {
-                    theadChildren[i].style.top = '';
+            else {
+                panelOpenBtn.style.top = '';
+                rightMenu.style.top = '43px';
+                if (qMenu.type === 'table') {
+                    for (; i < n; i++) {
+                        theadChildren[i].style.top = '';
+                    }
                 }
             }
         }
