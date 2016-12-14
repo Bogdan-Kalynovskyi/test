@@ -980,7 +980,12 @@ function QDataBase (visibleCols, visibleRows) {
 
     this.getData = function () {
         if (!table.length) {
-            return new Array(this.colPos.length).fill(0).unshift('');
+            var arr = new Array(this.colPos.length + 1);
+            arr[0] = '';
+            var i = arr.length;
+            while (i-- > 1) {
+                arr[i] = 0;
+            }
         }
         else {
             return table;
@@ -1097,7 +1102,13 @@ function QDataBase (visibleCols, visibleRows) {
 
 
     function newRow () {
-        var row = new Array(COL_timeStart + 1 + (visibleCols[COL_loggedIn] ? 1 : 0)).fill(0);
+        var length = COL_timeStart + 1 + (visibleCols[COL_loggedIn] ? 1 : 0),
+            row = new Array(length);
+
+        while (length--) {
+            row[length] = 0;
+        }
+
         row.total = 0;
         row.calls = [];
         row.qnaCalls = [];
@@ -1582,7 +1593,13 @@ function QDataBase (visibleCols, visibleRows) {
             showTotal = qOpts.totalRow;
 
         if (showTotal) {
-            var colSum = new Array(colPos.length + 1).fill(0);
+            var length = colPos.length + 1,
+                colSum = new Array(length);
+
+            while (length--) {
+                colSum[length] = 0;
+            }
+
             colSum[0] = 'Total';
         }
 
@@ -2708,7 +2725,7 @@ function QTable () {
 
 
     this.onscroll = function () {
-        var scroll = window.scrollY - 146;
+        var scroll = window.pageYOffset - 146;
 
         if (scroll > 0) {
             panelOpenBtn.style.top = scroll + 'px';
@@ -2955,7 +2972,6 @@ function byName (name) {
 }
 
 
-
 function qstatistics_begin () {
     var leftContent = byId('left-content');
     window.qUtils = new QUtils();
@@ -2989,4 +3005,3 @@ function qstatistics_begin () {
     });
 
 }
-
