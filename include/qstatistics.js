@@ -2721,11 +2721,12 @@ function QTable () {
 
 
     var rightMenu = byId('right-menu'),
-        panelOpenBtn = byId('panel-open-button');
+        panelOpenBtn = byId('panel-open-button'),
+        bannerHeight;
 
 
     this.onscroll = function () {
-        var scroll = window.pageYOffset - 146;
+        var scroll = window.pageYOffset - 53 - bannerHeight || (bannerHeight = byId('h_title').clientHeight);
 
         if (scroll > 0) {
             panelOpenBtn.style.top = scroll + 'px';
