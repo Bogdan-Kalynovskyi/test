@@ -668,10 +668,10 @@ function QChart (container) {
                 var svgr = SLIDES[type].getElementsByTagName('svg');
                 if (svgr) {
                     svgr = svgr[0];
-                    var title = svgr.children[2].children[0];
+                    var title = svgr.childNodes[2].childNodes[0];
                     title.setAttribute('y', 32);
                     // a tricky part of Google charts integration. Find rectangle inside which the chart is rendered
-                    svgr = (svgr.children[4] && svgr.children[4].children[0]) || (svgr.children[3] && svgr.children[3].children[0]) || svgr.children[2].children[0];
+                    svgr = (svgr.childNodes[4] && svgr.childNodes[4].childNodes[0]) || (svgr.childNodes[3] && svgr.childNodes[3].childNodes[0]) || svgr.childNodes[2].childNodes[0];
                     svgr.style.cursor = 'col-resize';
                     charts[type].svgr = svgr;
                 }
@@ -2743,13 +2743,12 @@ function QTable () {
         }
         if (bannerHeight) {
             var scroll = window.pageYOffset - 53 - bannerHeight;
-            var i = 0, n = theadChildren.length;
 
             if (scroll > 0) {
                 panelOpenBtn.style.top = scroll + 'px';
                 rightMenu.style.top = scroll + 43 + 'px';
                 if (qMenu.type === 'table') {
-                    for (; i < n; i++) {
+                    for (var i = 0, n = theadChildren.length; i < n; i++) {
                         theadChildren[i].style.top = scroll + 'px';
                     }
                 }
@@ -2758,7 +2757,7 @@ function QTable () {
                 panelOpenBtn.style.top = '';
                 rightMenu.style.top = '43px';
                 if (qMenu.type === 'table') {
-                    for (; i < n; i++) {
+                    for (var i = 0, n = theadChildren.length; i < n; i++) {
                         theadChildren[i].style.top = '';
                     }
                 }
