@@ -130,6 +130,7 @@ function QChart (container) {
         endX = null,
         goodEvt,
         blockRefresh,
+        dateformat = qOpts.dateformat.replace('YYYY', 'yyyy').replace('DD', 'dd'),
         chartArea = {
             top: 99,
             left: '8%',
@@ -517,10 +518,16 @@ function QChart (container) {
             data.push(row);
         }
 
+
+        var googleFormat = dateformat;
+        if (PERIOD < DAY) {
+            googleFormat += ' ' + (qOpts.timeformat === '12' ? 'hh:mmaa' : 'HH:mm');
+        }
+
         // google charts display time on x axis better than I do, because they know font and the scale
         if (SAME_TZ && PERIOD > 0) {
             chartOptions[type].hAxis = {
-                format: qUtils.getGoogleApiFormat(),
+                format: googleFormat,
                 viewWindow: {
                     min: new Date(START * 1000),
                     max: new Date(Math.min(Date.now(), END * 1000))
@@ -813,7 +820,7 @@ var START,
     COL_loggedIn = 29,
 
     SAME_TZ,            // same timezone
-    COL_POS = [];     // works when dragndrop columns
+    COL_POS = [];       // works when dragndrop columns
 
 for (PERIOD = 0; PERIOD < COLUMNS.length; PERIOD++) {  // here PERIOD is just counter, and will be changed later
     COL_POS[PERIOD] = PERIOD;
@@ -1645,7 +1652,11 @@ function QDataBase (visibleCols, visibleRows) {
             finishTime = reportEnd,
             calls,
             row,
-            formatStr = qUtils.getMomentJSFormat();
+            formatStr = qOpts.dateformat;
+
+        if (PERIOD < DAY) {
+            formatStr += ' ' + (qOpts.timeformat === '12' ? 'hh:mma' : 'HH:mm');
+        }
 
         if ((reportEnd - START) / PERIOD > Math.max(900, window.innerWidth - 380)) {
             alert('Too many rows to display. Please set bigger interval.');
@@ -1692,7 +1703,6 @@ function QDataBase (visibleCols, visibleRows) {
             date = moment.unix(startTime),
             totalHours = DAY / period,
             isHalfHours = period === 1800,
-            timeFormat = qOpts.config('timeformat'),
             startHour = date.hour();
 
         if (isHalfHours) {
@@ -1712,7 +1722,7 @@ function QDataBase (visibleCols, visibleRows) {
             if (isHalfHours) {
                 reportIndex = Math.floor(reportIndex / 2);
             }
-            if (timeFormat === '12') {
+            if (qOpts.timeFormat === '12') {
                 ampm = reportIndex >= 12 ? 'pm' : 'am';
                 reportIndex %= 12;
             }
@@ -2132,20 +2142,22 @@ function QOptions () {
     this.get = function (id) {
         return byId(id).value;
     };
-    
+
 
     PERIOD = +this.get('period');
     this.recursive = +byName('recursive');
     this.slaTime = +this.get('slatime');
     this.totalRow = +this.get('totalrow');
     this.title = document.getElementsByTagName('title')[0];
+    this.timeformat = this.config('timeformat');
+    this.dateformat = this.config('dateformat');
     moment.tz.setDefault(this.config('timezone'));
     SAME_TZ = (new Date()).getTimezoneOffset() === moment().utcOffset();
     // todo will not work so good in periods with daylight time saving
 
-    
+
     // FORM
-    
+
     var form = $('form').last(),
         inputs = form.find('select[multiple!=multiple], input'),
         submitBtn = form.find('input[type="submit"]'),
@@ -2159,7 +2171,7 @@ function QOptions () {
 
     setWatchers();
 
-    
+
     function onFormDirty () {
         dirty = true;
         that.enableSaveButton();
@@ -2174,7 +2186,7 @@ function QOptions () {
         submitCopy.value = 'Save as copy';
     };
 
-    
+
     function onFormClean () {
         submitUpdate.disabled = true;
         submitUpdate.value = 'Report saved';
@@ -2185,8 +2197,8 @@ function QOptions () {
         dirty = false;
         typeChanged = false;
     }
-    
- 
+
+
     if (form[0].id.value) {
         onFormClean();
         this.title.innerHTML = 'Call statistics :: ' + qUtils.escapeHtml(form[0].name.value);
@@ -2277,8 +2289,8 @@ function QOptions () {
         qUtils.eqHeight();
         return false;
     }
-    
-    
+
+
     if (!form[0].id.value) {
         submitCopy.style.display = 'none';
     }
@@ -2349,7 +2361,7 @@ function QPolling (onFreshData) {
 
     function calcTimeFrame () {
         lastToday = moment().startOf('day');
-        
+
         startDay = qOpts.get('startday');
         if (startDay === '1') {
             START = moment({
@@ -2386,7 +2398,7 @@ function QPolling (onFreshData) {
 
         START = START.unix();
         END = END.unix();
-        
+
         var temp1 = Math.min(START, END);
         var temp2 = Math.max(START, END);
         START = temp1;
@@ -2414,7 +2426,7 @@ function QPolling (onFreshData) {
 
 
     this.update = function () {
-        byId('zoom-out').style.display = 'none'; 
+        byId('zoom-out').style.display = 'none';
         qChart.originalZoom = null;
 
         stopCurrentRequest();
@@ -2423,11 +2435,11 @@ function QPolling (onFreshData) {
         stopPolling = false;
         firstRequest = true;
 
-        // if all required data is in the cache, don't query server 
+        // if all required data is in the cache, don't query server
         if (START >= qDB.minTime && END <= qDB.maxTime) {
             onFreshData();
             stopPolling = true;
-            return;    
+            return;
         }
         // query only what is missing (but only from the beginning)
         else if (START < qDB.minTime && END >= qDB.minTime) {
@@ -2450,7 +2462,7 @@ function QPolling (onFreshData) {
         if (!preloaderShown && requestEnd - requestStart > DAY / 2) {
             showPreloader();
         }
-      
+
         tryNewRequest();
     };
 
@@ -2521,8 +2533,8 @@ function QPolling (onFreshData) {
         stopCurrentRequest();
         tryNewRequest();
     }
-    
-    
+
+
     window.addEventListener('beforeunload', visibilityChange);
 
 
@@ -2569,7 +2581,7 @@ function QTable () {
         if (blockRefresh) {
             return;
         } // todo deep vs shallow rerender
-        
+
         var i,
             str = '',
             data = qDB.getTable();
@@ -2589,7 +2601,7 @@ function QTable () {
 
         this.resizeHeader();
         assignHeaderEvents();
-        
+
         qUtils.eqHeight();
         qOpts.preventScroll();
     };
@@ -2604,10 +2616,10 @@ function QTable () {
                 return '';
             }
         }
-        
+
 
         var str = '<th style="position: relative" id="0col" align="left"' + getSorting(0) + '>' + (PERIOD ? 'Time' : 'Destination') + '</th>';
-        
+
         for (var i in qDB.colPos) {
             var newI = qDB.colPos[i];
             str += '<th style="position: relative" id="' + (newI + 1) + 'col" draggable="true" ondragover="return false" align="left"' + getSorting(newI + 1) + '>' + COLUMNS[newI] + '</th>';
@@ -2659,7 +2671,7 @@ function QTable () {
                 qDB.filter();
             }
         });
-        
+
         tr.addEventListener('dragstart', function (evt) {
             blockRefresh = true;
             startTh = evt.target;
@@ -2724,15 +2736,15 @@ function QTable () {
         panelOpenBtn = byId('panel-open-button'),
         bannerHeight;
 
-
     this.onscroll = function () {
         var scroll = window.pageYOffset - 53 - bannerHeight || (bannerHeight = byId('h_title').clientHeight);
+        var i = 0, n = theadChildren.length;
 
         if (scroll > 0) {
             panelOpenBtn.style.top = scroll + 'px';
             rightMenu.style.top = scroll + 43 + 'px';
             if (qMenu.type === 'table') {
-                for (var i = 0, n = theadChildren.length; i < n; i++) {
+                for (; i < n; i++) {
                     theadChildren[i].style.top = scroll + 'px';
                 }
             }
@@ -2741,7 +2753,7 @@ function QTable () {
             panelOpenBtn.style.top = '';
             rightMenu.style.top = '43px';
             if (qMenu.type === 'table') {
-                for (i = 0, n = theadChildren.length; i < n; i++) {
+                for (; i < n; i++) {
                     theadChildren[i].style.top = '';
                 }
             }
@@ -2783,7 +2795,7 @@ function QMenu (container) {
             nextSlide = slides[nextSlideIndex];
 
         SLIDES[nextType] = nextSlide;
-        
+
         if (nextSlideIndex !== slideIndex) {
             slide.style.opacity = 0;
             nextSlide.style.zIndex = ++zIndex;
@@ -2795,7 +2807,7 @@ function QMenu (container) {
         if (qChart.originalZoom && slideIndex !== nextSlideIndex) {
             slideIndex = nextSlideIndex;
             this.type = nextType;
-       
+
             qChart.resetZoom();
             qDB.filter();
             return; // because filter will call goTo again
@@ -2832,33 +2844,11 @@ function QMenu (container) {
 
 
 function QUtils () {
-
     this.pad = function (s) {
         if (s < 10) {
             s = '0' + s;
         }
         return s;
-    };
-
-
-    this.getMomentJSFormat = function () {
-        if (PERIOD < DAY) {
-            return qOpts.config('dateformat') + ' ' + (qOpts.config('timeformat') === '12' ? 'hh:mma' : 'HH:mm');
-        }
-        else {
-            return qOpts.config('dateformat');
-        }
-    };
-
-
-    this.getGoogleApiFormat = function () {
-        var df = qOpts.config('dateformat').replace('YYYY', 'yyyy').replace('DD', 'dd');
-        if (PERIOD < DAY) {
-            return df + ' ' + (qOpts.config('timeformat') === '12' ? 'hh:mmaa' : 'HH:mm');
-        }
-        else {
-            return df;
-        }
     };
 
 
