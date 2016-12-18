@@ -584,15 +584,15 @@ function QChart (container) {
 
     function mousedown (evt) {
         var svgr = charts[qMenu.type] && charts[qMenu.type].svgr;
-        goodEvt = svgr && (svgr === evt.target || svgr.contains(evt.target));
+        goodEvt = svgr && (svgr === evt.target || qUtils.contains(svgr, evt.target));
         
         if (goodEvt) {
             rectSVG = svgr.getBoundingClientRect();
             startX = evt.pageX;
             zoomingOverlay.style.top = rectSVG.top + 'px';
             zoomingOverlay.style.bottom = document.body.clientHeight - rectSVG.bottom + 'px';
-            zoomingOverlay.style.left = startX - window.scrollX + 'px';
-            zoomingOverlay.style.right = document.body.clientWidth + window.scrollX - startX + 'px';
+            zoomingOverlay.style.left = startX - window.pageXOffset + 'px';
+            zoomingOverlay.style.right = document.body.clientWidth + window.pageXOffset - startX + 'px';
             zoomingOverlay.style.display = 'block';
             container.onmousemove = mousemove;
         }
@@ -601,10 +601,8 @@ function QChart (container) {
 
     function mousemove (evt) {
         endX = evt.pageX;
-        zoomingOverlay.style.top = rectSVG.top + 'px';
-        zoomingOverlay.style.bottom = document.body.clientHeight - rectSVG.bottom + 'px';
-        zoomingOverlay.style.left = Math.min(startX, endX) - window.scrollX + 'px';
-        zoomingOverlay.style.right = document.body.clientWidth + window.scrollX - Math.max(startX, endX) + 'px';
+        zoomingOverlay.style.left = Math.min(startX, endX) - window.pageXOffset + 'px';
+        zoomingOverlay.style.right = document.body.clientWidth + window.pageXOffset - Math.max(startX, endX) + 'px';
     }
 
     
@@ -623,8 +621,8 @@ function QChart (container) {
                 leftTime = START,
                 rightTime = Math.min(now, END);
 
-            START += (rightTime - leftTime) * (minX - window.scrollX - rectSVG.left) / rectSVG.width;
-            END = rightTime - (rightTime - leftTime) * (rectSVG.right + window.scrollX - maxX) / rectSVG.width;
+            START += (rightTime - leftTime) * (minX - window.pageXOffset - rectSVG.left) / rectSVG.width;
+            END = rightTime - (rightTime - leftTime) * (rectSVG.right + window.pageXOffset - maxX) / rectSVG.width;
             PERIOD = that.originalZoom.period * (Math.min(now, END) - START) / (Math.min(now, that.originalZoom.end) - that.originalZoom.start);
 
             reRenderWithoutAnimation();
@@ -638,14 +636,14 @@ function QChart (container) {
     
     function mousewheel (evt) {
         var svgr = charts[qMenu.type] && charts[qMenu.type].svgr;
-        if (svgr && evt.deltaY && (svgr === evt.target || svgr.contains(evt.target))) {
+        if (svgr && evt.deltaY && (svgr === evt.target || qUtils.contains(svgr, evt.target))) {
             setZoomBackup();
             
             var now = moment().unix(),
                 leftTime = START,
                 rightTime = Math.min(now, END),
                 rectSVG = svgr.getBoundingClientRect(),
-                center = evt.pageX + window.scrollX,
+                center = evt.pageX + window.pageXOffset,
                 left = center - rectSVG.left,
                 right = rectSVG.right - center,
                 zoom = -0.2 * evt.deltaY / 100;
@@ -1262,11 +1260,11 @@ function QDataBase (visibleCols, visibleRows) {
             call.talk = +call.getAttribute('talktime');
             call.total = +call.getAttribute('totaltime');
 
-            var oldCall = callIds[call.id];
+            var oldCall = callIds[call.getAttribute('id')];
             if (oldCall) {
                 calls.splice(calls.indexOf(oldCall), 1);
             }
-            callIds[call.id] = call;
+            callIds[call.getAttribute('id')] = call;
             calls.push(call);
             dbChanged = true;
         }
@@ -1284,11 +1282,11 @@ function QDataBase (visibleCols, visibleRows) {
         for (i = 0, n = newQueues.length; i < n; i++) {
             // todo: now I simply overwrite queues. Todo detect queue changes
             var queue = newQueues[i];
-            if (!queues[queue.id]) {
+            if (!queues[queue.getAttribute('id')]) {
                 dbChanged = true;
             }
             queue.name = queue.getAttribute('name');
-            queues[queue.id] = queue;
+            queues[queue.getAttribute('id')] = queue;
             queue.marked = true;
         }
 
@@ -1306,7 +1304,7 @@ function QDataBase (visibleCols, visibleRows) {
         for (i = 0, n = newAgents.length; i < n; i++) {
             // todo: now I simply overwrite queues. Todo detect queue changes
             var agent = newAgents[i],
-                oldAgent = agents[agent.id];
+                oldAgent = agents[agent.getAttribute('id')];
 
             if (!oldAgent) {
                 dbChanged = true;
@@ -1320,7 +1318,7 @@ function QDataBase (visibleCols, visibleRows) {
             agent.dtype = agent.getAttribute('dtype');
             agent.dnumber = agent.getAttribute('dnumber');
             agent.events = oldAgentEvents || new QAgentEvents();
-            agents[agent.id] = agent;
+            agents[agent.getAttribute('id')] = agent;
             agent.marked = true;
 
             if ((agent.events.add(agent.getElementsByTagName('event')) || agent.events.isLoggedIn()) && visibleCols[COL_loggedIn]) {
@@ -2046,8 +2044,8 @@ function QOptions () {
 
 
     window.addEventListener('scroll', function () {
-        savedScrollX = window.scrollX;
-        savedScrollY = window.scrollY;
+        savedScrollX = window.pageXOffset;
+        savedScrollY = window.pageYOffset;
     });
 
 
@@ -2276,7 +2274,7 @@ function QOptions () {
 
 
         $.post(form.attr('action'), form.serialize(), function (response) {
-            var id = response.getElementsByTagName('return')[0].id;
+            var id = response.getElementsByTagName('return')[0].getAttribute('id');
             form[0].id.value = id;
             window.history.pushState('', form[0].name, '//' + location.host + location.pathname + '?id=' + id);
             onFormClean();
@@ -2757,7 +2755,7 @@ function QTable () {
                 panelOpenBtn.style.top = '';
                 rightMenu.style.top = '43px';
                 if (qMenu.type === 'table') {
-                    for (var i = 0, n = theadChildren.length; i < n; i++) {
+                    for (i = 0, n = theadChildren.length; i < n; i++) {
                         theadChildren[i].style.top = '';
                     }
                 }
@@ -2899,6 +2897,19 @@ function QUtils () {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+    };
+    
+    
+    this.contains = function (haystack, needle) {
+        if (haystack.contains) {
+            return haystack.contains(needle);
+        }
+        else {
+            while (needle && needle !== haystack) {
+                needle = needle.parentNode;
+            }
+            return needle;
+        }
     };
 
 
