@@ -696,7 +696,7 @@ function QChart (container) {
         if (!window.google || !google.visualization) {
             setTimeout(function () {
                 that.render();
-            }, 200);
+            }, 100);
         }
         else {
             google.charts.setOnLoadCallback(function () {
@@ -747,8 +747,39 @@ function QChart (container) {
 
 
     this.downloadPNG = function () {
-        var fileName = (qOpts.get('name').replace(/[^\w\s]/g, '_') || 'noname') + '.png';
-        qUtils.downloadUrl(charts[qMenu.type].getImageURI(), fileName);
+        function b64toBlob(b64Data, contentType, sliceSize) {
+            sliceSize = sliceSize || 512;
+
+            var byteCharacters = atob(b64Data);
+            var byteArrays = [];
+
+            for (var offset = 0, len = byteCharacters.length; offset < len; offset += sliceSize) {
+                var slice = byteCharacters.slice(offset, offset + sliceSize),
+                    sliceLen = slice.length;
+
+                var byteNumbers = new Array(slice.length);
+                for (var i = 0; i < sliceLen; i++) {
+                    byteNumbers[i] = slice.charCodeAt(i);
+                }
+
+                var byteArray = new Uint8Array(byteNumbers);
+
+                byteArrays.push(byteArray);
+            }
+
+            return new Blob(byteArrays, {type: contentType});
+        }
+
+
+        var fileName = (qOpts.get('name').replace(/[^\w\s]/g, '_') || 'noname') + '.png',
+            b64data = charts[qMenu.type].getImageURI();
+
+        if (navigator.msSaveBlob) { // IE 10+
+            navigator.msSaveBlob(b64toBlob(b64data.substr(22), 'image/png'), fileName);
+        }
+        else {
+            qUtils.downloadUrl(b64data, fileName);
+        }
     };
 
 
