@@ -747,26 +747,23 @@ function QChart (container) {
 
 
     this.downloadPNG = function () {
-        function b64toBlob(b64Data, contentType, sliceSize) {
-            sliceSize = sliceSize || 512;
-
+        function b64toBlob(b64Data, contentType) {
+            var sliceSize = 1024;
             var byteCharacters = atob(b64Data);
-            var byteArrays = [];
+            var bytesLength = byteCharacters.length;
+            var slicesCount = Math.ceil(bytesLength / sliceSize);
+            var byteArrays = new Array(slicesCount);
 
-            for (var offset = 0, len = byteCharacters.length; offset < len; offset += sliceSize) {
-                var slice = byteCharacters.slice(offset, offset + sliceSize),
-                    sliceLen = slice.length;
+            for (var sliceIndex = 0; sliceIndex < slicesCount; ++sliceIndex) {
+                var begin = sliceIndex * sliceSize;
+                var end = Math.min(begin + sliceSize, bytesLength);
 
-                var byteNumbers = new Array(slice.length);
-                for (var i = 0; i < sliceLen; i++) {
-                    byteNumbers[i] = slice.charCodeAt(i);
+                var bytes = new Array(end - begin);
+                for (var offset = begin, i = 0 ; offset < end; ++i, ++offset) {
+                    bytes[i] = byteCharacters[offset].charCodeAt(0);
                 }
-
-                var byteArray = new Uint8Array(byteNumbers);
-
-                byteArrays.push(byteArray);
+                byteArrays[sliceIndex] = new Uint8Array(bytes);
             }
-
             return new Blob(byteArrays, {type: contentType});
         }
 
@@ -1876,7 +1873,10 @@ function QDataBase (visibleCols, visibleRows) {
                     break;
             }
 
-            if (destFilter === 'use_include') {
+            if (destFilter === 'none') {
+
+            }
+            else if (destFilter === 'use_include') {
                 var options = byId(dest + 'include_selected').options;
                 for (i = 0, n = options.length; i < n; i++) {
                     ids.push(options[i].value);
@@ -1884,7 +1884,7 @@ function QDataBase (visibleCols, visibleRows) {
             }
             else {
                 for (i in arr) {
-                    if (destFilter !== 'use_control_panel' || arr[i].getAttribute('panel') === '1') {
+                    if (destFilter === 'all' || arr[i].getAttribute('panel') === '1') {
                         ids.push(i);
                     }
                 }
