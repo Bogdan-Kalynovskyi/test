@@ -1,0 +1,121 @@
+#content > h2,
+#content > p {
+    padding-left: 6px;
+}
+
+#content > p {
+    margin-top: 10px;
+}
+
+.intro {
+    position: relative;
+    padding-right: 0;
+    overflow: hidden;
+}
+
+.item {
+    box-sizing: border-box;
+    display: inline-block;
+    float: left;
+    margin: 7px;
+    padding: 10px;
+    border: 1px solid #eee;
+    background: #fcfcfc;
+    width: calc(25% - 14px);
+    position: relative;
+    height: 114px;
+    font-size: 10px;
+}
+
+.chartitem {
+    width: calc(50% - 14px);
+    height: 320px;
+}
+
+.chartitem > .chart {
+    border-top: 1px solid #EFEFEF;
+    margin-top: 10px;
+    height: 270px;
+    font-size: 80%;
+}
+
+.item > a {
+    font-size: 1.4em;
+    font-weight: normal;
+    display: block;
+    padding-bottom: 11px;
+    border-bottom: 1px solid #EEE;
+    margin-right: 24px;
+}
+
+.item > a:hover {
+    font-weight: normal;
+}
+
+.item > b {
+    display: block;
+    margin-top: 9px;
+    font-weight: 400;
+    font-size: 4.4em;
+    color: #4DB748;
+}
+
+.item > a > img {
+    height: 30px;
+    width: auto;
+    right: 3px;
+    top: 6px;
+    position: absolute;
+}
+
+.right-bottom {
+    position: absolute;
+    right: 9px;
+    bottom: 9px;
+}
+
+.right-bottom > a {
+    display: block;
+    color: #999999;
+    font-weight: normal;
+    font-size: 1.19em;
+    float: right;
+    clear: right;
+    margin-bottom: 4px;
+}
+
+.right-bottom > a:hover {
+    color: #3a4a8d;
+}
+
+.item-new::after,
+.item-manage::after {
+    display: inline-block;
+    content: '';
+    width: 13px;
+    height: 13px;
+    margin-left: 8px;
+    position: relative;
+    top: 2px;
+    background-size: 13px 13px;
+}
+
+.item-new::after {
+    background-image: url(img/plus-small.png);
+}
+
+.item-manage::after {
+    background-image: url(img/cog-small.png);
+}
+
+.item td {
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+@media (max-width: 1024px) {
+    .item {
+        font-size: 9px;
+    }
+}

@@ -12,6 +12,18 @@
 	height: 0;  /* to remove initial bad-style-picture flickering */
 }
 
+#left-content:before {
+	content: 'No data yet';
+	color: #ccc;
+	font-size: 38px;
+	text-transform: capitalize;
+	z-index: -1;
+	display: block;
+	position: absolute;
+	top: 50%;
+    margin: -20px auto 0;
+}
+
 #left-content h2 {
 	text-align: left;
 	margin-right: 33px;
@@ -19,10 +31,10 @@
 
 #right-panel {
 	position: absolute;
-	right: -510px;
+	right: -760px;
 	top: 0;
 	transition: right 0.3s;
-	width: 500px;
+	width: 751px;
 	background: #e1ecfa;
 	box-shadow: 0 0 10px 0 rgba(0,0,0,0.5);
 	z-index: 1222;
@@ -71,8 +83,13 @@ input[type="submit"]:active {
 	padding-top: 9px;
 	width: calc(100% - 40px);
 }
+
 form input.text {
 	width: calc(80% - 4px);
+}
+
+.results .hr > div {
+	padding: 0 50px 10px 10px;
 }
 
 .calendar {
@@ -115,9 +132,10 @@ form input.text {
 	position: relative;
 	padding-left: .4em;
 	padding-right: .4em;
+	text-align: left;
 }
 
-.results th:first-child {
+div.results th:first-child {
 	cursor: pointer;
 }
 
@@ -125,7 +143,7 @@ form input.text {
 	white-space: nowrap;
 }
 
-.results td:first-child {
+div.results td:first-child {
 	background: rgba(0,0,255,0.05);
 }
 
@@ -151,12 +169,17 @@ th.desc:after {
 	padding: 3px 5px;
 }
 
-.results tr:hover {
-	outline: 1px solid rgba(255, 165, 0, 0.7);
+div.results tbody td:not(:first-child):hover {
+	outline: 1px solid rgba(255, 160, 10, 0.8);
 }
 
 .results tr:nth-child(2n) {
-	background: #e1ecfa;;
+	background: #e1ecfa;
+}
+
+.empty-row {
+	padding: 5px!important;
+	text-align: center;
 }
 
 slide {
@@ -165,16 +188,21 @@ slide {
 	top: 0;
 	left: 0;
 	overflow: auto;
+	background: white;
 	transition: opacity 0.3s;
 }
 
 slide:not(:first-child) {
-	height: 700px;
+	height: 640px;
 	overflow: hidden;
 	-webkit-user-select: none;
 	-moz-user-select: none;
 	-ms-user-select: none;
 	user-select: none;
+}
+
+slide svg {
+	margin-top: 17px;
 }
 
 text {
@@ -202,11 +230,11 @@ text {
 }
 
 #left-overlay {
-	left: 0;
+	left: -2px;
 }
 
 #right-overlay {
-	right: 45px;
+	right: 44px;
 }
 
 #zooming-overlay {
@@ -223,11 +251,11 @@ text {
 #zoom-out {
 	display: none;
 	position: absolute;
-	top: 7px;
+	top: 0;
 	left: 50%;
 	margin-left: -90px;
 	height: 27px;
-	background: linear-gradient(to bottom, rgb(0, 101, 163) 0%, rgb(0, 126, 212) 100%);
+	background: linear-gradient(to bottom, rgb(0, 101, 163) 0%, rgb(0, 126, 212) 100%); // todo
 	box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.33);
 	z-index: 1000;
 	-webkit-user-select: none;
@@ -241,18 +269,17 @@ text {
 
 #piechart-chooser {
 	position: absolute;
-	top: 0;
-	left: 0;
-	right: 0;
-	z-index: 1000;
-	text-align: center;
+	top: 11px;
+    text-align: center;
+    width: calc(100% - 44px);
+    z-index: 1000;
 	white-space: nowrap;
 }
 
 #right-menu {
 	position: absolute;
 	right: 5px;
-	top: 43px;
+	top: 45px;
 	width: 40px;
 	z-index: 1555;
 }
@@ -303,28 +330,28 @@ text {
 }
 
 #panel-open-button:after {
-	background-image: url('/local/bohdan/include/img/cog2.png');
+	background-image: url('/local/qstatistics/include/img/cog2.png');
 }
 #go-table:after {
-	background-image: url('/local/bohdan/include/img/table.png');
+	background-image: url('/local/qstatistics/include/img/table.png');
 }
 #go-linechart:after {
-	background-image: url('/local/bohdan/include/img/line.png');
+	background-image: url('/local/qstatistics/include/img/line.png');
 }
 #go-barchart:after {
-	background-image: url('/local/bohdan/include/img/bar.png');
+	background-image: url('/local/qstatistics/include/img/bar.png');
 }
 #go-stacked:after {
-	background-image: url('/local/bohdan/include/img/bar-stacked.png');
+	background-image: url('/local/qstatistics/include/img/bar-stacked.png');
 }
 #go-piechart:after {
-	background-image: url('/local/bohdan/include/img/pie.png');
+	background-image: url('/local/qstatistics/include/img/pie.png');
 }
 #go-csv:after {
-	background-image: url('/local/bohdan/include/img/csv.png');
+	background-image: url('/local/qstatistics/include/img/csv.png');
 }
 #go-png:after {
-	background-image: url('/local/bohdan/include/img/png.png');
+	background-image: url('/local/qstatistics/include/img/png.png');
 }
 
 #panel-open-button:hover:before {
@@ -382,14 +409,57 @@ text {
 	opacity: 1;
 }
 
-#ajax-preloader {
-	position: fixed;
+.ajax-preloader {
+	position: absolute;
 	z-index: 90000;
-	top: 50%;
-	left: 50%;
+	top: calc(50% - 32px);
+	left: calc(50% - 32px);
 	width: 64px;
 	height: 64px;
-	margin-top: -32px;
-	margin-left: -32px;
 	opacity: 0.8;
+}
+
+form .extend_dual input { width: 49% !important; }
+form .extend_dual select { width: 49% !important; }
+
+overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	bottom: 0;
+	right: 0;
+	background: rgba(0, 0, 0, .4);
+	opacity: 0;
+	transition: opacity 0.2s;
+	z-index: 10000;
+}
+
+overlay.active {
+	opacity: 1;
+}
+
+modal {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	width: 700px!important;
+	max-height: calc(100% - 20px);
+	overflow: auto;
+
+	margin: 0!important;
+	border: 1px solid #ccc!important;
+	background: white;
+}
+
+#modal-csv {
+	float: right;
+}
+
+defs + g {
+    visibility: hidden;
+}
+
+.piechart defs + g {
+    visibility: visible;
 }

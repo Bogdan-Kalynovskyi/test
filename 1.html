@@ -1,0 +1,298 @@
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <link rel="stylesheet" type="text/css" href="include/common.css">
+    <title>Dashboard :: Enswitch</title>
+    <link rel="stylesheet" type="text/css" href="include/qstatistics.css">
+    <link rel="stylesheet" type="text/css" href="include/dashboard.css">
+    <style type="text/css">
+        .wrap {
+            float: right;
+            clear: right;
+            overflow: hidden;
+        }
+
+        /* column container */
+        .colmask {
+            float: left;
+            width: 100%; /* width of whole page */
+            overflow: hidden; /* This chops off any overhanging divs */
+        }
+
+        /* common column settings */
+        .colright,
+        .colmid,
+        .colleft {
+            float: left;
+            width: 100%;
+            position: relative;
+        }
+
+        .col1,
+        .col2,
+        .col3 {
+            float: left;
+            position: relative;
+            padding: 0 0 1em 0;
+            overflow: hidden;
+        }
+
+        /* 2 Column (double page) settings */
+        .doublepage {
+        }
+
+        .doublepage .colleft {
+            right: 50%; /* right column width */
+        }
+
+        .doublepage .col1 {
+            width: 46%; /* left column content width (column width minus left and right padding) */
+            left: 52%; /* right column width plus left column left padding */
+        }
+
+        .doublepage .col2 {
+            width: 46%; /* right column content width (column width minus left and right padding) */
+            left: 56%; /* (right column width) plus (left column left and right padding) plus (right column left padding) */
+        }
+
+        .colmask img {
+            vertical-align: middle;
+        }
+
+        .item {
+            clear: both;
+            padding-bottom: 6px;
+        }
+    </style>
+</head>
+
+<body>
+<div class="spacer">&nbsp;</div>
+<div id="body">
+    <div id="header" style="background: url(/images/default/head_bg.gif) repeat-x">
+        <div id="h_title">
+            <a href="/" title="Home"><img src="/images/default/title.gif" alt="Home" class="left"></a>
+            <img src="/images/default/title_bg.jpg" class="right">
+            <div class="clear"></div>
+        </div>
+
+        <div id="h_subtitle">
+			<span id="logout"><form name="_switch_select" method="post" action="/" style="display: inline;"><select
+                    name="username" onchange="_switch_select.submit()">
+<option value="bohdan" selected="selected">bohdan</option>
+<option value="bohdan||/commerce/customers/list/">Choose customer »</option>
+<option value="">Log out »</option>
+</select><input type="hidden" name="language" value=""></form></span>
+
+            <a href="/">Home</a> » Dashboard
+        </div>
+    </div>
+
+
+    <div id="main">
+
+        <div id="nav_bar">
+            <ul>
+                <li class="major"><a id="menu_home" href="/" style="background: url(/home/icon.gif)">Dashboard</a></li>
+                <li class="major"><a id="menu_david_test" href="/local/foo/" style="background: url(/local/)">David
+                    test</a></li>
+                <li class="major"><a id="menu_panel" href="/panel/" style="background: url(/panel/icon.gif)">Control
+                    panel</a></li>
+                <li class="major"><a id="menu_actions" href="/actions/" style="background: url(/actions/icon.gif)">Actions</a>
+                </li>
+                <li class="major"><a id="menu_messages" href="/messages/mailboxes/"
+                                     style="background: url(/messages/icon.gif)">Messages</a></li>
+                <li class="major"><a id="menu_features" href="/features/" style="background: url(/features/icon.gif)">Features</a>
+                </li>
+                <li class="major"><a id="menu_settings" href="/settings/" style="background: url(/settings/icon.gif)">Settings</a>
+                </li>
+                <li class="major"><a id="menu_commerce" href="/commerce/" style="background: url(/commerce/icon.gif)">Commerce</a>
+                </li>
+                <li class="major"><a id="menu_reports" href="/reports/" style="background: url(/reports/icon.gif)">Reports</a>
+                </li>
+            </ul>
+
+        </div>
+
+
+        <div id="content">
+
+            <h2>Welcome to Enswitch</h2>
+
+            <p><strong>Local</strong> | <a href="include?global=1">Global</a><br></p>
+
+            <div class="intro">
+                <div class="item chartitem" id="chart-1"></div>
+                <div class="item chartitem" id="chart-2"></div>
+
+                <div class="item">
+                    <a href="/features/numbers/list/">
+                        Telephone Numbers <img src="include/img/1.png" alt="Numbers">
+                    </a>
+                    <b>0</b>
+                    <div class="left-bottom">
+                        <div class="item-new">New/add</div>
+                        <div class="item-manage">Manage/settings</div>
+                    </div>
+                </div>
+
+                <div class="item">
+                    <a href="/features/codes/list/">
+                        Extensions &amp; Codes <img src="include/img/2.png" alt="Extensions &amp; Codes">
+                    </a>
+                    <b>0</b>
+                    <div class="left-bottom">
+                        <div class="item-new">New/add</div>
+                        <div class="item-manage">Manage/settings</div>
+                    </div>
+                </div>
+
+                <div class="item">
+                    <a href="/features/phones/list/">
+                        Telephone Lines <img src="include/img/3.png" alt="Telephone Lines">
+                    </a>
+                    <b>0</b>
+                    <div class="left-bottom">
+                        <div class="item-new">New/add</div>
+                        <div class="item-manage">Manage/settings</div>
+                    </div>
+                </div>
+
+                <div class="item">
+                    <a href="/features/mailboxes/list/">
+                        Mailboxes <img src="include/img/4.png" alt="Mailboxes">
+                    </a>
+                    <b>0</b>
+                    <div class="left-bottom">
+                        <div class="item-new">New/add</div>
+                        <div class="item-manage">Manage/settings</div>
+                    </div>
+                </div>
+
+                <div class="item">
+                    <a href="/features/recordings/groups/list/">
+                        Call Recordings <img src="include/img/5.png" alt="Recordings">
+                    </a>
+                    <b>0</b>
+                    <div class="left-bottom">
+                        <div class="item-new">New/add</div>
+                        <div class="item-manage">Manage/settings</div>
+                    </div>
+                </div>
+
+                <div class="item">
+                    <a href="/local/conferences/list/">
+                        Conferences <img src="include/img/6.png">
+                    </a>
+                    <b>0</b>
+                    <div class="left-bottom">
+                        <div class="item-new">New/add</div>
+                        <div class="item-manage">Manage/settings</div>
+                    </div>
+                </div>
+
+                <div class="item">
+                    <a href="/features/people/list/">
+                        People / Identities <img src="include/img/7.png" alt="People">
+                    </a>
+                    <b>0</b>
+                    <div class="left-bottom">
+                        <div class="item-new">New/add</div>
+                        <div class="item-manage">Manage/settings</div>
+                    </div>
+                </div>
+
+                <div class="item">
+                    <a href="/features/huntgroups/list/">
+                        Hunt Groups &amp; Find-me, Follow-me <img src="include/img/8.png" alt="Hunt Groups">
+                    </a>
+                    <b>0</b>
+                    <div class="left-bottom">
+                        <div class="item-new">New/add</div>
+                        <div class="item-manage">Manage/settings</div>
+                    </div>
+                </div>
+
+                <div class="item">
+                    <a href="/features/ivrs/list/">
+                        Auto Attendant &amp; IVR <img src="include/img/9.png" alt="IVRs">
+                    </a>
+                    <b>0</b>
+                    <div class="left-bottom">
+                        <div class="item-new">New/add</div>
+                        <div class="item-manage">Manage/settings</div>
+                    </div>
+                </div>
+
+                <div class="item">
+                    <a href="/features/queues/list/">
+                        Call Center &amp; Queues <img src="include/img/10.png" alt="Queues">
+                    </a>
+                    <b>0</b>
+                    <div class="left-bottom">
+                        <div class="item-new">New/add</div>
+                        <div class="item-manage">Manage/settings</div>
+                    </div>
+                </div>
+
+                <div class="item">
+                    <a href="/features/pagegroups/list/">
+                        Page Groups <img src="include/img/11.png" alt="Page Groups">
+                    </a>
+                    <b>0</b>
+                    <div class="left-bottom">
+                        <div class="item-new">New/add</div>
+                        <div class="item-manage">Manage/settings</div>
+                    </div>
+                </div>
+
+                <div class="item">
+                    <a href="/features/times/groups/list/">
+                        Time &amp; Date Groups <img src="include/img/12.png" alt="Times and Dates">
+                    </a>
+                    <b>0</b>
+                    <div class="left-bottom">
+                        <div class="item-new">New/add</div>
+                        <div class="item-manage">Manage/settings</div>
+                    </div>
+                </div>
+
+                <div class="item">
+                    <a href="/commerce/customers/list/">
+                        Sub-Accounts / Customers <img src="include/img/13.png" alt="Customers">
+                    </a>
+                    <b>0</b>
+                    <div class="left-bottom">
+                        <div class="item-new">New/add</div>
+                        <div class="item-manage">Manage/settings</div>
+                    </div>
+                </div>
+
+                <div class="item">
+                    <a href="/reports/cdrs/list/?status=&amp;direction=in">
+                        Calls Received Today <img src="include/img/14.png" alt="Call History">
+                    </a>
+                    <b>0</b>
+                    <div class="left-bottom">
+                        <div class="item-new">New/add</div>
+                        <div class="item-manage">Manage/settings</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+    <div class="clear"></div>
+</div>
+
+<div id="footer">
+    <a href="http://voisonics.com/">Brought to you by Voisonics</a>
+</div>
+
+
+<div class="spacer">&nbsp;</div>
+
+
+</body>
+</html>

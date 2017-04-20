@@ -1,1125 +1,1620 @@
 /*global google*/
 /*global URL*/
+/*global moment*/
+/*global moment.tz*/
 /*global qstatistics_begin*/
-
-function QAgentEvents () {
-    var events = [];            // should be sorted
+function qstatistics_begin(EMBEDDED) {
 
 
-    // Sort array of objects by .time
-    function byTime (a, b) {
-        if (a.time > b.time) {
-            return 1;
+    function Report(options, container, formEl) {
+        var report = this,
+            visibleCols = [],
+            visibleRows = [],
+            reportEnd,
+            reorder = [],
+            colPos,
+            rowPos,
+            table,
+            sortingCol = 0,
+            sortingOrder = 1,
+            secondaryColVisible,
+
+            START,
+            END,
+
+            maxNum,
+            maxLoggedIn,
+            menuButtons,
+
+            equalHeight,
+            toggleLROverlay;
+
+
+        // CONSTANTS
+        var DAY = 86400,
+
+            columnNames = [
+                'totalcalls',
+                'slaok',
+                'answercalls',
+                'noanswercalls',
+                'incalls',
+                'inanswer',
+                'innoanswer',
+                'internalcalls',
+                'internalanswer',
+                'internalnoanswer',
+                'outcalls',
+                'outanswer',
+                'outnoanswer',
+                'holdmin',
+                'holdavg',
+                'holdmax',
+                'talkmin',
+                'talkavg',
+                'talkmax',
+                'totalmin',
+                'totalavg',
+                'totalmax',
+                'abandon',
+                'noagent',
+                'timeout',
+                'keypress',
+                'agent',
+                'caller',
+                'transfer',
+                'logintime'
+            ],
+            destinationNames = [
+                'allcalls',
+                'inbound',
+                'internal',
+                'outbound'
+            ],
+            COLUMNS = [
+                'Total calls',
+                'SLA ok',
+                'Answered',
+                'Not answered',
+                'Inbound calls',
+                'Inbound answered',
+                'Inbound no answer',
+                'Internal calls',
+                'Internal answered',
+                'Internal no answer',
+                'Outbound calls',
+                'Outbound answered',
+                'Outbound no answer',
+                'Hold time min',
+                'Hold time avg',
+                'Hold time max',
+                'Talk time min',
+                'Talk time avg',
+                'Talk time max',
+                'Total time min',
+                'Total time avg',
+                'Total time max',
+                'Abandoned by caller',
+                'No agents available',
+                'Time-out in queue',
+                'Key press by caller',
+                'Agent completed',
+                'Caller completed',
+                'Transfer by agent',
+                'Available time'
+            ],
+
+            COL_timeStart = 13,
+            COL_timeEnd = 22,
+            COL_loggedIn = 29;
+
+
+        options.type = options.type || 'table';
+        options.period = +options.period;         // special greeting to options.period
+        options.totalrow = +options.totalrow;     // special greeting to options.totalrow
+
+
+        function QAgentEvents() {
+            this.events = [];            // is always kept sorted
+
+
+            // Sort array of objects by .time
+            function byTime(a, b) {
+                return a.time - b.time;
+            }
+
+
+            // Takes htmlNodesCollection and adds them to array. Checks for duplicates. Sorts. Returns whether array was changed
+            this.add = function (nodes) {
+                var isChanged = false;
+
+                for (var i = 0, n = nodes.length; i < n; i++) {
+                    var event = {
+                        time: +nodes[i].getAttribute('time'),
+                        isLogin: nodes[i].getAttribute('type') === 'agentlogin'
+                    };
+
+                    for (var j = this.events.length - 1; j >= 0; j--) {
+                        if (this.events[j].time === event.time && this.events[j].isLogin === event.isLogin) {
+                            event = null;
+                            break;
+                        }
+                    }
+
+                    if (event) {
+                        this.events.push(event);
+                        isChanged = true;
+                    }
+                }
+
+                if (isChanged) {
+                    this.events.sort(byTime); // todo no sort
+                }
+
+                return isChanged;
+            };
+
+
+            // Calculates Available time in period between periodStart and periodEnd.
+            // Tricky thing is to group events into login-logout pairs.
+            this.calcLoggedTime = function (periodStart, periodEnd) {
+                var start,              // start and end of logged in period,
+                    end,                // is composed out of a pair of events.
+                    clear,              // marker that we're done with current start-end pair, so start over again
+                    i = 0,
+                    total = 0,
+                    event = this.events[0];
+
+                // when first event is logoff, and it is inside bounds, then virtually add login event before it
+                if (event && !event.isLogin && event.time >= periodStart) {
+                    start = periodStart;
+                }
+
+                while (event && event.time < periodEnd) {
+                    clear = false;
+
+                    if (event.isLogin) {
+                        start = event.time;
+                    }
+                    else {
+                        end = event.time;
+                    }
+
+                    if (end <= periodStart) {                           // completely out of bounds
+                        clear = true;
+                    }
+                    else if (start && end) {                            // gathered a pair, which is at least partially in bounds
+                        total += Math.min(periodEnd, end) - Math.max(periodStart, start);
+                        clear = true;
+                    }
+
+                    if (clear) {                                        // clear that pair, and search for a new one
+                        start = undefined;
+                        end = undefined;
+                    }
+
+                    i++;
+                    event = this.events[i];
+                }
+
+                if (start && start < periodEnd && !end) {               // unfinished pair in bounds, agent is still logged in
+                    total += Math.min(Date.now() / 1000, periodEnd) - Math.max(periodStart, start);
+                }
+
+                return total;
+            };
+
+
+            // Checks if queue agent is currently logged in
+            this.isLoggedIn = function () {
+                var n = this.events.length;
+                if (n) {
+                    return this.events[n - 1].isLogin;
+                }
+                return false;
+            };
         }
-        else if (a.time < b.time) {
-            return -1;
-        }
-        else {
-            return 0;
-        }
-    }
 
 
-    // Takes htmlNodesCollection and adds them to sorted array. Checks for duplicates. Returns whether array was changed
-    this.add = function (nodes) {
-        var isChanged = false;
-        
-        for (var i = 0, n = nodes.length; i < n; i++) {
-            var node = nodes[i],
-                event = {
-                    time: +node.getAttribute('time'),
-                    isLogin: node.getAttribute('type') === 'agentlogin'
+        function Chart() {
+            var that = this,
+                currentTab,
+                type,
+                loggedInTimeDivider,
+                timeUnit,
+                tableHeader,
+                dataTable,
+                charts = {},
+                zoomingOverlay = byId('zooming-overlay'),
+                resetZoomBtn = byId('zoom-out'),
+                rectSVG,
+                startX,
+                endX = null,
+                goodEvt,
+                lastPieSourceStr,
+                lastPieSource,
+                pieSource,
+                byCol,
+                byRow,
+                hiddenInPie,
+                pauseRedraw,
+                dateFormat = CONFIG.dateformat.replace('YYYY', 'yyyy').replace('DD', 'dd'),
+                chartArea = {
+                    left: '5.5%',
+                    top: (EMBEDDED ? (container.clientWidth > 840 ? '18%' : '22.5%') : '11.5%'),
+                    height: (EMBEDDED ? '62%' : null),
+                    bottom: '19%'
+                },
+                legend = {
+                    position: 'top',
+                    maxLines: 3
+                },
+                series = {},
+                chartOptions = {
+                    linechart: {
+                        sliceVisibilityThreshold: 0,
+                        chartArea: chartArea,
+                        legend: legend,
+                        fontName: "Arial, sans-serif",
+                        backgroundColor: "transparent"
+                    },
+                    barchart: {
+                        sliceVisibilityThreshold: 0,
+                        chartArea: chartArea,
+                        legend: legend,
+                        fontName: "Arial, sans-serif",
+                        backgroundColor: "transparent",
+                        bar: {groupWidth: "90%"}
+                    },
+                    stacked: {
+                        isStacked: true,
+                        sliceVisibilityThreshold: 0,
+                        chartArea: chartArea,
+                        legend: legend,
+                        fontName: "Arial, sans-serif",
+                        backgroundColor: "transparent",
+                        bar: {groupWidth: "90%"}
+                    },
+                    piechart: {
+                        is3D: true,
+                        sliceVisibilityThreshold: 0,
+                        fontName: "Arial, sans-serif",
+                        backgroundColor: "transparent"
+                    }
                 };
 
-            for (var j in events) {
-                if (events[j].time === event.time && events[j].isLogin === event.isLogin) {
-                    event = null;
+
+            function getPieSource() {
+                var split = options.piesource;
+                if (split) {
+                    split = split.split('_');
+                    pieSource = {
+                        by: split[0],
+                        id: +split[1]
+                    };
+                }
+                else {
+                    pieSource = {
+                        by: 'column',
+                        id: colPos[0]
+                    };
+                }
+            }
+
+
+            function colorizeChart(type) {
+                var colors = [
+                    "gray",
+                    "#bec1d4",
+                    "green",
+                    "red",
+                    "blue",
+                    "#d6bcc0",
+                    "#bb7784",
+                    "purple",
+                    "#023fa5",
+                    "#7d87b9",
+                    "orange",
+                    "#8e063b",
+                    "#4a6fe3",
+                    "#8595e1",
+                    "#b5bbe3",
+                    "#e6afb9",
+                    "#e07b91",
+                    "#d33f6a",
+                    "#11c638",
+                    "#8dd593",
+                    "#c6dec7",
+                    "#ead3c6",
+                    "#f0b98d",
+                    "#ef9708",
+                    "#0fcfc0",
+                    "#9cded6",
+                    "#d5eae7",
+                    "#f3e1eb",
+                    "#f6c4e1",
+                    "#f79cd4",
+                    "yellow"
+                ];
+
+                if (type === 'piechart') {
+                    var arr = [];
+                    if (pieSource.by === 'row') {
+                        var totalCallsColOnly = colPos.length === 1;
+                        for (var i = 0, n = colPos.length; i < n; i++) {
+                            if (colPos[i] !== 0 || totalCallsColOnly) {      // don't include "Total calls" column
+                                arr.push({color: colors[colPos[i]]});
+                            }
+                        }
+                        chartOptions.piechart.colors = arr;
+                    }
+                    else if (options.period === 0) {
+                        if (rowPos.length) {
+                            for (i = 0, n = rowPos.length; i < n; i++) {
+                                arr.push({color: colors[rowPos[i]]});
+                            }
+                            for (i = visibleRows.length, n = colors.length; i < n; i++) {
+                                arr.push({color: colors[i]});
+                            }
+                            chartOptions.piechart.colors = arr;
+                        }
+                        else {
+                            delete chartOptions.piechart.colors;
+                        }
+                    }
+                    else {
+                        delete chartOptions.piechart.colors;
+                    }
+                }
+                else {
+                    for (i = 0, n = colPos.length; i < n; i++) {
+                        series[i] = {color: colors[colPos[i]]};
+                    }
+                    chartOptions[type].series = series;
+                }
+            }
+
+
+            function renderPieSourceSelect() {
+                var str = 'Display:<label> column <select id="piechart-by-column"><option value>Choose column</option>',
+                    isRendered = false;
+
+                for (var i = 0, n = COLUMNS.length; i < n; i++) {
+                    if (visibleCols[i]) {
+                        str += '<option value="' + i + '">' + COLUMNS[i] + '</option>';
+                    }
+                }
+
+                str += '</select></label><label> or row <select id="piechart-by-row"><option value>Choose row</option>';
+
+                for (i = 0, n = table.length; i < n; i++) {
+                     if (options.period === 0 || table[i].total) {
+                         // todo use real positions for period === 0 (destinations)
+                        str += '<option value="' + i + '">' + table[i][0] + '</option>';
+                    }
+                }
+                str += '</select></label>';
+                if (str !== lastPieSourceStr) {
+                    byId('piechart-chooser').innerHTML = str;
+                    lastPieSourceStr = str;
+                    isRendered = true;
+
+                    byCol = byId('piechart-by-column');
+                    byRow = byId('piechart-by-row');
+
+                    // set dropdown behaviour
+                    byCol.onchange = function () {
+                        if (this.value === '' && pieSource.by === 'column') {
+                            this.value = pieSource.id;
+                            return;
+                        }
+                        pieSource = {
+                            by: 'column',
+                            id: +this.value
+                        };
+                        byRow.value = '';
+                        options.piesource = pieSource.by + '_' + pieSource.id;
+                        FORM.enableSaveButton();
+                        colorizeChart('piechart');
+                        renderPieChart();
+                    };
+                    byRow.onchange = function () {
+                        if (this.value === '' && pieSource.by === 'row') {
+                            this.value = pieSource.id;
+                            return;
+                        }
+                        pieSource = {
+                            by: 'row',
+                            id: +this.value
+                        };
+                        byCol.value = '';
+                        options.piesource = pieSource.by + '_' + pieSource.id;
+                        FORM.enableSaveButton();
+                        colorizeChart('piechart');
+                        renderPieChart();
+                    };
+                }
+
+                if (isRendered || !lastPieSource || lastPieSource.by !== pieSource.by || lastPieSource.id !== pieSource.id) {
+                    // init dropdown
+                    if (pieSource.by === 'column') {
+                        byCol.value = pieSource.id;
+                    }
+                    else {
+                        byRow.value = pieSource.id;
+                    }
+                    lastPieSource = pieSource;
+                }
+            }
+
+
+            function cacheTableHeader(pieChartRow, pieChartCol) {
+                var loggedInPos = colPos.indexOf(COL_loggedIn) + 1,
+                    maxNum1 = 0,
+                    maxLoggedIn1 = 0;
+
+                // when table row is displayed as pie chart
+                if (pieChartRow !== undefined) {
+                    for (var i = 0, n = colPos.length; i < n; i++) {
+                        var pos = colPos[i],
+                            el = table[pieChartRow][i + 1];
+
+                        if (pos === COL_loggedIn) {
+                            maxLoggedIn1 = Math.max(maxLoggedIn1, el);
+                        }
+                        else {
+                            maxNum1 = Math.max(maxNum1, el);
+                        }
+                    }
+                    loggedInTimeDivider = maxNum1 ? (maxLoggedIn1 / maxNum1 * 21) : maxLoggedIn;
+                }
+                // when logged in time column is displayed
+                else if (pieChartCol) {
+                    loggedInTimeDivider = maxLoggedIn;      // average
+                }
+                // other cases
+                else {
+                    loggedInTimeDivider = maxNum ? (maxLoggedIn / maxNum * 21) : maxLoggedIn;
+                }
+
+                if (loggedInTimeDivider > DAY) {
+                    loggedInTimeDivider = DAY;
+                    timeUnit = ' (days)';
+                }
+                else if (loggedInTimeDivider > 3600) {
+                    loggedInTimeDivider = 3600;
+                    timeUnit = ' (hours)';
+                }
+                else if (loggedInTimeDivider > 60) {
+                    loggedInTimeDivider = 60;
+                    timeUnit = ' (minutes)';
+                }
+                else if (loggedInTimeDivider > 0) {
+                    loggedInTimeDivider = 1;
+                    timeUnit = ' (seconds)';
+                }
+                else {
+                    loggedInTimeDivider = Infinity;
+                    timeUnit = '';
+                }
+
+                tableHeader = [options.period ? 'Time' : 'Destination'];
+
+                if (!pieChartCol) {
+                    for (i = 0, n = colPos.length; i < n; i++) {
+                        tableHeader.push(COLUMNS[colPos[i]] + ((i + 1 === loggedInPos) ? timeUnit : ''));
+                    }
+                }
+            }
+
+
+            function getPieDataTable() {
+                var pieChartOptions = chartOptions.piechart,
+                    row,
+                    id = pieSource.id,
+                    data = [['', '']],                    // in pieChart, first row seems not to have any useful information
+                    sumOfVisibleCells = 0;
+
+                hiddenInPie = [];
+
+                if (pieSource.by === 'column') {
+                    if (colPos.length) {
+                        if (!visibleCols[id]) {
+                            id = colPos[0];
+                            pieSource.id = id;
+                            if (!EMBEDDED) {
+                                byCol.value = id;
+                            }
+                            options.piesource = pieSource.by + '_' + pieSource.id;
+                        }
+                        cacheTableHeader(undefined, id === COL_loggedIn);
+                        var pos = colPos.indexOf(id) + 1,
+                            i = (!options.period && +options.allcalls) ? 1 : 0,              // in Destination mode, don't show "All calls" in chart
+                            n = table.length - (options.totalrow ? 1 : 0);                                       // also, never show "Total" row in piechart
+
+                        if (i === n && table.length > 1) {
+                            if (options.totalrow) {
+                                n++;
+                            }
+                            else if (+options.allcalls) {
+                                i--;
+                            }
+                        }
+
+                        for (; i < n; i++) {
+                            row = table[i];
+                            if (id !== COL_loggedIn) {
+                                if (options.period === 0 || row.total) {
+                                    data.push([row[0], row[pos]]);
+                                    hiddenInPie.push(i);
+                                    sumOfVisibleCells += row[pos];
+                                }
+                            }
+                            else {
+                                if (row[pos] || row.hasLIT) {
+                                    data.push([row[0] + timeUnit, +(row[pos] / loggedInTimeDivider).toFixed(2)]);
+                                    hiddenInPie.push(i);
+                                    sumOfVisibleCells += row[pos];
+                                }
+                            }
+                        }
+                    }
+                    else if (!EMBEDDED) {
+                        byCol.selectedIndex = 0;
+                    }
+                }
+
+                // todo save the ordering
+                else {
+                    if (!(table[id] && (options.period === 0 || table[id].total))) {
+                        for (i = 0, n = table.length; i < n; i++) {
+                            if (table[i].total) {
+                                break;
+                            }
+                        }
+                        if (i < n) {
+                            id = i;
+                            pieSource.id = id;
+                            if (!EMBEDDED) {
+                                byRow.value = id;
+                            }
+                            options.piesource = pieSource.by + '_' + pieSource.id;
+                        }
+                        else if (!EMBEDDED) {
+                            byRow.selectedIndex = 0;
+                        }
+                    }
+
+                    if (table[id] && (options.period === 0 || table[id].total)) {
+                        var totalCallsPos = colPos.indexOf(0) + 1,
+                            loggedInPos = colPos.indexOf(COL_loggedIn) + 1;
+
+                        if (colPos.length === 1 && visibleCols[0]) {
+                            totalCallsPos = -1;
+                        }
+
+                        cacheTableHeader(id);
+                        row = table[id];
+
+                        for (i = 1, n = tableHeader.length; i < n; i++) {
+                            if (i !== totalCallsPos || row.length === 2) {
+                                if (i !== loggedInPos) {
+                                    data.push([tableHeader[i], row[i]]);
+                                    hiddenInPie.push(i);
+                                    sumOfVisibleCells += row[i];
+                                }
+                                else if (options.period || row[i]) {
+                                    data.push([tableHeader[i], +(row[i] / loggedInTimeDivider).toFixed(2)]);
+                                    hiddenInPie.push(i);
+                                    sumOfVisibleCells += row[i];
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (sumOfVisibleCells && data.length > 1) {
+                    pieChartOptions.legend = legend;
+                    pieChartOptions.pieSliceText = 'percentage';
+                    pieChartOptions.enableInteractivity = true;
+                    pieChartOptions.chartArea = {
+                        top: '16%',
+                        bottom: '1%',
+                        left: '4.4%',
+                        right: '1.6%'
+                    };
+
+                }
+                else {                                       // all cols should be given as an option, but they don't always contain data
+                    data = [['', ''], ['No calls', 1]];
+                    pieChartOptions.legend = 'none';
+                    pieChartOptions.pieSliceText = 'label';
+                    pieChartOptions.enableInteractivity = false;
+                    pieChartOptions.chartArea = null;
+                }
+
+                return google.visualization.arrayToDataTable(data);
+            }
+
+
+            function getDataTable() {
+                cacheTableHeader();
+                var data = [tableHeader],
+                    hasNumericCols = false,
+                    hasDurationCols = false,
+                    colAxisIndex = [],
+                    j = 0,
+                    m = table.length - (options.totalrow ? 1 : 0);            // for time-based reports, don't show "Total" row
+
+                for (; j < m; j++) {
+                    var dbRow = table[j],
+                        row = dbRow.slice();
+
+                    // for time - based reports
+                    if (SAME_TZ && options.period > 0) {
+                        var start = dbRow.intervals[0][0];
+                        row[0] = new Date(start * 1000);
+                    }
+
+                    for (var i = 0, n = colPos.length; i < n; i++) {
+                        var i1 = colPos[i],
+                            j1 = i + 1,
+                            isTime = i1 >= COL_timeStart && i1 < COL_timeEnd;
+
+                        if (isTime) {
+                            row[j1] = UTILS.googleTimeFormat(row[j1]);
+                        }
+                        else if (i1 === COL_loggedIn) {
+                            // If agent was logged in for the whole time, the "logged in" chart should look as a straight line.
+                            // For time-period-based that.report type, row[0] is a Date object
+                            if ((!TABLE || sortingCol === 0) && start && j === m - 1) {   // todo save sortingCol and reorder into options and db
+                                row[j1] *= options.period / (Math.min(END * 1000, Date.now()) - start * 1000) * 1000;
+                            }
+                            // show time in the most suitable unit of measure
+                            row[j1] = +(row[j1] / loggedInTimeDivider).toFixed(2);
+                        }
+
+                        // once, check for column types
+                        if (j === 0) {
+                            if (isTime) {
+                                hasDurationCols = true;
+                                colAxisIndex.push(1);
+                            }
+                            else {
+                                hasNumericCols = true;
+                                colAxisIndex.push(0);
+                            }
+                        }
+                    }
+
+                    // then reflect column types in options
+                    if (j === 0) {
+                        if (hasNumericCols && hasDurationCols) {   // then display two axes, right is timeOfDay
+                            for (i = 0; i < n; i++) {
+                                series[i].targetAxisIndex = colAxisIndex[i];
+                            }
+                            chartOptions[type].vAxes = {
+                                0: {},
+                                1: {}
+                            };
+                            chartArea.right = '11%';
+                        }
+                        else {
+                            delete chartOptions[type].vAxes;
+                            chartArea.right = '1.4%';
+                        }
+                    }
+
+                    data.push(row);
+                }
+
+
+                var googleFormat = dateFormat;
+                if (options.period < DAY) {
+                    googleFormat += ' ' + (CONFIG.timeformat === '12' ? 'hh:mmaa' : 'HH:mm');
+                }
+
+                // google charts display time on x axis better than I do, because they know font and the scale
+                if (SAME_TZ && options.period > 0) {
+                    chartOptions[type].hAxis = {
+                        format: googleFormat,
+                        viewWindow: {
+                            min: new Date(START * 1000),
+                            max: new Date(Math.min(Date.now(), END * 1000))
+                        }
+                    };
+                }
+                else {
+                    delete chartOptions[type].hAxis;
+                }
+
+                if (data.length === 1) {
+                    var arr = [];
+                    for (i = 0; i < tableHeader.length; i++) {
+                        arr.push(0);
+                    }
+                    data.push(arr);
+                }
+
+                return google.visualization.arrayToDataTable(data);
+            }
+
+
+            function setZoomBackup() {
+                if (!that.savedZoom) {
+                    that.savedZoom = {
+                        start: START,
+                        end: END,
+                        startday: options.startday,
+                        endday: options.endday,
+                        period: options.period
+                    };
+                    resetZoomBtn.style.display = 'block';
+                }
+            }
+
+
+            function reRenderWithoutAnimation(startday, endday) {
+                if (startday === undefined) {
+                    startday = '1';
+                }
+                if (endday === undefined) {
+                    endday = '1';
+                }
+                FORM.showNewTime(startday, endday);
+                chartOptions[options.type].animation.duration = 0;
+                createReport();
+                chartOptions[options.type].animation.duration = 300;
+            }
+
+
+            function move(direction) {
+                var now = Date.now() / 1000,
+                    leftTime = START,
+                    rightTime = Math.min(now, END),
+                    delta = (rightTime - leftTime) * 0.1 * direction;
+                if (direction < 0 || rightTime !== now) {
+                    setZoomBackup();
+
+                    START += delta;
+                    END = rightTime + delta;
+
+                    reRenderWithoutAnimation();
+                }
+            }
+
+
+            function mousedown(evt) {
+                var svgr = charts[options.type] && charts[options.type].svgr;
+                goodEvt = svgr && (svgr === evt.target || UTILS.contains(svgr, evt.target));
+
+                if (goodEvt) {
+                    rectSVG = svgr.getBoundingClientRect();
+                    startX = evt.pageX;
+                    zoomingOverlay.style.top = rectSVG.top + 'px';
+                    zoomingOverlay.style.bottom = document.body.clientHeight - rectSVG.bottom + 'px';
+                    zoomingOverlay.style.left = startX - window.pageXOffset + 'px';
+                    zoomingOverlay.style.right = document.body.clientWidth + window.pageXOffset - startX + 'px';
+                    zoomingOverlay.style.display = 'block';
+                    container.onmousemove = mousemove;
+                }
+            }
+
+
+            function mousemove(evt) {
+                endX = evt.pageX;
+                zoomingOverlay.style.left = Math.min(startX, endX) - window.pageXOffset + 'px';
+                zoomingOverlay.style.right = document.body.clientWidth + window.pageXOffset - Math.max(startX, endX) + 'px';
+            }
+
+
+            function mouseup() {
+                zoomingOverlay.style.display = 'none';
+                if (goodEvt && endX !== null) {
+                    var maxX = Math.max(startX, endX),
+                        minX = Math.min(startX, endX);
+
+                    if (maxX - minX < 6) {
+                        return;
+                    }
+                    setZoomBackup();
+
+                    var now = Date.now() / 1000,
+                        leftTime = START,
+                        rightTime = Math.min(now, END);
+
+                    START += (rightTime - leftTime) * (minX - window.pageXOffset - rectSVG.left) / rectSVG.width;
+                    END = rightTime - (rightTime - leftTime) * (rectSVG.right + window.pageXOffset - maxX) / rectSVG.width;
+                    options.period = that.savedZoom.period * (Math.min(now, END) - START) / (Math.min(now, that.savedZoom.end) - that.savedZoom.start);
+
+                    reRenderWithoutAnimation();
+
+                    container.onmousemove = null;
+                }
+
+                endX = null;
+            }
+
+
+            function mousewheel(evt) {
+                if (options.period && options.type !== 'table' && options.type !== 'piechart') {
+                    var svgr = charts[options.type] && charts[options.type].svgr;
+                    if (svgr && evt.deltaY && (svgr === evt.target || UTILS.contains(svgr, evt.target))) {
+                        setZoomBackup();
+
+                        var now = Date.now() / 1000,
+                            leftTime = START,
+                            rightTime = Math.min(now, END),
+                            rectSVG = svgr.getBoundingClientRect(),
+                            center = evt.pageX + window.pageXOffset,
+                            left = center - rectSVG.left,
+                            right = rectSVG.right - center,
+                            zoom = -evt.deltaY / 100;
+
+                        START += (rightTime - leftTime) * left / rectSVG.width * zoom;
+                        END = rightTime - (rightTime - leftTime) * right / rectSVG.width * zoom;
+                        options.period = that.savedZoom.period * (Math.min(now, END) - START) / (Math.min(now, that.savedZoom.end) - that.savedZoom.start);
+
+                        reRenderWithoutAnimation();
+                    }
+                    evt.preventDefault();
+                    evt.stopPropagation();
+                    return false;
+                }
+            }
+
+
+            function patchSVG() {
+                if (type === 'piechart') {
+                    currentTab.childNodes[0].className = 'piechart';
+                    return;
+                }
+
+                var containerWidth = container.clientWidth,
+                    ua = navigator.userAgent,
+                    isIE = ua.indexOf('MSIE') !== -1 || navigator.appVersion.indexOf('Trident/') > 0,
+                    isFF = ua.toLowerCase().indexOf('firefox') > -1,
+                    isPhantom = ua.indexOf('PhantomJS') > 0,
+                    isSafari = ua.match(/Version\/[\d\.]+.*Safari/),
+                    svg = currentTab.getElementsByTagName('svg')[0];
+
+                // a tricky part of Google charts integration. Find rectangle inside which the chart is rendered
+                for (var i = 3; i >= 1; i--) {
+                    var activeArea = svg.childNodes[i];
+                    if (activeArea) {
+                        activeArea = activeArea.childNodes[0];
+                    }
+                    if (activeArea) {
+                        break;
+                    }
+                }
+
+                if (i !== 1) {
+                    if (!EMBEDDED && options.period > 0) {
+                        activeArea.style.cursor = 'col-resize';
+                        charts[type].svgr = activeArea;
+                    }
+
+                    var legend = svg.childNodes[1],
+                        svgRect = svg.getBoundingClientRect(),
+                        children = legend.childNodes;
+
+                    legend.style.transform = 'translate(-11px, -3px)';
+
+                    for (i = 1; i < children.length; i++) {
+                        var base = children[i],
+                            el = base.childNodes[2],
+                            color,
+                            top = 0,
+                            left = 0;
+
+                        if (!el || el.tagName === 'circle') {
+                            base.addEventListener('click', function () {
+                                setTimeout(function () {
+                                    setTimeout(patchSVG, 8);
+                                    pauseRedraw = true;
+                                    setTimeout(function () {
+                                        pauseRedraw = false;
+                                    }, 20000);
+                                }, 8);
+                            });
+                            // setTimeout(patchSVG);
+                            // return;
+                            continue;
+                        }
+
+                        if (type === 'linechart') {
+                            color = el.getAttribute('stroke');
+                        }
+                        else {
+                            color = el.getAttribute('fill');
+                        }
+
+                        if (!color || color.charAt(0) !== '#') {
+                            // setTimeout(patchSVG);
+                            // return;
+                            continue;
+                        }
+
+                        if (isFF) {
+                            left = EMBEDDED ? 1 : 0;
+                        }
+                        else if (isIE) {
+                            left = EMBEDDED ? 2 : 1;
+                        }
+                        else if (!isPhantom) {
+                            left = 13;
+                        }
+
+                        if (isSafari) {
+                            top = EMBEDDED ? 1.5 : 0.5;
+                        }
+                        if (isFF) {
+                            top = EMBEDDED ? -1 : -0.5;
+                        }
+                        else if (isIE) {
+                            top = 0;
+                        }
+                        else if (!isPhantom) {
+                            top = EMBEDDED ? 2.2 : 3;
+                        }
+
+                        if (containerWidth > 310) {
+                            left++;
+                        }
+                        if (containerWidth > 440) {
+                            left++;
+                            top -= 0.5;
+                        }
+                        if (containerWidth > 650) {
+                            left++;
+                            top += 0.5;
+                        }
+                        if (containerWidth > 950) {
+                            left++;
+                            top += 0.5;
+                        }
+
+                        var rect = el.getBoundingClientRect(),
+                            cx = (rect.left + rect.right) / 2 - svgRect.left + left,
+                            cy = (rect.top + rect.bottom) / 2 - svgRect.top + top;
+
+                        base.removeChild(el);
+                        var circle = document.createElementNS("http://www.w3.org/2000/svg", 'circle');
+                        circle.setAttribute('cx', cx);
+                        circle.setAttribute('cy', cy);
+                        circle.setAttribute('r', EMBEDDED ? '6' : (containerWidth < 870 ? '7' : '7.5'));
+                        circle.setAttribute('fill', color);
+                        base.appendChild(circle);
+                    }
+
+                    legend.style.visibility = 'visible';
+                }
+            }
+
+
+            function renderChart() {
+                if (!pauseRedraw) {
+                    dataTable = getDataTable();
+                    charts[type].draw(dataTable, chartOptions[type]);
+                }
+            }
+
+
+            function renderPieChart() {
+                if (!pauseRedraw) {
+                    dataTable = getPieDataTable();
+                    charts.piechart.draw(dataTable, chartOptions.piechart);
+                }
+            }
+
+
+            this.render = function (_currentTab, _type, deep) {
+                currentTab = _currentTab;
+                type = _type;
+
+                if (!window.google || !google.visualization) {
+                    setTimeout(function () {
+                        that.render(_currentTab, _type, deep);
+                    }, 100);
+                }
+                else if (table) {
+                    google.charts.setOnLoadCallback(function () {
+                        if (_type === 'piechart') {
+                            getPieSource();
+                        }
+                        var created = false;
+
+                        if (!charts[_type]) {
+                            switch (_type) {
+                                case 'linechart':
+                                    charts[_type] = new google.visualization.LineChart(_currentTab);
+                                    break;
+                                case 'barchart':
+                                case 'stacked':
+                                    charts[_type] = new google.visualization.ColumnChart(_currentTab);
+                                    break;
+                                case 'piechart':
+                                    charts[_type] = new google.visualization.PieChart(_currentTab);
+                                    break;
+                            }
+                            created = charts[_type];
+                        }
+                        colorizeChart(_type);
+
+                        if (_type === 'piechart') {
+                            if (!EMBEDDED) {
+                                renderPieSourceSelect();
+                            }
+                            renderPieChart();
+                        }
+                        else {
+                            renderChart();
+                        }
+
+                        if (!EMBEDDED) {
+                            equalHeight();
+                        }
+
+                        if (created) {
+                            google.visualization.events.addListener(created, 'ready', patchSVG);
+
+                            google.visualization.events.addListener(created, 'select', function () {
+                                var selection = created.getSelection();
+                                selection = selection[0];
+
+                                if (selection) {
+                                    if (_type === 'piechart') {
+                                        if (pieSource.by === 'column') {
+                                            var i = hiddenInPie[selection.row], j = +colPos.indexOf(pieSource.id);
+                                        }
+                                        else {
+                                            var j = hiddenInPie[selection.row] - 1, i = pieSource.id;
+                                        }
+                                    }
+                                    else {
+                                        var i = selection.row, j = selection.column;
+                                        j -= 1;
+                                    }
+
+                                    var jj = colPos[j];
+
+                                    if (jj === 0 || (jj >= COL_timeStart && jj < COL_timeEnd)) {
+                                        new Popup(table[i].calls, j);
+                                    }
+                                    else if (jj !== COL_loggedIn) {
+                                        new Popup(table[i].info[j + 1], j);
+                                    }
+                                    else {
+                                        new Popup(table[i], j, true);
+                                    }
+                                }
+                            });
+                        }
+                    });
+                }
+            };
+
+
+            this.resize = function () {
+                var type = options.type;
+                if (charts[type]) {
+                    charts[type].draw(dataTable, chartOptions[type]);
+                }
+            };
+
+
+            this.downloadPNG = function () {
+                function b64toBlob(b64Data, contentType, sliceSize) {
+                    sliceSize |= 512;
+
+                    var byteCharacters = atob(b64Data);
+                    var byteArrays = [];
+
+                    for (var offset = 0, len = byteCharacters.length; offset < len; offset += sliceSize) {
+                        var slice = byteCharacters.slice(offset, offset + sliceSize),
+                            sliceLen = slice.length;
+
+                        var byteNumbers = new Array(sliceLen);
+                        for (var i = 0; i < sliceLen; i++) {
+                            byteNumbers[i] = slice.charCodeAt(i);
+                        }
+
+                        var byteArray = new Uint8Array(byteNumbers);
+
+                        byteArrays.push(byteArray);
+                    }
+
+                    return new Blob(byteArrays, {type: contentType});
+                }
+
+
+                var fileName = (options.name.replace(/[^\w\s]/g, '_') || 'noname') + '.png',
+                    b64data = charts[options.type].getImageURI();
+
+                if (navigator.msSaveBlob) { // IE 10+
+                    navigator.msSaveBlob(b64toBlob(b64data.substr(22), 'image/png'), fileName);
+                }
+                else {
+                    UTILS.downloadUrl(b64data, fileName, b64data);
+                }
+            };
+
+
+            this.resetZoom = function () {
+                var orig = this.savedZoom;
+                if (orig) {
+                    START = orig.start;
+                    END = orig.end;
+                    options.period = orig.period;
+                    this.savedZoom = null;
+                    resetZoomBtn.style.display = '';
+                    reRenderWithoutAnimation(orig.startday, orig.endday);
+                }
+            };
+
+
+            if (!EMBEDDED) {
+                container.addEventListener('mousedown', mousedown, true);
+                window.addEventListener('mouseup', mouseup, true);
+                container.addEventListener('wheel', mousewheel);
+                byId('left-overlay').addEventListener('click', function () {
+                    move(-1);
+                });
+                byId('right-overlay').addEventListener('click', function () {
+                    move(1);
+                });
+            }
+        }
+
+
+        var callIds = {},
+            calls = [],
+            queues = {},
+            agents = {},
+            phones = {},
+            minRecordedTime = Infinity,
+            maxRecordedTime = 0;
+
+
+        function addRecordsToDatabase(update) {
+            var newCalls = update.getElementsByTagName('call');
+            var newQueues = update.getElementsByTagName('queue');
+            var newAgents = update.getElementsByTagName('agent');
+            var newPhones = update.getElementsByTagName('phone');
+            var dbChanged = false;
+            var queuesChanged = false;
+            var agentPhoneChanged = false;
+            var addToBeginning = SERVER.addToBeginning;
+            if (addToBeginning) {
+                var beginning = [];
+            }
+
+            for (var i = 0, n = newCalls.length; i < n; i++) {
+                var call = newCalls[i];
+                call.start = +call.getAttribute('start');
+                call.answer = +call.getAttribute('answered');
+                call.end = +call.getAttribute('end');
+                call.dtype = call.getAttribute('dtype');
+                call.stype = call.getAttribute('stype');
+                call.dnumber = call.getAttribute('dnumber');
+                call.snumber = call.getAttribute('snumber');
+                call.queuestatus = call.getAttribute('queuestatus');
+                call.hold = +call.getAttribute('holdtime');
+                call.talk = +call.getAttribute('talktime');
+                call.total = +call.getAttribute('totaltime');
+
+                var callId = call.getAttribute('id'),
+                    oldCall = callIds[callId];
+                if (oldCall) {
+                    calls.splice(calls.indexOf(oldCall), 1, call);
+                }
+                else {
+                    if (addToBeginning) {
+                        beginning.push(call);
+                    }
+                    else {
+                        calls.push(call);
+                    }
+                }
+                callIds[callId] = call;
+
+                dbChanged = true;
+            }
+
+            if (addToBeginning) {
+                calls = beginning.concat(calls);
+            }
+
+
+            function cacheFields(tag) {
+                tag.name = tag.getAttribute('name');
+                tag.description = tag.getAttribute('description');
+                tag.callerid = tag.getAttribute('callerid_internal');
+            }
+
+
+            for (i = 0, n = newQueues.length; i < n; i++) {
+                // todo: now I simply overwrite queues. Todo detect queue changes
+                var queue = newQueues[i],
+                    queueId = queue.getAttribute('id');
+                if (!queues[queueId]) {
+                    dbChanged = true;
+                    queuesChanged = true;
+                }
+                queue.name = queue.getAttribute('name');
+                queues[queueId] = queue;
+                queue.marked = true;
+            }
+
+            for (i in queues) {
+                if (!queues[i].marked) {
+                    delete queues[i];
+                    dbChanged = true;
+                    queuesChanged = true;
+                }
+                else {
+                    queues[i].marked = false;
+                }
+            }
+
+
+            for (i = 0, n = newAgents.length; i < n; i++) {
+                // todo: now I simply overwrite queues. Todo detect queue changes
+                var agent = newAgents[i],
+                    agentId = agent.getAttribute('id'),
+                    oldAgent = agents[agentId];
+
+                if (!oldAgent) {
+                    dbChanged = true;
+                    agentPhoneChanged = true;
+                }
+                else {
+                    var oldAgentEvents = oldAgent.events;
+                }
+
+                cacheFields(agent);
+                agent.dtype = agent.getAttribute('dtype');
+                agent.dnumber = agent.getAttribute('dnumber');
+                agent.events = oldAgentEvents || new QAgentEvents();
+                agents[agentId] = agent;
+                agent.marked = true;
+
+                if ((agent.events.add(agent.getElementsByTagName('event')) || agent.events.isLoggedIn()) && visibleCols[COL_loggedIn]) {
+                    dbChanged = true;
+                }
+            }
+
+            for (i in agents) {
+                if (!agents[i].marked) {
+                    delete agents[i];
+                    dbChanged = true;
+                    agentPhoneChanged = true;
+                }
+                else {
+                    agents[i].marked = false;
+                }
+            }
+
+
+            for (i = 0, n = newPhones.length; i < n; i++) {
+                // todo: now I simply overwrite queues. Todo detect queue changes
+                var phone = newPhones[i],
+                    phoneName = phone.getAttribute('name');
+                if (!phones[phoneName]) {
+                    dbChanged = true;
+                    agentPhoneChanged = true;
+                }
+                cacheFields(phone);
+                phones[phoneName] = phone;
+                phone.marked = true;
+            }
+            // todo: ask David if we should update dropdowns
+
+            for (i in phones) {
+                if (!phones[i].marked) {
+                    delete phones[i];
+                    dbChanged = true;
+                    agentPhoneChanged = true;
+                }
+                else {
+                    phones[i].marked = false;
+                }
+            }
+
+            if (!EMBEDDED) {
+                if (queuesChanged) {
+                    queuesDisplay();
+                }
+                if (agentPhoneChanged) {
+                    phoneAgentDisplay();
+                }
+            }
+
+            // TODO: probably update view only if relevant info changed
+            return dbChanged;
+        }
+
+
+        function getCallsFromTimePeriod(start, end) {
+            var startIndex,
+                endIndex,
+                callEnd;
+
+            for (var i = 0, n = calls.length; i < n; i++) {
+                callEnd = +calls[i].end;
+                if (startIndex === undefined && callEnd >= start) {
+                    startIndex = i;
+                }
+                if (callEnd < end) {
+                    endIndex = i;
+                }
+                else {
                     break;
                 }
             }
 
-            if (event) {
-                events.push(event);
-                isChanged = true;
-            }
-        }
-        
-        if (isChanged) {
-            events.sort(byTime);
-        }
-        
-        return isChanged;
-    };
-
-
-    // Calculates logged in time in period between periodStart and periodEnd.
-    // Tricky thing is to group events into login-logout pairs.
-    this.calcLoggedTime = function (periodStart, periodEnd) {
-        var start,              // start and end of logged in period,
-            end,                // is composed out of a pair of events.
-            clear,              // marker that we're done with current start-end pair, so start over again 
-            i = 0,
-            total = 0,
-            event = events[0];
-
-        // when first event is logoff, and it is inside bounds, then virtually add login event before it
-        if (event && !event.isLogin && event.time >= periodStart) {
-            start = periodStart;
-        }
-
-        while (event && event.time < periodEnd) {
-            clear = false;
-            
-            if (event.isLogin) {
-                start = event.time;
+            if (startIndex !== undefined && endIndex !== undefined) {
+                return calls.slice(startIndex, endIndex + 1);
             }
             else {
-                end = event.time;
-            }
-            
-            if (end <= periodStart) {                           // completely out of bounds 
-                clear = true;
-            }
-            else if (start && end) {                            // gathered a pair, which is at least partially in bounds
-                total += Math.min(periodEnd, end) - Math.max(periodStart, start);
-                clear = true;
-            }
-
-            if (clear) {                                        // clear that pair, and search for a new one
-                start = undefined;
-                end = undefined;
-            }
-
-            i++;
-            event = events[i];
-        }
-        
-        if (start && start < periodEnd && !end) {               // unfinished pair in bounds, agent is still logged in 
-            total += Math.min(moment().unix(), periodEnd) - Math.max(periodStart, start);
-        }
-
-        return total;
-    }; 
-    
-    
-    // queue agent is currently logged in
-    this.isLoggedIn = function () {
-        var n = events.length;
-        if (n) {
-            return events[n - 1].isLogin;
-        }  
-        else {
-            return false;
-        }
-    };
-}
-
-
-function QChart (container) {
-    var that = this,
-        dbTable,
-        loggedInTimeDivider,
-        timeUnit,
-        tableHeader,
-        dataTable,
-        charts = {},
-        zoomingOverlay = byId('zooming-overlay'),
-        resetZoomBtn = byId('zoom-out'),
-        rectSVG,
-        startX,
-        endX = null,
-        goodEvt,
-        blockRefresh,
-        dateformat = qOpts.dateformat.replace('YYYY', 'yyyy').replace('DD', 'dd'),
-        chartArea = {
-            top: 99,
-            left: '8%',
-            right: '16%'
-        },
-        animation = {
-            duration: 400,
-            easing: 'out'
-        },
-        chartOptions = {
-            linechart: {
-                animation: animation,
-                sliceVisibilityThreshold: 0,
-                chartArea: chartArea
-            },
-            barchart: {
-                animation: animation,
-                sliceVisibilityThreshold: 0,
-                chartArea: chartArea,
-                bar: {groupWidth: "90%"}
-            },
-            stacked: {
-                animation: animation,
-                isStacked: true,
-                sliceVisibilityThreshold: 0,
-                chartArea: chartArea,
-                bar: {groupWidth: "90%"}
-            },
-            piechart: {
-                animation: animation,
-                is3D: true,
-                sliceVisibilityThreshold: 0,
-                chartArea: chartArea
-            }
-        };
-
-
-    function centerPieSource () {
-        var g = SLIDES.piechart.querySelectorAll('svg > g'),
-            left = Infinity,
-            right = 0;
-
-        for (var i = (chartOptions.piechart.legend === null ? 2 : 1); i < g.length - 1; i++) {
-            var rect = g[i].getBoundingClientRect();
-            left = Math.min(left, rect.left);
-            right = Math.max(right, rect.right);
-        }
-
-        rect = byId('left-content').getBoundingClientRect();
-        byId('piechart-chooser').style.right = rect.right - right - left + rect.left + 12 + 'px';
-    }
-
-
-    container.addEventListener('mousedown', mousedown, true);
-    container.addEventListener('mouseup', mouseup, true);
-    container.addEventListener('wheel', mousewheel);
-    byId('left-overlay').addEventListener('click', function () {
-        move(-1);
-    });
-    byId('right-overlay').addEventListener('click', function () {
-        move(1);
-    });
-
-
-    function renderPieSourceSelect () {
-        // init pieFilter property from server data
-        if (!that.pieFilter) {
-            var pieFilterSaved = byName('piesource');
-            if (pieFilterSaved) {
-                pieFilterSaved = pieFilterSaved.split('_');
-                that.pieFilter = {
-                    by: pieFilterSaved[0],
-                    id: pieFilterSaved[1]
-                };
-            }
-            else {
-                that.pieFilter = {
-                    by: 'column',
-                    id: '0'
-                };
+                return [];
             }
         }
 
-        // render dropdown
-        var str = 'Display:<label> column <select id="piechart-by-column"><option value>Choose column</option>',
-            visibleCols = qOpts.getColumns(),
-            colPosLen = qDB.colPos.length + 1;
-        
-        for (var i in COLUMNS) {
-            if (visibleCols[i]) {
-                str += '<option value="' + i + '">' + COLUMNS[i] + '</option>';
+
+        function getVisibleColumnsAndRows() {
+            for (var i in columnNames) {
+                visibleCols[i] = +options[columnNames[i]];
             }
-        }
-       
-        str += '</select></label><label> or row <select id="piechart-by-row"><option value>Choose row</option>';
-
-        // never display total calls column in a row, because with it all the other call-count columns will loose sense
-        // never display rows that have only non-zero logged-in-time. Because it will be no sense to display chart with 100%
-        var totalCallsPos = qDB.colPos.indexOf(0) + 1,
-            loggedInPos = qDB.colPos.indexOf(COL_loggedIn) + 1;
-        
-        for (i in dbTable) {
-            var row = dbTable[i],
-                totalVisible = 0;
-
-            for (var j = 1; j < colPosLen; j++) {
-                if (j !== totalCallsPos && j !== loggedInPos) {
-                    totalVisible += row[j];
-                }
+            for (i in destinationNames) {
+                visibleRows[i] = +options[destinationNames[i]];
             }
-
-            if (totalVisible) {
-                str += '<option value="' + i + '">' + row[0] + '</option>';
-            }
-        }
-        str += '</select></label>';
-        byId('piechart-chooser').innerHTML = str;
-
-        // init dropdown
-        var byCol = byId('piechart-by-column'),
-            byRow = byId('piechart-by-row');
-
-        if (that.pieFilter.by === 'column') {
-            byCol.value = that.pieFilter.id;
-            if (byCol.selectedIndex === -1) {
-                byCol.selectedIndex = 1;
-            }
-        }
-        else {
-            byRow.value = that.pieFilter.id;
-            if (byRow.selectedIndex === -1) {
-                byRow.selectedIndex = 1;
-            }
+            getColumnPositions();
+            getRowPositions();
         }
 
-        // set dropdown behaviour
-        byCol.onchange = function () {
-            that.pieFilter = {
-                by: 'column',
-                id: this.value
-            };
-            byRow.value = '';
-            qOpts.enableSaveButton();
-            renderPieChart();
-        };
-        byRow.onchange = function () {
-            that.pieFilter = {
-                by: 'row',
-                id: this.value
-            };
-            byCol.value = '';
-            qOpts.enableSaveButton();
-            renderPieChart();
-        };
-        byCol.onfocus = byRow.onfocus = function () {
-            blockRefresh = true;
-            setTimeout(function () {
-                blockRefresh = false;
-            }, 60000);
-        };
-        byCol.onblur = byRow.onblur = function () {
-            blockRefresh = false;
-        };
-    }
+
+        function setVisibleColumn(pos, value) {
+            visibleCols[pos] = value;
+            getColumnPositions();
+            createReport(true);
+        }
 
 
-    function cacheTableHeader (pieChartRow, pieChartCol) {
-        var colPos = qDB.colPos,
-            loggedInPos = colPos.indexOf(COL_loggedIn) + 1,
-            maxNum = 0,
-            maxLoggedIn = 0;
-
-        // when table row is displayed as pie chart
-        if (pieChartRow !== undefined) {
-            for (var j in colPos) {
-                var pos = colPos[j],
-                    el = dbTable[pieChartRow][+j + 1];
-
-                if (pos === COL_loggedIn) {
-                    maxLoggedIn = Math.max(maxLoggedIn, el);
-                }
-                else {
-                    maxNum = Math.max(maxNum, el);
-                }
-            }
-            loggedInTimeDivider = maxNum ? (maxLoggedIn / maxNum * 21) : maxLoggedIn;
-        }
-        // when logged in time column is displayed 
-        else if (pieChartCol) {
-            loggedInTimeDivider = qDB.maxLoggedIn;      // average
-        }
-        // other cases
-        else {
-            loggedInTimeDivider = qDB.maxNum ? (qDB.maxLoggedIn / qDB.maxNum * 21) : qDB.maxLoggedIn;
+        function setVisibleRow(pos, value) {
+            visibleRows[pos] = value;
+            getRowPositions();
+            createReport();
         }
 
-        if (loggedInTimeDivider > DAY) {
-            loggedInTimeDivider = DAY;
-            timeUnit = ' (days)';
-        }
-        else if (loggedInTimeDivider > 3600) {
-            loggedInTimeDivider = 3600;
-            timeUnit = ' (hours)';
-        }
-        else if (loggedInTimeDivider > 60) {
-            loggedInTimeDivider = 60;
-            timeUnit = ' (minutes)';
-        }
-        else if (loggedInTimeDivider > 0) {
-            loggedInTimeDivider = 1;
-            timeUnit = ' (seconds)';
-        }
-        else {
-            loggedInTimeDivider = Infinity;
-            timeUnit = '';
-        }
 
-        tableHeader = [PERIOD ? 'Time' : 'Destination'];
-
-        if (!pieChartCol) {
-            for (var i in colPos) {
-                tableHeader.push(COLUMNS[colPos[i]] + ((+i + 1 === loggedInPos) ? timeUnit : ''));
-            }
-        }
-    }
-
-
-    function getPieDataTable () {
-        var pieChartOptions = chartOptions.piechart,
-            pf = that.pieFilter;
-        
-        function setEmptyChart () {
-            data = [['', ''], ['No calls', 1]];
-            pieChartOptions.legend = 'none';
-            pieChartOptions.pieSliceText = 'label';
-            pieChartOptions.enableInteractivity = false;
-        }
-        
-        pf.id = qOpts.get('piechart-by-column');
-        pf.by = 'column';
-        
-        if (pf.id === '') {
-            pf.by = 'row';
-            pf.id = qOpts.get('piechart-by-row');
-        }
-        
-        if (pf.id === '') {
-            pf.by = 'column';
-            byId('piechart-by-column').value = pf.id = qDB.colPos[0];
-        }
-        
-        var row,
-            id = +pf.id,
-            data = [['', '']];                        // in pieChart, first row seems not to have any useful information
-            
-        pieChartOptions.legend = null;
-        pieChartOptions.pieSliceText = 'percentage';
-        pieChartOptions.enableInteractivity = true;
-
-        if (pf.by === 'column') {
-            pieChartOptions.title = 'Column: ' + COLUMNS[pf.id];
-            cacheTableHeader(undefined, id === COL_loggedIn);
-            var pos = qDB.colPos.indexOf(id) + 1,
-                i = (!PERIOD && +qOpts.get('allcalls')) ? 1 : 0,              // in Destination mode, don't show "All
-                                                                              // calls" in chart
-                n = dbTable.length - (qOpts.totalRow ? 1 : 0),                // in Time mode, don't show "Total" row
-                totalVisible = 0;
-
-            for (; i < n; i++) {
-                row = dbTable[i];
-                totalVisible += row[pos];
-                if (id !== COL_loggedIn) {
-                    if (row.total) {
-                        data.push([row[0], row[pos]]);
+        function getColumnPositions() {
+            colPos = [];
+            secondaryColVisible = false;
+            for (var i = 0, n = COLUMNS.length; i < n; i++) {
+                var j = reorder[i];
+                if (visibleCols[j]) {
+                    if (i >= COL_timeStart) {
+                        secondaryColVisible = true;
                     }
+                    colPos.push(j);
                 }
-                else {
-                    if (row[pos] || row.hasLIT) {
-                        data.push([row[0] + timeUnit, +(row[pos] / loggedInTimeDivider).toFixed(2)]);
-                    }
-                }
-            }
-            if (!totalVisible) {                                       // all cols should be given as an option, but they don't always contain data
-                setEmptyChart();
             }
         }
-        else {
-            pieChartOptions.title = 'Row: ' + dbTable[pf.id][0];
-            if (dbTable[id].total) {                                   // this can be false if you save report and then data changes
-                cacheTableHeader(id);
-                row = dbTable[id];
-                var totalCallsPos = qDB.colPos.indexOf(0) + 1,
-                    loggedInPos = qDB.colPos.indexOf(COL_loggedIn) + 1;
-                
-                for (i = 1, n = tableHeader.length; i < n; i++) {
-                    if (i !== totalCallsPos) {
-                        if (i !== loggedInPos) {
-                            data.push([tableHeader[i], row[i]]);
+
+
+        function getRowPositions() {
+            rowPos = [];
+            var row = 0;
+            for (var i = 0, n = visibleRows.length; i < n; i++) {
+                if (visibleRows[i]) {
+                    rowPos[i] = row++;
+                }
+            }
+        }
+
+
+        function getInclude(destination, ids) {
+            if (EMBEDDED) {
+                var include = options.include;
+                for (var i in include) {
+                    var inc = include[i];
+                    if (inc.feature === destination) {
+                        if (destination === 'agents') {
+                            ids.push(inc.dtype + '_' + inc.dnumber);
                         }
-                        else if (PERIOD || row[i]) {
-                            data.push([tableHeader[i], +(row[i] / loggedInTimeDivider).toFixed(2)]);
+                        else {
+                            ids.push(inc.dnumber);
                         }
                     }
                 }
             }
             else {
-                setEmptyChart();
+                var selected = byId(destination + 'include_selected').options;
+                for (i = 0, n = selected.length; i < n; i++) {
+                    ids.push(selected[i].value);
+                }
             }
         }
 
-        return google.visualization.arrayToDataTable(data);
-    }
 
+        function getTableWithPercentage(csv) {
+            var result = new Array(table.length),
+                inserts = 0;
 
-    function getDataTable (type) {
-        cacheTableHeader();
-        var colPos = qDB.colPos,
-            data = [tableHeader],
-            hasNumericCols = false,
-            hasDurationCols = false,
-            cols = [],
-            j = 0,
-            n = dbTable.length - (qOpts.totalRow ? 1 : 0);            // for time-based reports, don't show "Total" row
-
-        for (; j < n; j++) {
-            var dbRow = dbTable[j],
-                row = dbRow.slice(),
-                start = dbRow.start;
-
-            // for time - based reports
-            if (start && SAME_TZ) {
-                row[0] = start;
-            }
-
-            for (var i in colPos) {
-                var i1 = colPos[i],
-                    j1 = +i + 1,
-                    isTime = i1 >= COL_timeStart && i1 < COL_timeEnd;
-                
-                if (isTime) {
-                    row[j1] = qUtils.googleTimeFormat(row[j1]);
-                }
-                else if (i1 === COL_loggedIn) {
-                    // If agent was logged in for the whole time, the "logged in" chart should look as a straight line.
-                    // For time-period-based report type, row[0] is a Date object
-                    if (start && j === n - 1) {
-                        row[j1] *= PERIOD / (Math.min(END * 1000, Date.now()) - start.getTime()) * 1000;
-                    }
-                    // show time in the most suitable unit of measure
-                    row[j1] = +(row[j1] / loggedInTimeDivider).toFixed(2);
-                }
-
-                // once, check for column types
-                if (j === 0) {
-                    if (isTime) {
-                        hasDurationCols = true;
-                        cols.push(1);
-                    }
-                    else {
-                        hasNumericCols = true;
-                        cols.push(0);
-                    }
-                }
-            }
-            
-            // then reflect column types in options
-            if (j === 0) {
-                if (hasNumericCols && hasDurationCols) {   // then display two axes, right is timeOfDay
-                    var series = {};
-                    for (i in colPos) {
-                        series[i] = {targetAxisIndex: cols[i]};
-                    }
-                    chartOptions[type].vAxes = {
-                        0: {},
-                        1: {}
-                    };
-                    chartOptions[type].series = series;
-                }
-                else {
-                    delete chartOptions[type].vAxes;
-                    delete chartOptions[type].series; 
+            for (var i = 0, n = table.length; i < n; i++) {
+                result[i] = table[i].slice();
+                if (!csv) {
+                    result[i][0] = UTILS.escapeHtml(result[i][0]);
                 }
             }
 
-            data.push(row);
-        }
-
-
-        var googleFormat = dateformat;
-        if (PERIOD < DAY) {
-            googleFormat += ' ' + (qOpts.timeformat === '12' ? 'hh:mmaa' : 'HH:mm');
-        }
-
-        // google charts display time on x axis better than I do, because they know font and the scale
-        if (SAME_TZ && PERIOD > 0) {
-            chartOptions[type].hAxis = {
-                format: googleFormat,
-                viewWindow: {
-                    min: new Date(START * 1000),
-                    max: new Date(Math.min(Date.now(), END * 1000))
-                }
-            };
-        }
-        else {
-            delete chartOptions[type].hAxis;
-        }
-
-        chartOptions[type].title = qOpts.get('name');
-
-        return google.visualization.arrayToDataTable(data);
-    }
-    
-    
-    function setZoomBackup () {
-        if (!that.originalZoom) {
-            that.originalZoom = {
-                start: START,
-                end: END,
-                startOpt: qOpts.get('startday'),
-                endOpt: qOpts.get('endday'),
-                period: PERIOD
-            };
-            resetZoomBtn.style.display = 'block';
-        }
-    }
-
-
-    function reRenderWithoutAnimation () {
-        qOpts.showNewTime();
-        chartOptions[qMenu.type].animation.duration = 0;
-        qDB.filter();
-        chartOptions[qMenu.type].animation.duration = 400;
-    }
-    
-    
-    function move (direction) {
-        var now = moment().unix(),
-            leftTime = START,
-            rightTime = Math.min(now, END),
-            delta = (rightTime - leftTime) * 0.1 * direction;
-        if (direction < 0 || rightTime !== now) {
-            setZoomBackup();
-
-            START += delta;
-            END = rightTime + delta;
-
-            reRenderWithoutAnimation();
-        }
-    }
-    
-
-    function mousedown (evt) {
-        var svgr = charts[qMenu.type] && charts[qMenu.type].svgr;
-        goodEvt = svgr && (svgr === evt.target || qUtils.contains(svgr, evt.target));
-        
-        if (goodEvt) {
-            rectSVG = svgr.getBoundingClientRect();
-            startX = evt.pageX;
-            zoomingOverlay.style.top = rectSVG.top + 'px';
-            zoomingOverlay.style.bottom = document.body.clientHeight - rectSVG.bottom + 'px';
-            zoomingOverlay.style.left = startX - window.pageXOffset + 'px';
-            zoomingOverlay.style.right = document.body.clientWidth + window.pageXOffset - startX + 'px';
-            zoomingOverlay.style.display = 'block';
-            container.onmousemove = mousemove;
-        }
-    }
-
-
-    function mousemove (evt) {
-        endX = evt.pageX;
-        zoomingOverlay.style.left = Math.min(startX, endX) - window.pageXOffset + 'px';
-        zoomingOverlay.style.right = document.body.clientWidth + window.pageXOffset - Math.max(startX, endX) + 'px';
-    }
-
-    
-    function mouseup () {
-        zoomingOverlay.style.display = 'none';
-        if (goodEvt && endX !== null) {
-            var maxX = Math.max(startX, endX),
-                minX = Math.min(startX, endX);
-
-            if (maxX - minX < 6) {
-                return;
-            }
-            setZoomBackup();
-
-            var now = moment().unix(),
-                leftTime = START,
-                rightTime = Math.min(now, END);
-
-            START += (rightTime - leftTime) * (minX - window.pageXOffset - rectSVG.left) / rectSVG.width;
-            END = rightTime - (rightTime - leftTime) * (rectSVG.right + window.pageXOffset - maxX) / rectSVG.width;
-            PERIOD = that.originalZoom.period * (Math.min(now, END) - START) / (Math.min(now, that.originalZoom.end) - that.originalZoom.start);
-
-            reRenderWithoutAnimation();
-
-            container.onmousemove = null;
-        }
-        
-        endX = null;
-    }
-
-    
-    function mousewheel (evt) {
-        var svgr = charts[qMenu.type] && charts[qMenu.type].svgr;
-        if (svgr && evt.deltaY && (svgr === evt.target || qUtils.contains(svgr, evt.target))) {
-            setZoomBackup();
-            
-            var now = moment().unix(),
-                leftTime = START,
-                rightTime = Math.min(now, END),
-                rectSVG = svgr.getBoundingClientRect(),
-                center = evt.pageX + window.pageXOffset,
-                left = center - rectSVG.left,
-                right = rectSVG.right - center,
-                zoom = -0.2 * evt.deltaY / 100;
-
-            START += (rightTime - leftTime) * left / rectSVG.width * zoom;
-            END = rightTime - (rightTime - leftTime) * right / rectSVG.width * zoom;
-            PERIOD = that.originalZoom.period * (Math.min(now, END) - START) / (Math.min(now, that.originalZoom.end) - that.originalZoom.start);
-
-            reRenderWithoutAnimation();
-            
-            evt.preventDefault();
-            return false;
-        }
-    }
-
-    
-    function assignZoom (type) {
-        if (PERIOD > 0) {
-            setTimeout(function () {
-                var svgr = SLIDES[type].getElementsByTagName('svg');
-                if (svgr) {
-                    svgr = svgr[0];
-                    var title = svgr.childNodes[2].childNodes[0];
-                    title.setAttribute('y', 32);
-                    // a tricky part of Google charts integration. Find rectangle inside which the chart is rendered
-                    svgr = (svgr.childNodes[4] && svgr.childNodes[4].childNodes[0]) || (svgr.childNodes[3] && svgr.childNodes[3].childNodes[0]) || svgr.childNodes[2].childNodes[0];
-                    svgr.style.cursor = 'col-resize';
-                    charts[type].svgr = svgr;
-                }
-            }, 650);
-        }
-    }
-
-
-    function renderChart (type) {
-        dataTable = getDataTable(type);
-        charts[type].draw(dataTable, chartOptions[type]);
-        assignZoom(type);
-    }
-
-
-    function renderPieChart () {
-        dataTable = getPieDataTable();
-        charts.piechart.draw(dataTable, chartOptions.piechart);
-        centerPieSource();
-    }
-    
-
-    this.render = function (type, slide) {
-        if (!window.google || !google.visualization) {
-            setTimeout(function () {
-                that.render();
-            }, 100);
-        }
-        else {
-            google.charts.setOnLoadCallback(function () {
-                if (!charts[type]) {
-                    switch (type) {
-                        case 'linechart':
-                            charts[type] = new google.visualization.LineChart(slide);
-                            break;
-                        case 'barchart':
-                        case 'stacked':
-                            charts[type] = new google.visualization.ColumnChart(slide);
-                            break;
-                        case 'piechart':
-                            charts[type] = new google.visualization.PieChart(slide);
-                            break;
-                    }
-                } 
-                dbTable = qDB.getData();
-              
-                if (type === 'piechart') {
-                    if (!blockRefresh) {
-                        renderPieSourceSelect();
-                    }
-                    renderPieChart();
-                }
-                else {
-                    renderChart(type);
-                }
-
-                qUtils.eqHeight();
-            });
-        }
-    };
-
-
-    this.resize = function () {
-        var type = qMenu.type;
-        if (charts[type]) {
-            charts[type].draw(dataTable, chartOptions[type]);
-            if (type === 'piechart') {
-                centerPieSource();
-            }
-            else {
-                assignZoom(type, SLIDES[type]);
-            }
-        }
-    };
-
-
-    this.downloadPNG = function () {
-        function b64toBlob(b64Data, contentType) {
-            var sliceSize = 1024;
-            var byteCharacters = atob(b64Data);
-            var bytesLength = byteCharacters.length;
-            var slicesCount = Math.ceil(bytesLength / sliceSize);
-            var byteArrays = new Array(slicesCount);
-
-            for (var sliceIndex = 0; sliceIndex < slicesCount; ++sliceIndex) {
-                var begin = sliceIndex * sliceSize;
-                var end = Math.min(begin + sliceSize, bytesLength);
-
-                var bytes = new Array(end - begin);
-                for (var offset = begin, i = 0 ; offset < end; ++i, ++offset) {
-                    bytes[i] = byteCharacters[offset].charCodeAt(0);
-                }
-                byteArrays[sliceIndex] = new Uint8Array(bytes);
-            }
-            return new Blob(byteArrays, {type: contentType});
-        }
-
-
-        var fileName = (qOpts.get('name').replace(/[^\w\s]/g, '_') || 'noname') + '.png',
-            b64data = charts[qMenu.type].getImageURI();
-
-        if (navigator.msSaveBlob) { // IE 10+
-            navigator.msSaveBlob(b64toBlob(b64data.substr(22), 'image/png'), fileName);
-        }
-        else {
-            qUtils.downloadUrl(b64data, fileName);
-        }
-    };
-
-
-    this.resetZoom = function () {
-        var orig = this.originalZoom;
-        if (orig) {
-            START = orig.start;
-            END = orig.end;
-            PERIOD = orig.period;
-            this.originalZoom = null;
-            resetZoomBtn.style.display = 'none';
-            reRenderWithoutAnimation();
-            byId('startday').value = orig.startOpt;
-            byId('endday').value = orig.endOpt;
-            if (orig.startOpt !== '1') {
-                byId('startdate').style.display = 'none';
-            }
-            if (orig.endOpt !== '1') {
-                byId('enddate').style.display = 'none';
-            }
-        }
-    }
-}
-
-var START,
-    END,
-    PERIOD,
-    DAY = 86400,
-
-    SLIDES = {},
-
-    COLUMNS = [
-        'Total calls',
-        'SLA ok',
-        'Answered',
-        'Not answered',
-        'Inbound calls',
-        'Inbound answered',
-        'Inbound no answer',
-        'Internal calls',
-        'Internal answered',
-        'Internal no answer',
-        'Outbound calls',
-        'Outbound answered',
-        'Outbound no answer',
-        'Hold time min',
-        'Hold time avg',
-        'Hold time max',
-        'Talk time min',
-        'Talk time avg',
-        'Talk time max',
-        'Total time min',
-        'Total time avg',
-        'Total time max',
-        'Abandoned by caller',
-        'No agents available',
-        'Time-out in queue',
-        'Key press by caller',
-        'Agent completed',
-        'Caller completed',
-        'Transfer by agent',
-        'Logged in time'
-    ],
-
-    COL_timeStart = 13,
-    COL_timeEnd = 22,
-    COL_loggedIn = 29,
-
-    SAME_TZ,            // same timezone
-    COL_POS = [];       // works when dragndrop columns
-
-for (PERIOD = 0; PERIOD < COLUMNS.length; PERIOD++) {  // here PERIOD is just counter, and will be changed later
-    COL_POS[PERIOD] = PERIOD;
-}
-
-
-function QDataBase (visibleCols, visibleRows) {
-    var that = this,
-        callIds = {},
-        calls = [],
-        queues = {},
-        agents = {},
-        phones = {},
-        reportEnd,
-        rowPos,
-        table;
-
-
-    function byEnd (a, b) {
-        if (a.end > b.end) {
-            return 1;
-        }
-        else if (a.end < b.end) {
-            return -1;
-        }
-        else {
-            return 0;
-        }
-    }
-
-
-    function byCol (col, order) {
-        return function (a, b) {
-            if (a[col] > b[col]) {
-                return order;
-            }
-            else if (a[col] < b[col]) {
-                return -order;
-            }
-            else {
-                return 0;
-            }
-        }
-    }
-
-
-    this.sort = function () {
-        if (qOpts.totalRow) {
-            var totalRow = table.pop();
-        }
-        if (qTable.sortingCol > 0) {
-            table.sort(byCol(this.colPos.indexOf(qTable.sortingCol - 1) + 1, qTable.sortingOrder));
-        }
-        else if (qTable.sortingOrder === -1) {
-            table.reverse();
-        }
-        if (qOpts.totalRow) {
-            table.push(totalRow);
-        }
-    };
-
-
-    this.setVisibleCol = function (pos, value) {
-        visibleCols[pos] = value;
-        this.calculateColPos();
-        this.filter();
-    };
-
-
-    this.setVisibleRow = function (pos, value) {
-        visibleRows[pos] = value;
-        calculateRowPos();
-        this.filter();
-    };
-
-
-    this.calculateColPos = function () {
-        this.colPos = [];
-        for (var i = 0, n = COLUMNS.length; i < n; i++) {
-            var j = COL_POS[i];
-            if (visibleCols[j]) {
-                this.colPos.push(j);
-            }
-        }
-    };
-
-
-    function calculateRowPos () {
-        rowPos = [];
-        var row = 0;
-        for (var i in visibleRows) {
-            if (visibleRows[i]) {
-                rowPos[i] = row++;
-            }
-        }
-    }
-
-
-    this.getTable = function (csv) {
-        var result = new Array(table.length),
-            inserts = 0,
-            i, j;
-
-        for (i in table) {
-            result[i] = table[i].slice();
-        }
-
-        for (j in this.colPos) {
-            var i1 = this.colPos[j],
-                j0 = +j + 1,
-                j1 = j0 + inserts,
-                withPercentage = visibleCols[i1] === 2,
-                time = i1 >= COL_timeStart && i1 < COL_timeEnd,
-                loggedInCol = i1 === COL_loggedIn;
-
-            if (withPercentage || time || loggedInCol) {
-                for (i in result) {
-                    var row = result[i],
-                        perc;
-
-                    if (time) {
-                        row[j1] = qUtils.timeFormat(row[j1], 3);
-                    }
-                    else if (loggedInCol) {
-                        row[j1] = (PERIOD || table[i].hasLIT) ? qUtils.timeFormat(row[j1], 4) : '';
-                    }
-
-                    if (withPercentage) {
-                        var tblRow = table[i];
-                        if (loggedInCol) {
-                            if (tblRow[j0] || tblRow.hasLIT) {
-                                perc = tblRow.totalTime ? Math.round(100 * tblRow[j0] / tblRow.totalTime) : 0;
+            for (var j = 0, m = colPos.length; j < m; j++) {
+                var i1 = colPos[j],
+                    j0 = j + 1,
+                    j1 = j0 + inserts,
+                    withPercentage = visibleCols[i1] === 2,
+                    time = i1 >= COL_timeStart && i1 < COL_timeEnd,
+                    loggedInCol = i1 === COL_loggedIn;
+
+                if (withPercentage || time || loggedInCol) {
+                    for (i = 0, n = result.length; i < n; i++) {
+                        var row = result[i],
+                            perc;
+
+                        if (time) {
+                            row[j1] = UTILS.timeFormat(row[j1], 3);
+                        }
+                        else if (loggedInCol) {
+                            row[j1] = (options.period || table[i].hasLIT) ? UTILS.timeFormat(row[j1], 4) : '';
+                        }
+
+                        if (withPercentage) {
+                            var tblRow = table[i];
+                            if (loggedInCol) {
+                                if (tblRow[j0] || tblRow.hasLIT) {
+                                    perc = tblRow.totalTime ? Math.round(100 * tblRow[j0] / tblRow.totalTime) : 0;
+                                }
+                                else {
+                                    perc = '';
+                                }
                             }
                             else {
-                                perc = '';
+                                var divide = tblRow.total;
+                                perc = divide ? Math.round(100 * tblRow[j0] / divide) : '';
                             }
-                        }
-                        else {
-                            var divide = tblRow.total;
-                            perc = divide ? Math.round(100 * tblRow[j0] / divide) : '';
-                        }
 
-                        if (csv) {
-                            row.splice(j1 + 1, 0, perc);
-                        }
-                        else {
-                            if (perc !== '') {
-                                perc += ' %';
+                            if (csv) {
+                                row.splice(j1 + 1, 0, perc);
                             }
-                            row[j1] += ' <small>(' + perc + ')</small>';
+                            else {
+                                if (perc !== '') {
+                                    perc += ' %';
+                                }
+                                row[j1] += ' <small>(' + perc + ')</small>';
+                            }
                         }
+                    }
+                }
+
+                if (withPercentage && csv) {
+                    inserts++;
+                }
+            }
+
+            return result;
+        }
+
+
+        function sortTable() {
+            function byCol(col, order) {
+                return function (a, b) {
+                    if (a[col] > b[col]) {
+                        return order;
+                    }
+                    else if (a[col] < b[col]) {
+                        return -order;
+                    }
+                    else {
+                        return 0;
                     }
                 }
             }
 
-            if (withPercentage && csv) {
-                inserts++;
+
+            if (options.totalrow) {
+                var totalRow = table.pop();
             }
-        }
-
-        return result;
-    };
-
-
-    this.getData = function () {
-        if (!table.length) {
-            var arr = new Array(this.colPos.length + 1);
-            arr[0] = '';
-            var i = arr.length;
-            while (i-- > 1) {
-                arr[i] = 0;
-            }
-        }
-        else {
-            return table;
-        }
-    };
-
-
-    this.downloadCSV = function () {
-        if (!table) {
-            return;
-        }
-
-        var str = '',
-            row = [PERIOD ? 'Time' : 'Destination'];
-
-        for (var i in this.colPos) {
-            var newI = this.colPos[i];
-            row.push(COLUMNS[newI]);
-            if (visibleCols[newI] === 2) {
-                row.push(COLUMNS[newI] + ' %');
-            }
-        }
-        str += row.join(',') + '\n';
-
-        var data = qDB.getTable(true);
-        for (i in data) {
-            row  = data[i];
-            for (var j in row) {
-                var cell = row[j].toString().replace(/"/g, '""');
-                if (cell.search(/("|,|\n)/g) >= 0) {
-                    cell = '"' + cell + '"';
+            if (TABLE) {
+                if (sortingCol > 0) {
+                    table.sort(byCol(colPos.indexOf(sortingCol - 1) + 1, sortingOrder));
                 }
-                str += +j > 0 ? (',' + cell) : cell;
+                else if (sortingOrder === -1) {
+                    table.reverse();
+                }
             }
-            str += '\n';
+            if (options.totalrow) {
+                table.push(totalRow);
+            }
         }
 
-        var fileName = (qOpts.get('name').replace(/[^\w\s]/g, '_') || 'noname') + '.csv',
-            csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
 
-        if (navigator.msSaveBlob) { // IE 10+
-            navigator.msSaveBlob(csvBlob, fileName);
-        }
-        else {
-            qUtils.downloadUrl(URL.createObjectURL(csvBlob), fileName);
-        }
-    };
+        this.downloadCSV = function (callsInfoTable, fileName, headlineRow) {
+            var data = callsInfoTable || (table && getTableWithPercentage(true));
+            if (!data) {
+                return;
+            }
+
+            var str, row;
+
+            if (headlineRow) {
+                str = headlineRow;
+            }
+            else {
+                str = '';
+                row = [options.period ? 'Time' : 'Destination'];
+
+                for (var i = 0, n = colPos.length; i < n; i++) {
+                    var newI = colPos[i];
+                    row.push(COLUMNS[newI]);
+                    if (visibleCols[newI] === 2) {
+                        row.push(COLUMNS[newI] + ' %');
+                    }
+                }
+                str += row.join(',') + '\n';
+            }
+
+            for (i = 0, n = data.length; i < n; i++) {
+                row = data[i];
+                for (var j = 0, m = row.length; j < m; j++) {
+                    var cell = row[j].toString().replace(/"/g, '""');
+                    if (cell.search(/("|,|\n)/g) >= 0) {
+                        cell = '"' + cell + '"';
+                    }
+                    str += j > 0 ? (',' + cell) : cell;
+                }
+                if (i !== n - 1) {
+                    str += '\n';
+                }
+            }
+
+            if (postId) {
+                UTILS.post('/local/qstatistics/csv/', UTILS.serialize({
+                    postid: postId,
+                    csv: str
+                }));
+            }
+            else {
+                fileName = fileName || (options.name.replace(/[^\w\s]/g, '_') || 'noname') + '.csv';
+                var csvBlob = new Blob([str], {type: 'text/csv;charset=utf-8;'});
+
+                if (navigator.msSaveBlob) { // IE 10+
+                    navigator.msSaveBlob(csvBlob, fileName);
+                }
+                else {
+                    UTILS.downloadUrl(URL.createObjectURL(csvBlob), fileName, str);
+                }
+            }
+        };
 
 
-
-
-
-    this.phoneAgentDisplay = function (phoneDisplay) {
-        var destinations = [agents, phones],
-            as = byId('agentsinclude_selected'),
-            au = byId('agentsinclude_unselected'),
-            ps = byId('phonesinclude_selected'),
-            pu = byId('phonesinclude_unselected');
-
-
-        for (var j in destinations) {
-            var dest = destinations[j],
-                selected = +j ? ps : as,
-                unselected = +j ? pu : au,
+        function queuesDisplay() {
+            var selected = byId('queuesinclude_selected'),
+                unselected = byId('queuesinclude_unselected'),
                 strUnselected = '',
                 strSelected = '';
 
-            for (var i in dest) {
-                var el = dest[i],
-                    ids = [],
-                    name,
+            for (var i in queues) {
+                var ids = [],
+                    name = queues[i].name,
                     str;
 
-                for (var o = 0, n = selected.length; o < n; o++) {
-                    ids.push(selected[o].value);
+                for (var sel = selected.length - 1; sel >= 0; sel--) {
+                    ids.push(selected[sel].value);
                 }
 
-                switch (phoneDisplay) {
-                    case 'name':
-                        name = el.name;
-                        break;
-                    case 'description':
-                        name = el.description || el.name;
-                        break;
-                    case 'internal':
-                        name = el.callerid;
-                        break;
-                    case 'name_description':
-                        name = el.name + ' ' + (el.description || el.name);
-                        break;
-                    case 'internal_description':
-                        name = el.callerid + ' ' + (el.description || el.name);
-                        break;
-                    case 'description_name':
-                        name = (el.description || el.name) + ' ' + el.name;
-                        break;
-                    case 'description_internal':
-                        name = (el.description || el.name) + ' ' + el.callerid;
-                        break;
-                }
-                str = '<option value="' + i + '">' + qUtils.escapeHtml(name) + '</option>';
+                str = '<option value="' + i + '">' + UTILS.escapeHtml(name) + '</option>';
                 if (ids.indexOf(i) !== -1) {
                     strSelected += str;
                 }
@@ -1131,1915 +1626,2414 @@ function QDataBase (visibleCols, visibleRows) {
             unselected.innerHTML = strUnselected;
             selected.innerHTML = strSelected;
         }
-    };
 
 
-    function newRow () {
-        var length = COL_timeStart + 1 + (visibleCols[COL_loggedIn] ? 1 : 0),
-            row = new Array(length);
-
-        while (length--) {
-            row[length] = 0;
-        }
-
-        row.total = 0;
-        row.calls = [];
-        row.qnaCalls = [];
-        row.hasLIT = false;
-        return row;
-    }
-
-
-    function add2TableOrMultiRow (rowIndex, row, multiRow) {
-        if (visibleRows[rowIndex]) {
-            var i = 1,
-                n = row.length;
-
-            multiRow = multiRow || table[rowPos[rowIndex]];
-
-            for (; i < n; i++) {
-                multiRow[i] += row[i];
-            }
-            multiRow.calls = multiRow.calls.concat(row.calls);
-            multiRow.qnaCalls = multiRow.qnaCalls.concat(row.qnaCalls);
-        }
-    }
-
-    // call                  - xml call
-    // multiRow              - either appended one time or multiple times to multiRow or created as new row
-    // dontAddToMultipleRows - see line above
-    //
-    // check for usages to understand better
-
-    function decode (call, multiRow, dontAddToMultipleRows, cameFromPhoneFilter) {
-        var stype = call.stype,
-            dtype = call.dtype,
-            answered = call.answer,
-            external = 'external',
-            local = 'local',
-            isInbound,
-            isInternal,
-            isOutbound,
-            row;
-
-        row = dontAddToMultipleRows ? multiRow : newRow();
-        row.calls.push(call);
-
-        // rather weird requirement not to count queuestatus for calls that came from "Telephone lines" filter
-        if (!cameFromPhoneFilter) {
-            row.qnaCalls.push(call);
-        }
-
-        // total calls
-        row[1]++;
-        // sla time
-        if (answered && (call.hold <= qOpts.slaTime)) {
-            row[2]++;
-        }
-        // answered
-        if (answered) {
-            row[3]++;
-        }
-        // not answered
-        if (!answered) {
-            row[4]++;
-        }
-        // inbound calls
-        isInbound = stype === external || stype === local;
-        if (isInbound) {
-            row[5]++;
-        }
-        // inbound answered
-        if (isInbound && answered) {
-            row[6]++;
-        }
-        // inbound no answer
-        if (isInbound && !answered) {
-            row[7]++;
-        }
-        // internal calls
-        isInternal = stype !== external && stype !== local && dtype != external && dtype !== local;
-        if (isInternal) {
-            row[8]++;
-        }
-        // internal answered
-        if (isInternal && answered) {
-            row[9]++;
-        }
-        // internal no answer
-        if (isInternal && !answered) {
-            row[10]++;
-        }
-        // outbound
-        isOutbound = dtype === external || dtype === local;
-        if (isOutbound) {
-            row[11]++;
-        }
-        // outbound answered
-        if (isOutbound && answered) {
-            row[12]++;
-        }
-        // outbound no answer
-        if (isOutbound && !answered) {
-            row[13]++;
-        }
-
-        if (!dontAddToMultipleRows) {
-            //total
-            add2TableOrMultiRow(0, row, multiRow);
-            // external callers
-            if (stype === external || stype === local) {
-                add2TableOrMultiRow(1, row, multiRow);
-            }
-            // internal callers
-            if (stype !== external && stype !== local && dtype != external && dtype !== local) {
-                add2TableOrMultiRow(2, row, multiRow);
-            }
-            // external destinations
-            if (dtype === external || dtype === local) {
-                add2TableOrMultiRow(3, row, multiRow);
-            }
-        }
-    }
-
-
-    this.add = function (update, start, end) {
-        var newCalls = update.getElementsByTagName('call');
-        var newQueues = update.getElementsByTagName('queue');
-        var newAgents = update.getElementsByTagName('agent');
-        var newPhones = update.getElementsByTagName('phone');
-        var dbChanged = false;
-        var agentPhoneChanged = false;
-
-        this.minTime = Math.min(this.minTime, start);
-        this.maxTime = Math.max(this.maxTime, end);
-
-        for (var i = 0, n = newCalls.length; i < n; i++) {
-            var call = newCalls[i];
-            call.start = +call.getAttribute('start');
-            call.answer = +call.getAttribute('answered');
-            call.end = +call.getAttribute('end');
-            call.dtype = call.getAttribute('dtype');
-            call.stype = call.getAttribute('stype');
-            call.dnumber = call.getAttribute('dnumber');
-            call.snumber = call.getAttribute('snumber');
-            call.queuestatus = call.getAttribute('queuestatus');
-            call.hold = +call.getAttribute('holdtime');
-            call.talk = +call.getAttribute('talktime');
-            call.total = +call.getAttribute('totaltime');
-
-            var oldCall = callIds[call.getAttribute('id')];
-            if (oldCall) {
-                calls.splice(calls.indexOf(oldCall), 1);
-            }
-            callIds[call.getAttribute('id')] = call;
-            calls.push(call);
-            dbChanged = true;
-        }
-        if (dbChanged) {
-            calls.sort(byEnd);
-        }
-
-        function cacheFields (tag) {
-            tag.name = tag.getAttribute('name');
-            tag.description = tag.getAttribute('description');
-            tag.callerid = tag.getAttribute('callerid_internal');
-        }
-
-
-        for (i = 0, n = newQueues.length; i < n; i++) {
-            // todo: now I simply overwrite queues. Todo detect queue changes
-            var queue = newQueues[i];
-            if (!queues[queue.getAttribute('id')]) {
-                dbChanged = true;
-            }
-            queue.name = queue.getAttribute('name');
-            queues[queue.getAttribute('id')] = queue;
-            queue.marked = true;
-        }
-
-        for (i in queues) {
-            if (!queues[i].marked) {
-                delete queues[i];
-                dbChanged = true;
-            }
-            else {
-                queues[i].marked = false;
+        function phoneTitleDisplay(arrEl) {
+            switch (options.phonetitle) {
+                case 'name':
+                    return arrEl.name;
+                case 'description':
+                    return arrEl.description || arrEl.name;
+                case 'internal':
+                    return arrEl.callerid;
+                case 'name_description':
+                    return arrEl.name + ' ' + (arrEl.description || arrEl.name);
+                case 'internal_description':
+                    return arrEl.callerid + ' ' + (arrEl.description || arrEl.name);
+                case 'description_name':
+                    return (arrEl.description || arrEl.name) + ' ' + arrEl.name;
+                case 'description_internal':
+                    return (arrEl.description || arrEl.name) + ' ' + arrEl.callerid;
             }
         }
 
 
-        for (i = 0, n = newAgents.length; i < n; i++) {
-            // todo: now I simply overwrite queues. Todo detect queue changes
-            var agent = newAgents[i],
-                oldAgent = agents[agent.getAttribute('id')];
-
-            if (!oldAgent) {
-                dbChanged = true;
-                agentPhoneChanged = true;
-            }
-            else {
-                var oldAgentEvents = oldAgent.events;
-            }
-
-            cacheFields(agent);
-            agent.dtype = agent.getAttribute('dtype');
-            agent.dnumber = agent.getAttribute('dnumber');
-            agent.events = oldAgentEvents || new QAgentEvents();
-            agents[agent.getAttribute('id')] = agent;
-            agent.marked = true;
-
-            if ((agent.events.add(agent.getElementsByTagName('event')) || agent.events.isLoggedIn()) && visibleCols[COL_loggedIn]) {
-                dbChanged = true;
-            }
-        }
-
-        for (i in agents) {
-            if (!agents[i].marked) {
-                delete agents[i];
-                dbChanged = true;
-                agentPhoneChanged = true;
-            }
-            else {
-                agents[i].marked = false;
-            }
-        }
+        function phoneAgentDisplay() {
+            var destinations = [agents, phones],
+                as = byId('agentsinclude_selected'),
+                au = byId('agentsinclude_unselected'),
+                ps = byId('phonesinclude_selected'),
+                pu = byId('phonesinclude_unselected');
 
 
-        for (i = 0, n = newPhones.length; i < n; i++) {
-            // todo: now I simply overwrite queues. Todo detect queue changes
-            var phone = newPhones[i],
-                name = phone.getAttribute('name');
-            if (!phones[name]) {
-                dbChanged = true;
-                agentPhoneChanged = true;
-            }
-            cacheFields(phone);
-            phones[name] = phone;
-            phone.marked = true;
-        }
-        // todo: ask David if we should update dropdowns
+            for (var j = 0, m = destinations.length; j < m; j++) {
+                var arr = destinations[j],
+                    selected = j ? ps : as,
+                    unselected = j ? pu : au,
+                    strUnselected = '',
+                    strSelected = '';
 
-        for (i in phones) {
-            if (!phones[i].marked) {
-                delete phones[i];
-                dbChanged = true;
-                agentPhoneChanged = true;
-            }
-            else {
-                phones[i].marked = false;
-            }
-        }
+                for (var i in arr) {
+                    var el = arr[i],
+                        ids = [],
+                        name,
+                        str;
 
-        if (agentPhoneChanged) {
-            qDB.phoneAgentDisplay(byId('phonetitle').value);
-        }
-
-        return dbChanged;
-    };
-
-
-    this.filterByTime = function (start, end) {
-        var startIndex,
-            endIndex,
-            callEnd;
-
-        for (var i in calls) {
-            callEnd = +calls[i].end;
-            if (startIndex === undefined && callEnd >= start) {
-                startIndex = i;
-            }
-            if (callEnd < end) {
-                endIndex = i;
-            }
-            else {
-                break;
-            }
-        }
-
-        if (startIndex && endIndex) {
-            return calls.slice(+startIndex, +endIndex + 1);
-        }
-        else {
-            return [];
-        }
-    };
-
-
-    function reduceTable () {
-        var minHold = Infinity,
-            minTalk = Infinity,
-            minTotal = Infinity,
-            maxHold = 0,
-            maxTalk = 0,
-            maxTotal = 0,
-            sumHold = 0,
-            sumTalk = 0,
-            talkCallsCount = 0,
-            sumTotal = 0;
-
-
-        function calcSecondaryCols (row) {
-            var call,
-                rowTotal = row.calls.length,
-                minhold = Infinity,
-                avghold = 0,
-                maxhold = 0,
-                mintalk = Infinity,
-                avgtalk = 0,
-                maxtalk = 0,
-                mintotal = Infinity,
-                avgtotal = 0,
-                maxtotal = 0,
-                abandon = 0,
-                noagent = 0,
-                timeout = 0,
-                keypress = 0,
-                agent = 0,
-                caller = 0,
-                transfer = 0,
-                talkCount = 0,
-
-                queueCount = 0;
-
-            for (var i in row.calls) {
-                call = row.calls[i];
-
-                minhold = Math.min(minhold, call.hold);
-                minHold = Math.min(minHold, minhold);
-                avghold += call.hold;
-                maxhold = Math.max(maxhold, call.hold);
-                maxHold = Math.max(maxHold, maxhold);
-                if (call.answer) {
-                    mintalk = Math.min(mintalk, call.talk);
-                    minTalk = Math.min(minTalk, mintalk);
-                    avgtalk += call.talk;
-                    maxtalk = Math.max(maxtalk, call.talk);
-                    maxTalk = Math.max(maxTalk, maxtalk);
-                    talkCount++;
-                }
-                mintotal = Math.min(mintotal, call.total);
-                minTotal = Math.min(minTotal, mintotal);
-                avgtotal += call.total;
-                maxtotal = Math.max(maxtotal, call.total);
-                maxTotal = Math.max(maxTotal, maxtotal);
-            }
-            row.total = rowTotal;
-
-            for (i in row.qnaCalls) {
-                call = row.qnaCalls[i];
-
-                var dtypeQueue = call.dtype === 'queue',
-                    stypeQueue = call.stype === 'queue';
-
-                if (dtypeQueue || stypeQueue) {
-                    var q = call.queuestatus;
-
-                    if (dtypeQueue) {
-                        queueCount++;
+                    for (var sel = selected.length - 1; sel >= 0; sel--) {
+                        ids.push(selected[sel].value);
                     }
 
-                    if (q === 'abandon') {
-                        abandon++;
-                    } else if (q === 'exitwithtimeout') {
-                        timeout++;
-                    } else if (q === 'completeagent') {
-                        agent++;
-                    } else if (q === 'completecaller') {
-                        caller++;
-                    } else if (q === 'transfer') {
-                        transfer++;
-                    } else if (dtypeQueue) {
-                        if (q === 'exitempty') {
-                            noagent++;
-                        } else if (q === 'exitwithkey') {
-                            keypress++;
+                    name = phoneTitleDisplay(el);
+                    str = '<option value="' + i + '">' + UTILS.escapeHtml(name) + '</option>';
+                    if (ids.indexOf(i) !== -1) {
+                        strSelected += str;
+                    }
+                    else {
+                        strUnselected += str;
+                    }
+                }
+
+                unselected.innerHTML = strUnselected;
+                selected.innerHTML = strSelected;
+            }
+        }
+
+
+        function newRow() {
+            var length = COL_timeStart + 1 + (visibleCols[COL_loggedIn] ? 1 : 0),
+                row = new Array(length);
+
+            while (length--) {
+                row[length] = 0;
+            }
+
+            row.total = 0;
+            row.calls = [];
+            row.info = new Array(COL_loggedIn + 2);
+            row.qnaCalls = [];
+            row.hasLIT = false;
+
+            return row;
+        }
+
+
+        function addInfo(row, call, i) {
+            if (row.info[i]) {
+                row.info[i].push(call);
+            } else {
+                row.info[i] = [call];
+            }
+        }
+
+
+        function addInfos(row, calls, i) {
+            var ri = row.info;
+
+            if (ri[i]) {
+                ri[i] = ri[i].concat(calls);
+            } else {
+                ri[i] = calls;
+            }
+        }
+
+
+        function addToTableOrMultiRow(rowIndex, row, multiRow) {
+            if (visibleRows[rowIndex]) {
+                multiRow = multiRow || table[rowPos[rowIndex]];
+
+                var ri = row.info;
+
+                for (var i = 1, n = row.length; i < n; i++) {
+                    multiRow[i] += row[i];
+                    if (i !== 1 && (i < COL_timeStart || i >= COL_timeEnd) && i !== COL_loggedIn && ri[i]) {
+                        addInfos(multiRow, ri[i], i);
+                    }
+                }
+                multiRow.calls = multiRow.calls.concat(row.calls);
+                multiRow.qnaCalls = multiRow.qnaCalls.concat(row.qnaCalls);
+            }
+        }
+
+        // call                  - xml call
+        // multiRow              - either appended one time or multiple times to multiRow or created as new row
+        // dontAddToMultipleRows - see line above
+        //
+        // check for usages to understand better
+
+        function putCallToTable(call, multiRow, dontAddToMultipleRows, cameFromPhoneFilter) {
+            var stype = call.stype,
+                dtype = call.dtype,
+                answered = call.answer,
+                external = 'external',
+                local = 'local',
+                isInbound,
+                isInternal,
+                isOutbound,
+                row;
+
+            row = dontAddToMultipleRows ? multiRow : newRow();
+            row.calls.push(call);
+
+            // rather weird requirement not to count queuestatus for calls that came from "Telephone lines" filter
+            if (!cameFromPhoneFilter) {
+                row.qnaCalls.push(call);
+            }
+
+            // total calls
+            row[1]++;
+            // sla time
+            if (answered && (call.hold <= options.slatime)) {
+                row[2]++;addInfo(row, call, 2);
+            }
+            // answered
+            if (answered) {
+                row[3]++;addInfo(row, call, 3);
+            }
+            // not answered
+            if (!answered) {
+                row[4]++;addInfo(row, call, 4);
+            }
+            // inbound calls
+            isInbound = stype === external || stype === local;
+            if (isInbound) {
+                row[5]++;addInfo(row, call, 5);
+            }
+            // inbound answered
+            if (isInbound && answered) {
+                row[6]++;addInfo(row, call, 6);
+            }
+            // inbound no answer
+            if (isInbound && !answered) {
+                row[7]++;addInfo(row, call, 7);
+            }
+            // internal calls
+            isInternal = stype !== external && stype !== local && dtype != external && dtype !== local;
+            if (isInternal) {
+                row[8]++;addInfo(row, call, 8);
+            }
+            // internal answered
+            if (isInternal && answered) {
+                row[9]++;addInfo(row, call, 9);
+            }
+            // internal no answer
+            if (isInternal && !answered) {
+                row[10]++;addInfo(row, call, 10);
+            }
+            // outbound
+            isOutbound = dtype === external || dtype === local;
+            if (isOutbound) {
+                row[11]++;addInfo(row, call, 11);
+            }
+            // outbound answered
+            if (isOutbound && answered) {
+                row[12]++;addInfo(row, call, 12);
+            }
+            // outbound no answer
+            if (isOutbound && !answered) {
+                row[13]++;addInfo(row, call, 13);
+            }
+
+            if (!dontAddToMultipleRows) {
+                //total
+                addToTableOrMultiRow(0, row, multiRow);
+                // external callers
+                if (stype === external || stype === local) {
+                    addToTableOrMultiRow(1, row, multiRow);
+                }
+                // internal callers
+                if (stype !== external && stype !== local && dtype != external && dtype !== local) {
+                    addToTableOrMultiRow(2, row, multiRow);
+                }
+                // external destinations
+                if (dtype === external || dtype === local) {
+                    addToTableOrMultiRow(3, row, multiRow);
+                }
+            }
+        }
+
+
+        function reduceTable() {
+            var minHold = Infinity,
+                minTalk = Infinity,
+                minTotal = Infinity,
+                maxHold = 0,
+                maxTalk = 0,
+                maxTotal = 0,
+                sumHold = 0,
+                sumTalk = 0,
+                talkCallsCount = 0,
+                sumTotal = 0;
+
+
+            function calcSecondaryCols(row) {
+                var call,
+                    rc = row.calls,
+                    rowTotal = rc.length,
+                    minhold = Infinity,
+                    avghold = 0,
+                    maxhold = 0,
+                    mintalk = Infinity,
+                    avgtalk = 0,
+                    maxtalk = 0,
+                    mintotal = Infinity,
+                    avgtotal = 0,
+                    maxtotal = 0,
+                    abandon = 0,
+                    noagent = 0,
+                    timeout = 0,
+                    keypress = 0,
+                    agent = 0,
+                    caller = 0,
+                    transfer = 0,
+                    talkCount = 0;
+
+
+                for (var i = 0, n = rowTotal; i < n; i++) {
+                    call = rc[i];
+
+                    minhold = Math.min(minhold, call.hold);
+                    minHold = Math.min(minHold, minhold);
+                    avghold += call.hold;
+                    maxhold = Math.max(maxhold, call.hold);
+                    maxHold = Math.max(maxHold, maxhold);
+                    if (call.answer) {
+                        mintalk = Math.min(mintalk, call.talk);
+                        minTalk = Math.min(minTalk, mintalk);
+                        avgtalk += call.talk;
+                        maxtalk = Math.max(maxtalk, call.talk);
+                        maxTalk = Math.max(maxTalk, maxtalk);
+                        talkCount++;
+                    }
+                    mintotal = Math.min(mintotal, call.total);
+                    minTotal = Math.min(minTotal, mintotal);
+                    avgtotal += call.total;
+                    maxtotal = Math.max(maxtotal, call.total);
+                    maxTotal = Math.max(maxTotal, maxtotal);
+                }
+
+                row.total = rowTotal;
+
+                for (i = 0, n = row.qnaCalls.length; i < n; i++) {
+                    call = row.qnaCalls[i];
+
+                    var dtypeQueue = call.dtype === 'queue',
+                        stypeQueue = call.stype === 'queue';
+
+                    if (dtypeQueue || stypeQueue) {
+                        var q = call.queuestatus;
+
+                        if (q === 'abandon') {
+                            abandon++;
+                            addInfo(row, call, 23);
+                        } else if (q === 'exitwithtimeout') {
+                            timeout++;
+                            addInfo(row, call, 25);
+                        } else if (q === 'completeagent') {
+                            agent++;
+                            addInfo(row, call, 27);
+                        } else if (q === 'completecaller') {
+                            caller++;
+                            addInfo(row, call, 28);
+                        } else if (q === 'transfer') {
+                            transfer++;
+                            addInfo(row, call, 29);
+                        } else if (dtypeQueue) {
+                            if (q === 'exitempty') {
+                                noagent++;
+                                addInfo(row, call, 24);
+                            } else if (q === 'exitwithkey') {
+                                keypress++;
+                                addInfo(row, call, 26);
+                            }
                         }
                     }
                 }
-            }
-            row.queueCount = queueCount;
-            row.agentCount = row.qnaCalls.length;
 
-            if (minhold === Infinity) {
-                minhold = 0;
-            }
-            if (mintalk === Infinity) {
-                mintalk = 0;
-            }
-            if (mintotal === Infinity) {
-                mintotal = 0;
-            }
-            if (rowTotal) {
-                sumHold += avghold;
-                sumTalk += avgtalk;
-                talkCallsCount += talkCount;
-                sumTotal += avgtotal;
-
-                avghold /= rowTotal;
-                avgtalk = talkCount ? avgtalk / talkCount : 0;
-                avgtotal /= rowTotal;
-            }
-
-            row.splice(COL_timeStart + 1, 0, minhold, avghold, maxhold, mintalk, avgtalk, maxtalk, mintotal, avgtotal, maxtotal, abandon, noagent, timeout, keypress, agent, caller, transfer);
-        }
-
-
-        function calcTotalRow () {
-            if (totalCallsCount) {
-                if (minHold === Infinity) {
-                    minHold = 0;
+                if (minhold === Infinity) {
+                    minhold = 0;
                 }
-                if (minTalk === Infinity) {
-                    minTalk = 0;
+                if (mintalk === Infinity) {
+                    mintalk = 0;
                 }
-                if (minTotal === Infinity) {
-                    minTotal = 0;
+                if (mintotal === Infinity) {
+                    mintotal = 0;
+                }
+                if (rowTotal) {
+                    sumHold += avghold;
+                    sumTalk += avgtalk;
+                    talkCallsCount += talkCount;
+                    sumTotal += avgtotal;
+
+                    avghold /= rowTotal;
+                    avgtalk = talkCount ? avgtalk / talkCount : 0;
+                    avgtotal /= rowTotal;
                 }
 
-                var map = {
-                    13: minHold,
-                    14: sumHold / totalCallsCount,
-                    15: maxHold,
-                    16: minTalk,
-                    17: talkCallsCount ? sumTalk / talkCallsCount : 0,
-                    18: maxTalk,
-                    19: minTotal,
-                    20: sumTotal / totalCallsCount,
-                    21: maxTotal
-                };
-                for (var i in map) {
-                    var pos = colPos.indexOf(+i);
-                    if (pos !== -1) {
-                        colSum[pos + 1] = map[i];
+                row.splice(COL_timeStart + 1, 0, minhold, avghold, maxhold, mintalk, avgtalk, maxtalk, mintotal, avgtotal, maxtotal, abandon, noagent, timeout, keypress, agent, caller, transfer);
+            }
+
+
+            function calcTotalRow() {
+                if (totalCallsCount) {
+                    if (minHold === Infinity) {
+                        minHold = 0;
+                    }
+                    if (minTalk === Infinity) {
+                        minTalk = 0;
+                    }
+                    if (minTotal === Infinity) {
+                        minTotal = 0;
+                    }
+
+                    var pos,
+                        map = {
+                        13: minHold,
+                        14: sumHold / totalCallsCount,
+                        15: maxHold,
+                        16: minTalk,
+                        17: talkCallsCount ? sumTalk / talkCallsCount : 0,
+                        18: maxTalk,
+                        19: minTotal,
+                        20: sumTotal / totalCallsCount,
+                        21: maxTotal
+                    };
+                    for (var i = COL_timeStart; i < COL_timeEnd; i++) {
+                        if (visibleCols[i]) {
+                            pos = colPos.indexOf(i);
+                            colSum[pos + 1] = map[i];
+                        }
                     }
                 }
+
+                if (visibleCols[COL_loggedIn] && options.period !== 0) {
+                    pos = colPos.indexOf(COL_loggedIn);
+                    colSum.info[pos + 1] = table[0].info[pos + 1];
+                }
+
+                colSum.total = totalCallsCount;
+                colSum.totalTime = reportDuration;
+                table.push(colSum);
             }
-            colSum.hasLIT = true;
-            colSum.queueCount = queueCallsCount;
-            colSum.agentCount = agentCallsCount;
-            colSum.total = totalCallsCount;
-            colSum.totalTime = reportDuration;
-            table.push(colSum);
-        }
 
 
-        function reduceRow () {
-            var result = [row[0]];
+            function reduceRow(row) {
+                var result = [row[0]],
+                    resultInfo = [undefined];
 
-            for (var j in colPos) {
-                var pos = colPos[j],
-                    el = row[pos + 1];
-                result.push(el);
-                if (pos < COL_timeStart || pos >= COL_timeEnd) {
+                for (var j = 0, m = colPos.length; j < m; j++) {
+                    var pos = colPos[j],
+                        el = row[pos + 1],
+                        data = row.info[pos + 1];
+
+                    result.push(el);
+                    resultInfo.push(data);
+
                     if (pos === COL_loggedIn) {
                         maxLoggedIn = Math.max(maxLoggedIn, el);
                     }
-                    else {
+                    else if (pos < COL_timeStart || pos >= COL_timeEnd) {
                         maxNum = Math.max(maxNum, el);
                     }
+
+                    if (showTotal) {
+                        if (data) {
+                            if ((pos === COL_loggedIn && options.period === 0) ||
+                                (pos !== 0 && (pos < COL_timeStart || pos >= COL_timeEnd))) {
+                                    addInfos(colSum, data, j + 1);
+                            }
+                        }
+                        colSum.hasLIT |= row.hasLIT;
+                        colSum[j + 1] += el;
+                    }
                 }
+
                 if (showTotal) {
-                    colSum[+j + 1] += el;
+                    colSum.calls = colSum.calls.concat(row.calls);
                 }
-            }
-            result.start = row.start;
-            result.queueCount = row.queueCount;
-            result.agentCount = row.agentCount;
-            result.total = row.total;
-            result.totalTime = PERIOD ? row.totalTime : reportDuration;
-            queueCallsCount += result.queueCount;
-            agentCallsCount += result.agentCount;
-            totalCallsCount += result.total;
-            result.hasLIT = row.hasLIT;
-            return result;
-        }
-
-
-        var reportDuration = reportEnd - START,
-            colPos = that.colPos,
-            maxNum = 0,
-            maxLoggedIn = 0,
-            queueCallsCount = 0,
-            agentCallsCount = 0,
-            totalCallsCount = 0,
-            showTotal = qOpts.totalRow;
-
-        if (showTotal) {
-            var length = colPos.length + 1,
-                colSum = new Array(length);
-
-            while (length--) {
-                colSum[length] = 0;
+                result.intervals = row.intervals;
+                result.total = row.total;
+                result.totalTime = options.period ? row.totalTime : reportDuration;
+                totalCallsCount += result.total;
+                result.hasLIT = row.hasLIT;
+                result.calls = row.calls;
+                result.info = resultInfo;
+                return result;
             }
 
-            colSum[0] = 'Total';
-        }
+            maxNum = 0;
+            maxLoggedIn = 0;
 
-        for (var i in table) {
-            var row = table[i];
-            calcSecondaryCols(row);
-            table[i] = reduceRow(row);
-        }
+            var reportDuration = reportEnd - START,
+                totalCallsCount = 0,
+                showTotal = options.totalrow;
 
-        if (showTotal) {
-            calcTotalRow();
-        }
+            if (showTotal) {
+                var length = colPos.length + 1,
+                    colSum = new Array(length);
 
-        that.maxNum = maxNum;
-        that.maxLoggedIn = maxLoggedIn;
-    }
+                colSum.calls = [];
+                colSum.info = new Array(length);
 
+                while (length--) {
+                    colSum[length] = 0;
+                }
 
-    function byDestType (filteredCalls) {
-        var destinations = [
-            'All calls',
-            'External callers',
-            'Internal call legs',
-            'External destinations'
-        ];
+                colSum[0] = 'Total';
+            }
 
-        for (var i in destinations) {
-            if (visibleRows[i]) {
-                var row = newRow();
-                row[0] = destinations[i];
-                table.push(row);
+            for (var i = 0, n = table.length; i < n; i++) {
+                var row = table[i];
+                if (secondaryColVisible) {
+                    calcSecondaryCols(row);
+                }
+                else {
+                    row[COL_loggedIn + 1] = row[COL_timeStart + 1];
+                    row.total = row.calls.length;
+                }
+                table[i] = reduceRow(row);
+            }
+
+            if (showTotal) {
+                calcTotalRow();
             }
         }
-        for (var j in filteredCalls) {
-            decode(filteredCalls[j]);
-        }
-    }
 
 
-    function byTimePeriods () {
-        var startTime = START,
-            endTime = START,
-            finishTime = reportEnd,
-            calls,
-            row,
-            formatStr = qOpts.dateformat;
-
-        if (PERIOD < DAY) {
-            formatStr += ' ' + (qOpts.timeformat === '12' ? 'hh:mma' : 'HH:mm');
-        }
-
-        if ((reportEnd - START) / PERIOD > Math.max(900, window.innerWidth - 380)) {
-            alert('Too many rows to display. Please set bigger interval.');
-            byId('period').value = '0';
-            PERIOD = 0;
-            throw 'too many rows to display';
-        }
-
-        while (startTime < finishTime) {
-            row = newRow();
-
-            var start = moment.unix(startTime);
-            row.start = start.toDate();
-            row[0] = start.format(formatStr);
-
-            if (PERIOD < DAY) {
-                endTime += PERIOD;
-            }
-            else {
-                endTime = start.add(PERIOD / DAY, 'days').unix();
-            }
-            endTime = Math.min(endTime, finishTime);
-
-            calls = that.filterByTime(startTime, endTime);
-
-            for (var i in calls) {
-                decode(calls[i], row);
-            }
-            byQueueAgentPhone(calls, row, startTime, endTime);
-            row.totalTime = endTime - startTime;
-            table.push(row);
-
-            startTime = endTime;
-        }
-    }
-
-
-    function byHours (period) {
-        var startTime = START,
-            endTime = START - START % period,       // normalized
-            calls,
-            row,
-            reportIndex,
-            date = moment.unix(startTime),
-            totalHours = DAY / period,
-            isHalfHours = period === 1800,
-            startHour = date.hour();
-
-        if (isHalfHours) {
-            startHour = startHour * 2 + Math.floor(date.minute() / 30);
-        }
-
-        for (var i = 0; i < totalHours; i++) {
-            var hourString,
-                ampm = '';
-            row = newRow();
-            row.totalTime = 0;
-
-            reportIndex = startHour + i;
-            if (reportIndex >= totalHours) {
-                reportIndex -= totalHours;
-            }
-            if (isHalfHours) {
-                reportIndex = Math.floor(reportIndex / 2);
-            }
-            if (qOpts.timeFormat === '12') {
-                ampm = reportIndex >= 12 ? 'pm' : 'am';
-                reportIndex %= 12;
-            }
-            hourString = qUtils.pad(reportIndex) + ':';
-            if (isHalfHours) {
-                hourString += ((i + startHour) % 2) ? '30' : '00';
-            }
-            else {
-                hourString += '00';
-            }
-
-            row[0] = hourString + ampm;
-            table[i] = row;
-        }
-
-        while (startTime < reportEnd) {
-            endTime += period;
-            endTime = Math.min(endTime, reportEnd);
-
-            date = moment.unix(startTime);
-            reportIndex = date.hour();
-            if (isHalfHours) {
-                reportIndex = reportIndex * 2 + Math.floor(date.minute() / 30);
-            }
-            reportIndex -= startHour;
-            if (reportIndex < 0) {
-                reportIndex = totalHours + reportIndex;
-            }
-
-            row = table[reportIndex];
-            calls = that.filterByTime(startTime, endTime);
-
-            for (i in calls) {
-                decode(calls[i], row);
-            }
-            byQueueAgentPhone(calls, row, startTime, endTime);
-            row.totalTime += endTime - startTime;
-
-            startTime = endTime;
-        }
-    }
-
-
-    function byDaysOfWeek () {
-        var start = moment.unix(START),
-            startTime = START,
-            end = start,
-            endTime = START,
-            finish = moment.min(moment(), moment.unix(END)),
-            finishTime = finish.unix(),
-            calls,
-            row,
-            reportIndex,
-            dayOfWeek,
-            startDayOfWeek = start.day(),
-            daysOfWeek = [
-                'Sunday',
-                'Monday',
-                'Tuesday',
-                'Wednesday',
-                'Thursday',
-                'Friday',
-                'Saturday'
+        function byDestType(filteredCalls) {
+            var destinations = [
+                'All calls',
+                'External callers',
+                'Internal call legs',
+                'External destinations'
             ];
 
-        for (var i = 0; i < 7; i++) {
-            row = newRow();
-            row.totalTime = 0;
-            reportIndex = i + startDayOfWeek;  // start from startDayOfWeek
-            if (reportIndex >= 7) {
-                reportIndex -= 7;
-            }
-            row[0] = daysOfWeek[reportIndex];
-            table[i] = row;
-        }
-
-        while (startTime < finishTime) {
-            end.add(1, 'days');
-            end = moment.min(end, finish);
-            endTime = end.unix();
-
-            dayOfWeek = start.day();
-            reportIndex = dayOfWeek - startDayOfWeek;  // start from startDayOfWeek
-            if (reportIndex < 0) {
-                reportIndex += 7;
-            }
-            row = table[reportIndex];
-            calls = that.filterByTime(startTime, endTime);
-
-            for (i in calls) {
-                decode(calls[i], row);
-            }
-            byQueueAgentPhone(calls, row, startTime, endTime);
-            row.totalTime += endTime - startTime;
-
-            start = end;
-            startTime = endTime;
-        }
-    }
-
-
-    function byQueueAgentPhone (filteredCalls, multiRow, periodStart, periodEnd) {
-        var destinations = ['queues', 'agents', 'phones'],
-            phoneDisplay = qOpts.get('phonetitle');
-
-        for (var d in destinations) {
-            var dest = destinations[d],
-                ids = [],
-                arr,
-                destFilter = qOpts.get(dest),
-                i, j, n;
-
-            switch (dest) {
-                case 'queues':
-                    arr = queues;
-                    break;
-                case 'agents':
-                    arr = agents;
-                    break;
-                case 'phones':
-                    arr = phones;
-                    break;
-            }
-
-            if (destFilter === 'none') {
-
-            }
-            else if (destFilter === 'use_include') {
-                var options = byId(dest + 'include_selected').options;
-                for (i = 0, n = options.length; i < n; i++) {
-                    ids.push(options[i].value);
-                }
-            }
-            else {
-                for (i in arr) {
-                    if (destFilter === 'all' || arr[i].getAttribute('panel') === '1') {
-                        ids.push(i);
-                    }
-                }
-            }
-
-            for (j in ids) {
-                var call,
-                    id = ids[j],
-                    el = arr[id],
-                    name,
-                    match,
-                    row = multiRow || newRow();
-
-                if (!multiRow) {
-                    if (dest === 'queues') {
-                        row[0] = 'Queue: ' + qUtils.escapeHtml(el.name);
-                    }
-                    else {
-                        switch (phoneDisplay) {
-                            case 'name':
-                                name = el.name;
-                                break;
-                            case 'description':
-                                name = el.description || el.name;
-                                break;
-                            case 'internal':
-                                name = el.callerid;
-                                break;
-                            case 'name_description':
-                                name = el.name + ' ' + (el.description || el.name);
-                                break;
-                            case 'internal_description':
-                                name = el.callerid + ' ' + (el.description || el.name);
-                                break;
-                            case 'description_name':
-                                name = (el.description || el.name) + ' ' + el.name;
-                                break;
-                            case 'description_internal':
-                                name = (el.description || el.name) + ' ' + el.callerid;
-                                break;
-                        }
-                        if (dest === 'agents') {
-                            row[0] = 'Queue agent: ' + qUtils.escapeHtml(name);
-                        }
-                        else {
-                            row[0] = 'Ext: ' + qUtils.escapeHtml(name);
-                        }
-                    }
-                }
-
-                for (i in filteredCalls) {
-                    call = filteredCalls[i];
-
-                    switch (dest) {
-                        case 'queues':
-                            match = call.dtype === 'queue' && call.dnumber === id;
-                            break;
-
-                        case 'agents':
-                            match = call.stype === 'queue' && call.dnumber === el.dnumber && call.dtype === el.dtype;
-                            break;
-
-                        case 'phones':
-                            match = (call.stype === 'phone' && call.snumber === id) || (call.dtype === 'phone' && call.dnumber === id);
-                            break;
-                    }
-
-                    if (match) {
-                        decode(call, row, true, dest === 'phones');
-                    }
-                }
-
-                if (dest === 'agents' && visibleCols[COL_loggedIn]) {
-                    row[COL_timeStart + 1] += el.events.calcLoggedTime(periodStart || START, periodEnd || END);
-                }
-
-                if (!multiRow) {
-                    row.hasLIT = dest === 'agents';
+            for (var i = 0, n = destinations.length; i < n; i++) {
+                if (visibleRows[i]) {
+                    var row = newRow();
+                    row[0] = destinations[i];
                     table.push(row);
                 }
             }
+            if (table.length) {
+                for (i = 0, n = filteredCalls.length; i < n; i++) {
+                    putCallToTable(filteredCalls[i]);
+                }
+            }
         }
-    }
 
 
-    this.filter = function () {
-        table = [];
-        reportEnd = Math.min(moment().unix(), END);
+        function byTimePeriods() {
+            var startTime = START,
+                endTime = START,
+                calls,
+                row,
+                formatStr = CONFIG.dateformat;
 
-        if (PERIOD === 0) {
-            var filteredCalls = that.filterByTime(START, END);
-            byDestType(filteredCalls);
-            byQueueAgentPhone(filteredCalls);
+            if (options.period < DAY) {
+                formatStr += ' ' + (CONFIG.timeformat === '12' ? 'hh:mma' : 'HH:mm');
+            }
+
+            if ((reportEnd - START) / options.period > container.clientWidth - 70) {
+                alert('Too many rows to display. Please set bigger interval.');
+                options.period = 0;
+                if (!EMBEDDED) {
+                    byId('period').value = 0;
+                }
+                SERVER.hidePreloader();
+                throw 'too many rows to display';
+            }
+
+            while (startTime < reportEnd) {
+                row = newRow();
+
+                var start = moment.unix(startTime);
+                row[0] = start.format(formatStr);
+
+                if (options.period < DAY) {
+                    endTime += options.period;
+                }
+                else {
+                    endTime = start.add(options.period / DAY, 'days').unix();
+                }
+                endTime = Math.min(endTime, reportEnd);
+                row.intervals = [[startTime, endTime]];
+
+                calls = getCallsFromTimePeriod(startTime, endTime);
+
+                for (var i = 0, n = calls.length; i < n; i++) {
+                    putCallToTable(calls[i], row);
+                }
+                byQueueAgentPhone(calls, row, startTime, endTime);
+                row.totalTime = endTime - startTime;
+                table.push(row);
+
+                startTime = endTime;
+            }
         }
-        else if (PERIOD > 0) {
-            byTimePeriods()
+
+
+        function byHours(period) {
+            var startTime = START,
+                endTime = START - START % period,       // normalized
+                calls,
+                row,
+                reportIndex,
+                date = moment.unix(startTime),
+                totalHours = DAY / period,
+                isHalfHours = period === 1800,
+                startHour = date.hour();
+
+            if (isHalfHours) {
+                startHour = startHour * 2 + Math.floor(date.minute() / 30);
+            }
+
+            for (var i = 0; i < totalHours; i++) {
+                var hourString,
+                    ampm = '';
+                row = newRow();
+                row.totalTime = 0;
+                row.intervals = [];
+
+                reportIndex = startHour + i;
+                if (reportIndex >= totalHours) {
+                    reportIndex -= totalHours;
+                }
+                if (isHalfHours) {
+                    reportIndex = Math.floor(reportIndex / 2);
+                }
+                if (CONFIG.timeformat === '12') {
+                    ampm = reportIndex >= 12 ? 'pm' : 'am';
+                    reportIndex %= 12;
+                }
+                hourString = UTILS.pad(reportIndex) + ':';
+                if (isHalfHours) {
+                    hourString += ((i + startHour) % 2) ? '30' : '00';
+                }
+                else {
+                    hourString += '00';
+                }
+
+                row[0] = hourString + ampm;
+                table[i] = row;
+            }
+
+            while (startTime < reportEnd) {
+                endTime += period;
+                endTime = Math.min(endTime, reportEnd);
+
+                date = moment.unix(startTime);
+                reportIndex = date.hour();
+                if (isHalfHours) {
+                    reportIndex = reportIndex * 2 + Math.floor(date.minute() / 30);
+                }
+                reportIndex -= startHour;
+                if (reportIndex < 0) {
+                    reportIndex = totalHours + reportIndex;
+                }
+
+                row = table[reportIndex];
+                calls = getCallsFromTimePeriod(startTime, endTime);
+                row.intervals.push([startTime, endTime]);
+
+                for (i = 0, n = calls.length; i < n; i++) {
+                    putCallToTable(calls[i], row);
+                }
+                byQueueAgentPhone(calls, row, startTime, endTime);
+                row.totalTime += endTime - startTime;
+
+                startTime = endTime;
+            }
         }
-        else {
-            if (PERIOD > -604800) {
-                byHours(-PERIOD);
+
+
+        function byDaysOfWeek() {
+            var start = moment.unix(START),
+                startTime = START,
+                end = start,
+                endTime = START,
+                finish = moment.min(moment(), moment.unix(END)),
+                finishTime = finish.unix(),
+                calls,
+                row,
+                reportIndex,
+                dayOfWeek,
+                startDayOfWeek = start.day(),
+                daysOfWeek = [
+                    'Sunday',
+                    'Monday',
+                    'Tuesday',
+                    'Wednesday',
+                    'Thursday',
+                    'Friday',
+                    'Saturday'
+                ];
+
+            for (var i = 0; i < 7; i++) {
+                row = newRow();
+                row.totalTime = 0;
+                row.intervals = [];
+
+                reportIndex = i + startDayOfWeek;  // start from startDayOfWeek
+                if (reportIndex >= 7) {
+                    reportIndex -= 7;
+                }
+                row[0] = daysOfWeek[reportIndex];
+                table[i] = row;
+            }
+
+            while (startTime < finishTime) {
+                end.add(1, 'days');
+                end = moment.min(end, finish);
+                endTime = end.unix();
+
+                dayOfWeek = start.day();
+                reportIndex = dayOfWeek - startDayOfWeek;  // start from startDayOfWeek
+                if (reportIndex < 0) {
+                    reportIndex += 7;
+                }
+
+                row = table[reportIndex];
+                calls = getCallsFromTimePeriod(startTime, endTime);
+                row.intervals.push([startTime, endTime]);
+
+                for (i = 0, n = calls.length; i < n; i++) {
+                    putCallToTable(calls[i], row);
+                }
+                byQueueAgentPhone(calls, row, startTime, endTime);
+                row.totalTime += endTime - startTime;
+
+                start = end;
+                startTime = endTime;
+            }
+        }
+
+
+        function byQueueAgentPhone(filteredCalls, multiRow, periodStart, periodEnd) {
+            var destinations = ['queues', 'agents', 'phones'];
+
+            for (var d in destinations) {
+                var dest = destinations[d],
+                    ids = [],
+                    arr,
+                    destFilter = options[dest];
+
+                switch (dest) {
+                    case 'queues':
+                        arr = queues;
+                        break;
+                    case 'agents':
+                        arr = agents;
+                        break;
+                    case 'phones':
+                        arr = phones;
+                        break;
+                }
+
+                if (destFilter === 'none') {
+
+                }
+                else if (destFilter === 'use_include') {
+                    getInclude(dest, ids);
+                }
+                else {
+                    for (i in arr) {
+                        if (destFilter === 'all' || arr[i].getAttribute('panel') === '1') {
+                            ids.push(i);
+                        }
+                    }
+                }
+
+                for (var j = 0, m = ids.length; j < m; j++) {
+                    var call,
+                        id = ids[j],
+                        el = arr[id],
+                        name,
+                        match,
+                        row = multiRow || newRow();
+
+                    if (!multiRow) {
+                        if (dest === 'queues') {
+                            row[0] = 'Queue: ' + el.name;
+                        }
+                        else {
+                            name = phoneTitleDisplay(el);
+                            if (dest === 'agents') {
+                                row[0] = 'Queue agent: ' + name;
+                            }
+                            else {
+                                row[0] = 'Ext: ' + name;
+                            }
+                        }
+                    }
+
+                    for (i in filteredCalls) {
+                        call = filteredCalls[i];
+
+                        switch (dest) {
+                            case 'queues':
+                                match = call.dtype === 'queue' && call.dnumber === id;
+                                break;
+
+                            case 'agents':
+                                match = call.stype === 'queue' && call.dnumber === el.dnumber && call.dtype === el.dtype;
+                                break;
+
+                            case 'phones':
+                                match = (call.stype === 'phone' && call.snumber === id) || (call.dtype === 'phone' && call.dnumber === id);
+                                break;
+                        }
+
+                        if (match) {
+                            putCallToTable(call, row, true, dest === 'phones');
+                        }
+                    }
+
+                    if (dest === 'agents' && visibleCols[COL_loggedIn]) {
+                        row[COL_timeStart + 1] += el.events.calcLoggedTime(periodStart || START, periodEnd || END);
+                        addInfo(row, el, COL_loggedIn + 1);
+                    }
+
+                    if (!multiRow) {
+                        row.hasLIT = dest === 'agents';
+                        table.push(row);
+                    }
+                }
+            }
+        }
+
+
+        function htmlConstructor() {
+            var openButton = byId('panel-open-button'),
+                optionsHeading = byId('options-heading'),
+                mainContent = byId('main-content'),
+                rightPanel = byId('right-panel'),
+                rightMenuHeight = 280 + 38,
+                leftMenuHeight = byId('nav_bar').clientHeight,
+                isExpanded = false;
+
+
+            equalHeight = function () {
+                var currentTabHeight = TABS.tabs[options.type];
+                currentTabHeight = currentTabHeight ? currentTabHeight.offsetHeight : 0;
+                mainContent.style.height = Math.max(currentTabHeight, rightMenuHeight, isExpanded ? (rightPanel.clientHeight + 9) : leftMenuHeight) + 'px';
+            };
+
+
+            function toggle() {
+                isExpanded = !isExpanded;
+                if (isExpanded) {
+                    rightPanel.classList.add('expanded');
+                    openButton.classList.add('expanded');
+                }
+                else {
+                    rightPanel.classList.remove('expanded');
+                    openButton.classList.remove('expanded');
+                }
+                equalHeight();
+            }
+
+            openButton.addEventListener('click', toggle);
+            optionsHeading.addEventListener('click', toggle);
+
+            openButton.innerHTML = '';      // bad initial html
+
+            isExpanded = true;
+            rightPanel.classList.add('expanded');  // todo initial html
+            openButton.classList.add('expanded');
+
+
+            toggleLROverlay = function (nextType) {
+                var showMoveLeftRight = (options.period <= 0 || nextType === 'table' || nextType === 'piechart') ? 'none' : '';
+                byId('left-overlay').style.display = showMoveLeftRight;
+                byId('right-overlay').style.display = showMoveLeftRight;
+            };
+
+
+            menuButtons = document.getElementById('right-menu').children;
+        }
+
+
+        // resize event listener with throttle
+        var handler;
+        window.addEventListener('resize', function () {
+            clearTimeout(handler);
+
+            handler = setTimeout(function () {
+                if (options.type === 'table') {
+                    TABLE.resizeHeader();
+                }
+                else {
+                    CHART.resize();
+                }
+                if (!EMBEDDED) {
+                    equalHeight();
+                }
+            }, 100);
+        });
+
+
+        function createReport(doResize) {
+            table = [];
+            reportEnd = Math.min(Date.now() / 1000, END);
+
+            if (options.period === 0) {
+                var filteredCalls = getCallsFromTimePeriod(START, END);
+                byDestType(filteredCalls);
+                byQueueAgentPhone(filteredCalls);
+            }
+            else if (options.period > 0) {
+                byTimePeriods()
             }
             else {
-                byDaysOfWeek()
+                if (options.period > -7 * DAY) {
+                    byHours(-options.period);
+                }
+                else {
+                    byDaysOfWeek()
+                }
+            }
+
+            reduceTable();
+            sortTable();
+
+            if (postId) {
+                report.downloadCSV();     // download CSV AND do something else
+            }
+
+            if (options.type === 'csv') {
+                report.downloadCSV();
+            }
+            else if (EMBEDDED) {
+                if (options.type === 'table') {
+                    container.style.overflow = 'auto';
+                    TABLE.render(container, doResize);
+                }
+                else {
+                    CHART.render(container, options.type);
+                }
+            }
+            else {
+                TABS.update();
             }
         }
 
-        reduceTable();
-        this.sort();
-        qMenu.update();
-    };
 
-
-    // constructor
-    this.calculateColPos();
-    calculateRowPos();
-
-    this.minTime = Infinity;
-    this.maxTime = 0;
-}
-
-function QOptions () {
-    var that = this,
-
-        timeControls = [
-            'startday',
-            'start_year',
-            'start_month',
-            'start_day',
-            'start_hour',
-            'start_minute',
-            'start_second',
-            'endday',
-            'end_year',
-            'end_month',
-            'end_day',
-            'end_hour',
-            'end_minute',
-            'end_second'
-        ],
-        columnControls = [
-            'totalcalls',
-            'slaok',
-            'answercalls',
-            'noanswercalls',
-            'incalls',
-            'inanswer',
-            'innoanswer',
-            'internalcalls',
-            'internalanswer',
-            'internalnoanswer',
-            'outcalls',
-            'outanswer',
-            'outnoanswer',
-            'holdmin',
-            'holdavg',
-            'holdmax',
-            'talkmin',
-            'talkavg',
-            'talkmax',
-            'totalmin',
-            'totalavg',
-            'totalmax',
-            'abandon',
-            'noagent',
-            'timeout',
-            'keypress',
-            'agent',
-            'caller',
-            'transfer',
-            'logintime'
-        ],
-        destControls = [
-            'allcalls',
-            'inbound',
-            'internal',
-            'outbound'
-        ],
-        filterControls = [
-            'phonetitle',
-            'slatime',
-            'totalrow',
-            'queues',
-            'agents',
-            'phones'
-        ],
-        savedScrollX,
-        savedScrollY;
-
-
-    window.addEventListener('scroll', function () {
-        savedScrollX = window.pageXOffset;
-        savedScrollY = window.pageYOffset;
-    });
-
-
-    this.preventScroll = function () {
-        window.scrollTo(savedScrollX, savedScrollY);
-    };
-
-
-    function setWatchers() {
-        var i;
-
-        byId('name').addEventListener('change', function () {
-            that.title.innerHTML = 'Call statistics :: ' + qUtils.escapeHtml(this.value);
-        });
-        byId('slatime').addEventListener('change', function () {
-            that.slaTime = +this.value;
-        });
-        byId('totalrow').addEventListener('change', function () {
-            that.totalRow = +this.value;
-        });
-
-        for (i in timeControls) {
-            byId(timeControls[i]).addEventListener('change', function () {
-                qPolling.update();
-                that.preventScroll();
-            });
-        }
-        for (i in columnControls) {
-            byId(columnControls[i]).addEventListener('change', function () {
-                var pos = columnControls.indexOf(this.id);
-                qDB.setVisibleCol(pos, +this.value);
-                that.preventScroll();
-            });
-        }
-        for (i in destControls) {
-            byId(destControls[i]).addEventListener('change', function () {
-                var pos = destControls.indexOf(this.id);
-                qDB.setVisibleRow(pos, +this.value);
-                that.preventScroll();
-            });
-        }
-        for (i in filterControls) {
-            byId(filterControls[i]).addEventListener('change', function () {
-                qDB.filter();
-                that.preventScroll();
-            });
+        function toggleButtons() {
+            if (menuButtons) {
+                for (var i = 0, n = menuButtons.length; i < n; i++) {
+                    if (i === n - 1) {
+                        var disabled = options.type === 'table';  // don't show PNG if type === 'table'
+                    }
+                    else {
+                        disabled = false;
+                    }
+                    menuButtons[i].disabled = disabled;
+                }
+                menuButtons = null;
+            }
         }
 
-        byId('period').addEventListener('change', function () {
-            PERIOD = +this.value;
-            byId('heading_rows').innerHTML = PERIOD ? 'Sum of destinations:' : 'Display destinations:';
-            qUtils.toggleLROverlay(qMenu.type);
-            qDB.filter();
-            that.preventScroll();
-        });
 
-        byId('phonetitle').addEventListener('change', function () {
-            qDB.phoneAgentDisplay(this.value);
-        });
+        function Form(formEl) {
+            var that = this,
+                savedScrollX,
+                savedScrollY,
 
-        form.find('input[type="button"]').on('click', function () {
-            onFormDirty();
-            qDB.filter();
-            that.preventScroll();
-        });
+                submitBtn = formEl.querySelectorAll('input[type="submit"]'),
+                titleElement = document.getElementsByTagName('title')[0],
+                originalTitle = formEl.name.value,
+                loadButton = submitBtn[0],
+                saveButton = submitBtn[1],
+                copyButton = submitBtn[2],
+                copyButtonClicked,
+                dirty,
+                typeChanged;
+
+
+            this.preventScroll = function () {
+                window.scrollTo(savedScrollX, savedScrollY);
+            };
+
+
+            this.showNewTime = function (startDay, endDay) {
+                var start = moment.unix(START),
+                    end = moment.unix(END),
+                    y1, m1, d1, y2, m2, d2;
+                options.startday = startDay;
+                options.endday = endDay;
+                if (!EMBEDDED) {
+                    byId('startdate').style.display = startDay === '1' ? '' : 'none';
+                    byId('enddate').style.display = endDay === '1' ? '' : 'none';
+                }
+                options.start_year = y1 = start.year();
+                options.end_year = y2 = end.year();
+                options.start_month = m1 = start.month() + 1;
+                options.end_month = m2 = end.month() + 1;
+                options.start_day = d1 = start.date();
+                options.end_day = d2 = end.date();
+                options.start_hour = start.hours();
+                options.end_hour = end.hours();
+                options.start_minute = start.minutes();
+                options.end_minute = end.minutes();
+                options.start_second = start.seconds();
+                options.end_second = end.seconds();
+                options.start_buffer = y1 + '-' + m1 + '-' + d1;
+                options.end_buffer = y2 + '-' + m2 + '-' + d2;
+                UTILS.jsonToForm(options, formEl);
+            };
+
+
+            function setWatchers() {
+                var timeControls = [
+                        'startday',
+                        'start_year',
+                        'start_month',
+                        'start_day',
+                        'start_hour',
+                        'start_minute',
+                        'start_second',
+                        'endday',
+                        'end_year',
+                        'end_month',
+                        'end_day',
+                        'end_hour',
+                        'end_minute',
+                        'end_second'
+                    ],
+                    filters = [
+                        'phonetitle',
+                        'slatime',
+                        'totalrow',
+                        'queues',
+                        'agents',
+                        'phones'
+                    ],
+                    i;
+
+                for (i = 0, n = formEl.length; i < n; i++) {
+                    // react on buttons below, not selects
+                    if (formEl[i].getAttribute('multiple') === null) {
+                        formEl[i].addEventListener('change', function () {
+                            options[this.name] = this.value;
+                            onFormDirty();
+                        });
+                    }
+                }
+
+                byId('name').addEventListener('keyup', function () {
+                    if (this.value !== originalTitle) {
+                        onFormDirty();
+                    }
+                });
+
+                byId('period').addEventListener('change', function () {
+                    options.period = +this.value;
+                    byId('heading_rows').innerHTML = options.period ? 'Sum of destinations:' : 'Display destinations:';
+                    if (!loadButton) {
+                        toggleLROverlay(options.type);
+                        createReport();
+                    }
+                    that.preventScroll();
+                });
+
+                byId('totalrow').addEventListener('change', function () {
+                    options.totalrow = +this.value;
+                });
+
+                byId('phonetitle').addEventListener('change', function () {
+                    if (!loadButton) {
+                        phoneAgentDisplay();
+                    }
+                });
+
+                for (i in timeControls) {
+                    byId(timeControls[i]).addEventListener('change', function () {
+                        that.preventScroll();
+                        if (!loadButton) {
+                            SERVER.updateRange();
+                        }
+                    });
+                }
+                for (i in columnNames) {
+                    byId(columnNames[i]).addEventListener('change', function () {
+                        var pos = columnNames.indexOf(this.id);
+                        if (!loadButton) {
+                            setVisibleColumn(pos, +this.value);
+                        }
+                        that.preventScroll();
+                    });
+                }
+                for (i in destinationNames) {
+                    byId(destinationNames[i]).addEventListener('change', function () {
+                        var pos = destinationNames.indexOf(this.id);
+                        if (!loadButton) {
+                            setVisibleRow(pos, +this.value);
+                        }
+                        that.preventScroll();
+                    });
+                }
+                for (i in filters) {
+                    byId(filters[i]).addEventListener('change', function () {
+                        if (!loadButton) {
+                            createReport();
+                        }
+                        equalHeight();
+                        that.preventScroll();
+                    });
+                }
+
+                var buttons = formEl.querySelectorAll('input[type="button"]');
+                for (i = 0; i < buttons.length; i++) {
+                    buttons[i].addEventListener('click', function () {
+                        onFormDirty();
+                        if (!loadButton) {
+                            createReport();
+                        }
+                        that.preventScroll();
+                    });
+                }
+
+
+                window.qsPolling = {
+                    update: function () {
+                        that.preventScroll();
+                        if (!loadButton) {
+                            SERVER.updateRange();
+                        }
+                        onFormDirty();
+                    }
+                };
+
+            }
+
+
+            function onFormClean() {
+                saveButton.disabled = true;
+                saveButton.value = 'Report saved';
+                if (copyButtonClicked) {
+                    copyButton.disabled = true;
+                    copyButton.value = 'Report copied';
+                }
+                dirty = false;
+                typeChanged = false;
+            }
+
+
+            function onFormDirty() {
+                if (!dirty) {
+                    that.enableSaveButton();
+                    dirty = true;
+                }
+            }
+
+
+            this.enableSaveButton = function () {
+                typeChanged = true;
+                saveButton.disabled = false;
+                saveButton.value = 'Save report';
+                copyButton.disabled = false;
+                copyButton.value = 'Save as copy';
+            };
+
+
+            function submit(evt) {
+
+                // prevent default first, because later the code can throw an exception, or you just forget it and the form will get submitted
+                evt.preventDefault();
+
+                if (!options.name) {
+                    window.scrollTo(0, 0);
+                    formEl.name.focus();
+                    alert('Please enter the report name.');
+                    return false;
+                }
+
+                if (!dirty && !typeChanged && !copyButtonClicked) {
+                    return false;
+                }
+
+                if (loadButton) {
+                    SERVER.getRangeFromOptions();
+                }
+
+                options.startdate = START;
+                options.enddate = END;
+                options.starttime = START - moment.unix(START).startOf('day').unix();
+                options.endtime = END - moment.unix(END).startOf('day').unix();
+
+                CHART.resetZoom();
+
+                if (copyButtonClicked) {
+                    options.id = 0;
+                    if (options.name === originalTitle) {
+                        options.name += ' (copy)';
+                        formEl.name.value = options.name;
+                    }
+                }
+                originalTitle = options.name;
+
+                titleElement.innerHTML = 'Call statistics :: ' + UTILS.escapeHtml(options.name);
+
+                var oldId = options.id;
+                UTILS.post(formEl.getAttribute('action'), UTILS.serialize(options, true), function (response) {
+                    var id = response.getElementsByTagName('return')[0].getAttribute('id');
+                    options.id = id;
+                    if (id !== oldId) {
+                        window.history.pushState('', options.name, '//' + location.host + location.pathname + '?id=' + id);
+                    }
+                    onFormClean();
+                    copyButtonClicked = false;
+                });
+
+                copyButton.style.display = '';
+                equalHeight();
+
+                return false;
+            }
+
+
+            setWatchers();
+
+            if (copyButton) {
+                loadButton.addEventListener('click', function (evt) {
+                    evt.preventDefault();
+                    SERVER.updateRange();
+                    getVisibleColumnsAndRows();
+                    loadButton.style.display = 'none';
+                    equalHeight();
+                    loadButton = null;
+                });
+            }
+            else {
+                copyButton = saveButton;
+                saveButton = loadButton;
+                loadButton = null;
+            }
+
+            if (options.id) {
+                onFormClean();
+                titleElement.innerHTML = 'Call statistics :: ' + UTILS.escapeHtml(options.name);
+            }
+            else {
+                titleElement.innerHTML = 'Call statistics :: New report';
+            }
+
+            formEl.addEventListener('submit', submit);
+
+            copyButton.addEventListener('click', function () {
+                copyButtonClicked = true;
+            });
+
+            if (!options.id) {
+                copyButton.style.display = 'none';
+            }
+
+            window.addEventListener('scroll', function () {
+                savedScrollX = window.pageXOffset;
+                savedScrollY = window.pageYOffset;
+            });
+
+            window.addEventListener("popstate", function () {
+                location.reload();
+            });
+
+            window.onbeforeunload = function () {
+                if (dirty) {
+                    return "You have not saved your report options. If you navigate away, your changes will be lost";
+                }
+            };
+
+            if (!loadButton) {
+                SERVER.updateRange();
+            }
+        }
+
+
+        function Popup(calls, col, isLoggedInTime) {
+            var overlay,
+                modal,
+                row,
+                callsTbl = [],
+                theadHtml = '<th>Status<br/>Direction</th><th>Calling number<br/>Called number</th><th>Start<br/>End</th><th>Billable time<br/>Cost</th>',
+                tbodyHtml = '',
+                filenameCsv,
+                headlineCsv,
+                formatStr = CONFIG.dateformat;
+
+
+            function escListen (evt) {
+                if (evt.keyCode == 27) {
+                    closeModal();
+                }
+            }
+
+
+            function closeModal() {
+                overlay.className = '';
+                document.removeEventListener('keyup', escListen);
+                setTimeout(function () {
+                    document.body.removeChild(overlay);
+                }, 190);
+            }
+
+
+            function unique(arr) {
+                // if (options.period < 0) {
+                //     for (var i = 0, j; i < arr.length; i++) {
+                //         while ((j = arr.indexOf(arr[i], i + 1)) !== -1) {
+                //             arr.splice(j, 1);
+                //         }
+                //     }
+                // }
+            }
+
+            function capitalise(str) {
+                return str.charAt(0).toUpperCase() + str.slice(1);
+            }
+
+
+            formatStr += ' ' + (CONFIG.timeformat === '12' ? 'hh:mm:ssa' : 'HH:mm:ss');
+
+            if (calls && calls.length) {
+                if (!isLoggedInTime) {
+                    filenameCsv = COLUMNS[colPos[col]] + '.csv';
+                    headlineCsv = 'Status,Direction,Calling type,Calling number,Called type,Called number,Start,End,Billable time,Cost,Call ID\n';
+                    unique(calls);
+
+                    var secondTable = [], row1;
+
+                    for (var i = 0, n = calls.length; i < n; i++) {
+                        var call = calls[i],
+                            destination,
+                            ctype = call.getAttribute('ctype'),
+                            stype = call.stype,
+                            callingNumber,
+                            calledNumber;
+
+                        if (call.dtype === 'external') {
+                            destination = 'Outbound';
+                        }
+                        else if (stype === 'external') {
+                            destination = 'Inbound';
+                        }
+                        else {
+                            destination = 'Internal';
+                        }
+
+                        if (stype === "phone" || stype === "local" || stype === "external") {
+                            callingNumber = call.snumber;
+                        }
+                        else {
+                            callingNumber = capitalise(stype);
+                        }
+
+                        calledNumber = call.getAttribute('cnumber');
+                        if (calledNumber === '' || calledNumber === null) {
+                            calledNumber = capitalise(ctype);
+                        }
+
+                        row = [
+                            +call.answer ? 'Answered' : 'Not answered',
+                            destination,
+                            stype,
+                            callingNumber,
+                            ctype,
+                            calledNumber,
+                            moment.unix(call.start).format(formatStr),
+                            moment.unix(call.end).format(formatStr),
+                            UTILS.timeFormat(call.total, 2),
+                            call.getAttribute('symbol') + call.getAttribute('cost'),
+                            call.getAttribute('callid')
+                        ];
+                        row1 = [
+                            +call.answer ? 'Answered' : 'Not answered',
+                            destination,
+                            stype,
+                            call.snumber,
+                            ctype,
+                            call.getAttribute('cnumber'),
+                            moment.unix(call.start).format(formatStr),
+                            moment.unix(call.end).format(formatStr),
+                            UTILS.timeFormat(call.total, 2),
+                            call.getAttribute('symbol') + call.getAttribute('cost'),
+                            call.getAttribute('callid')
+                        ];
+                        tbodyHtml += '<tr><td>' +
+                            row[0] + '</br>' + row[1] + '</td><td>' +
+                            row[3] + '</br>' + row[5] + '</td><td>' +
+                            row[6] + '</br>' + row[7] + '</td><td>' +
+                            row[8] + '</br>' + row[9] + '</td></tr>';
+                        callsTbl.push(row);
+                        secondTable.push(row1);
+                    }
+                }
+                else {
+                    filenameCsv = 'Available time.csv';
+                    headlineCsv = 'Agent,Time,Event\n';
+                    theadHtml = '<th>Agent</th><th>Time</th><th>Event</th>';
+                    var intervals = calls.intervals || [[START, END]];
+
+                    var info = calls.info[col + 1];
+                    if (info) {
+                        unique(info);
+                        for (var j = 0, m = intervals.length; j < m; j++) {
+                            var interval = intervals[j];
+                            for (var i = 0, n = info.length; i < n; i++) {
+                                var el = info[i].events.events;
+                                for (var ii = 0, nn = el.length; ii < nn; ii++) {
+                                    var time = el[ii].time;
+                                    if (time >= interval[0] && time < interval[1]) {
+                                        row = [info[i].name, time, el[ii].isLogin ? 'Available' : 'Unvailable'];
+                                        callsTbl.push(row);
+                                    }
+                                }
+                            }
+                        }
+                        callsTbl.sort(function (a, b) {
+                            return a[1] - b[1];
+                        });
+                    }
+
+                    n = callsTbl.length;
+                    if (n) {
+                        for (i = 0; i < n; i++) {
+                            row = callsTbl[i];
+                            row[1] = moment.unix(row[1]).format(formatStr);
+                            tbodyHtml += '<tr><td>' + row[0] + '</td><td>' + row[1] + '</td><td>' + row[2] + '</td></tr>';
+                        }
+                    }
+                    else {
+                        tbodyHtml = '<tr><td colspan="3" class="empty-row">No events</td></tr>';
+                    }
+                }
+            }
+            else {
+                tbodyHtml = '<tr><td colspan="4" class="empty-row">No calls</td></tr>';
+            }
+
+
+            var html = '<overlay><modal class="results"><table cellpadding="0" cellspacing="0"><thead><tr class="head">' + theadHtml + '</tr></thead><tbody>' + tbodyHtml + '<tr class="foot"><td class="button" colspan="4"><input type="button" style="float:left" id="modal-close" class="universal" value="Close window">';
+            if (callsTbl.length) {
+                html += '<input type="button" id="modal-csv" class="universal secondary" value="Export as .csv">';
+            }
+            html += '</td></tr></tbody></table></modal></overlay>';
+            document.body.insertAdjacentHTML('beforeend', html);
+
+            overlay = document.querySelector('overlay');
+            modal = document.querySelector('modal');
+
+            overlay.onclick = closeModal;
+            byId('modal-close').onclick = closeModal;
+            if (callsTbl.length) {
+                byId('modal-csv').onclick = function () {
+                    vs.report.downloadCSV(secondTable || callsTbl, filenameCsv, headlineCsv);
+                };
+            }
+            modal.addEventListener('click', function (evt) {
+                evt.stopPropagation();
+            });
+            document.addEventListener('keyup', escListen);
+
+            setTimeout(function () {
+                overlay.className = 'active';
+            });
+        }
+
+
+        function Server() {
+            var that = this,
+                username = CONFIG.username,
+                password = CONFIG.password,
+                xhr,
+                preloader,
+                lastToday,
+                requestStart,
+                requestEnd,
+                stopPolling = false,
+                timeoutHandle,
+                isFirstRequest,
+                updateRangeOnEveryRequest = false;
+
+
+            this.getRangeFromOptions = function () {
+                var start,
+                    end;
+
+                function setStart() {
+                    var startDay = options.startday;
+                    if (startDay === '1') {
+                        if (options.start_year) {
+                            start = moment({
+                                year: options.start_year,
+                                month: options.start_month - 1,
+                                day: options.start_day
+                            });
+                        }
+                        else {
+                            start = +options.startdate;
+                            return;
+                        }
+                    }
+                    else {
+                        start = moment().add(startDay, 'days');
+                    }
+
+                    if (options.start_hour !== undefined) {
+                        start.set({
+                            hour: options.start_hour,
+                            minute: options.start_minute,
+                            second: options.start_second
+                        });
+                    }
+                    else {
+                        start.set({
+                            hour: Math.floor(options.starttime / 3600),
+                            minute: Math.floor((options.starttime % 3600) / 60),
+                            second: options.starttime % 60
+                        });
+                    }
+                    start = start.unix();
+                }
+
+
+                function setEnd() {
+                    var endDay = options.endday;
+                    if (endDay === '1') {
+                        if (options.end_year) {
+                            end = moment({
+                                year: options.end_year,
+                                month: options.end_month - 1,
+                                day: options.end_day
+                            });
+                        }
+                        else {
+                            end = +options.enddate;
+                            return;
+                        }
+                    }
+                    else {
+                        end = moment().add(endDay, 'days');
+                    }
+
+                    if (options.end_hour !== undefined) {
+                        end.set({
+                            hour: options.end_hour,
+                            minute: options.end_minute,
+                            second: options.end_second
+                        });
+                    }
+                    else {
+                        end.set({
+                            hour: Math.floor(options.endtime / 3600),
+                            minute: Math.floor((options.endtime % 3600) / 60),
+                            second: options.endtime % 60
+                        });
+                    }
+                    end = end.unix();
+                }
+
+
+                setStart();
+                setEnd();
+
+                START = Math.min(start, end);
+                END = Math.max(start, end);
+
+                if (START * 1000 > Date.now()) {
+                    alert('The start time cannot be in the future.');
+                    // todo, this case should be made more friendly
+                    stopPolling = true;
+                    SERVER.hidePreloader();
+                    throw 'start > now';
+                }
+
+                if (CHART) {
+                    CHART.savedZoom = null;
+                }
+            };
+
+
+            function getRangeFromDropdown() {
+                updateRangeOnEveryRequest = false;
+
+                switch (byId(options.time).value) {
+                    case '0_hour':
+                        updateRangeOnEveryRequest = true;
+                        START = moment().startOf('hour');
+                        END = moment().endOf('hour');
+                        break;
+
+                    case '0_day':
+                        START = moment().startOf('day');
+                        END = moment().endOf('day');
+                        break;
+
+                    case '1_day':
+                        START = moment().startOf('day').add(-1, 'days');
+                        END = moment().endOf('day').add(-1, 'days');
+                        break;
+
+                    case '7_days':
+                        START = moment().startOf('day').add(-7, 'days');
+                        END = moment().endOf('day');
+                        break;
+
+                    case '0_month':
+                        START = moment().startOf('month');
+                        END = moment().endOf('month');
+                        break;
+
+                    case '1_month':
+                        START = moment().startOf('month').add(-1, 'months');
+                        END = moment().startOf('month').add(-1, 'seconds');
+                        break;
+                }
+
+                START = START.unix();
+                END = END.unix();
+            }
+
+
+            this.tryNewRequest = function (callback) {
+                this.stopRequest();
+
+                if (!EMBEDDED) {
+                    callback = function() {
+                        timeoutHandle = setTimeout(function () {
+                            that.tryNewRequest();
+                        }, +CONFIG.refresh);
+                    }
+                }
+
+                if (!xhr && !stopPolling && !document.hidden && requestEnd >= requestStart) {
+                    var request = '?_username=' + encodeURIComponent(username) + ';_password=' + encodeURIComponent(password) + ';start=' + requestStart + ';end=' + requestEnd + ';recursive=' + options.recursive + ';id=' + (options.id || 0) + ';refresh=' + (CONFIG.refresh);
+                    xhr = UTILS.get(request,
+                        function (r) {
+                            xhr = null;
+                            response(r);
+                            callback && callback();
+                        }, function () {    // on error, poll again
+                            xhr = null;
+                            callback && callback();
+                        });
+                }
+            };
+
+
+            this.stopRequest = function () {
+                clearTimeout(timeoutHandle);
+                if (xhr) {
+                    xhr.abort();
+                    xhr = null;
+                }
+            };
+
+
+            this.updateRange = function () {
+                this.stopRequest();
+
+                lastToday = moment().startOf('day');
+
+                if (EMBEDDED && options.time) {
+                    getRangeFromDropdown();
+                } else {
+                    this.getRangeFromOptions();
+                }
+
+                stopPolling = false;
+                isFirstRequest = true;
+                this.addToBeginning = false;
+
+                // if all required data is in the cache, don't query server
+                if (START >= minRecordedTime && END <= maxRecordedTime) {
+                    createReport();
+                    stopPolling = true;
+                    return;
+                }
+                // query only what is missing (but only from the beginning)
+                else if (START < minRecordedTime && END >= minRecordedTime) {
+                    createReport();
+                    requestStart = START;
+                    requestEnd = minRecordedTime;
+                    this.addToBeginning = true;
+                }
+                // query only what is missing (but only from the end)
+                else if (START <= maxRecordedTime && END > maxRecordedTime) {
+                    createReport();
+                    requestStart = maxRecordedTime;
+                    requestEnd = END;
+                }
+                // if missing data is on both sides, just query everything
+                else {
+                    requestStart = START;
+                    requestEnd = END;
+                }
+
+                var delta = 0;
+                if (requestStart < minRecordedTime) {
+                    delta += minRecordedTime - requestStart;
+                }
+                if (Math.min(requestEnd, Date.now() / 1000) > maxRecordedTime) {
+                    delta += Math.min(requestEnd, Date.now() / 1000) - maxRecordedTime;
+                }
+
+                if (!preloader && delta > 60) {
+                    showPreloader();
+                }
+
+                this.tryNewRequest();
+            };
+
+
+            function response(response) {
+                that.hidePreloader();
+
+                var update = response.getElementsByTagName('update')[0];
+
+                // break polling loop on error
+                if (!update) {
+                    var error = response.getElementsByTagName('errors')[0];
+                    if (error) {
+                        alert(error.getElementsByTagName('error')[0].getAttribute('message'));
+                    }
+                }
+                else {
+                    var updateEnd = +update.getAttribute('timestamp'),
+                        anythingChanged = addRecordsToDatabase(update);
+
+                    minRecordedTime = Math.min(minRecordedTime, requestStart);
+                    maxRecordedTime = Math.max(maxRecordedTime, Math.min(requestEnd, updateEnd));
+
+                    if (updateRangeOnEveryRequest) {
+                        getRangeFromDropdown();
+                    }
+
+                    if (isFirstRequest || anythingChanged) {
+                        createReport(isFirstRequest);
+                    }
+
+                    isFirstRequest = false;
+                    toggleButtons();
+
+                    if (END <= maxRecordedTime) {
+                        stopPolling = true;
+                    }
+                    else {
+                        // Handle the change of day at midnight. If the start or end day is not a specific date then the report
+                        // period should change every day.
+                        if (moment().startOf('day').unix() !== lastToday.unix()) {
+                            if (EMBEDDED || options.startday !== '1' || options.endday !== '1') {
+                                that.updateRange();
+                                return;     // quit loop
+                            }
+                        }
+
+                        requestStart = maxRecordedTime;
+                        requestEnd = END;
+                    }
+                }
+
+                SERVER.addToBeginning = false;
+            }
+
+
+            function showPreloader() {
+                preloader = document.createElement('IMG');
+                preloader.src = '/local/qstatistics/include/img/ajax.gif';
+                preloader.alt = '';
+                preloader.className = 'ajax-preloader';
+                if (!EMBEDDED) {
+                    preloader.style.position = 'fixed';
+                }
+                container.appendChild(preloader);
+            }
+
+
+            this.hidePreloader = function () {
+                if (preloader) {
+                    container.removeChild(preloader);
+                    preloader = false;
+                }
+            };
+
+
+            if (!EMBEDDED) {
+                document.addEventListener('visibilitychange', function () {
+                    if (document.hidden) {
+                        that.stopRequest();
+                    }
+                    else {
+                        that.tryNewRequest();
+                    }
+                });
+            }
+        }
+
+
+        function Table() {
+            var currentTab,
+                htmlTable,
+                theadTr,
+                theadChildren,
+                tbody,
+                blockRefresh;
+
+
+            this.render = function (slide, doResize) {
+                if (blockRefresh) {
+                    return;
+                } // todo deep vs shallow rerender
+
+                var str = '',
+                    data = getTableWithPercentage();
+
+                currentTab = slide;
+                if (data) {
+                    for (var i = 0, n = data.length; i < n; i++) {
+                        str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
+                    }
+                }
+                slide.innerHTML = '<table cellpadding="0" cellspacing="0" style="margin-bottom: 1px"><thead><tr class="head">' + createHeader() + '</tr></thead><tbody>' + str + '</tbody></table>';
+
+                htmlTable = slide.children[0];
+                theadTr = htmlTable.children[0].children[0];
+                theadChildren = theadTr.children;
+                tbody = htmlTable.children[1];
+
+                if (doResize) {
+                    this.resizeHeader();
+                }
+                assignHeaderEvents();
+                assignBodyEvents();
+
+                if (!EMBEDDED) {
+                    equalHeight();
+                    FORM.preventScroll();
+                }
+            };
+
+
+            function createHeader() {
+                function getSorting(i) {
+                    if (sortingCol === i) {
+                        return sortingOrder === 1 ? ' class="asc"' : ' class="desc"';
+                    }
+                    else {
+                        return '';
+                    }
+                }
+
+
+                var str = '<th style="position: relative" id="0col"' + getSorting(0) + '>' + (options.period ? 'Time' : 'Destination') + '</th>';
+
+                for (var i = 0, n = colPos.length; i < n; i++) {
+                    var newI = colPos[i];
+                    str += '<th style="position: relative" id="' + (newI + 1) + 'col" draggable="true" ondragover="return false"' + getSorting(newI + 1) + '>' + COLUMNS[newI] + '</th>';
+                }
+
+                return str;
+            }
+
+
+            this.resizeHeader = function () {
+                if (theadTr) {
+                    theadTr.style.fontSize = '';
+                    var containerWidth = currentTab.clientWidth,
+                        tableWidth = htmlTable.clientWidth,
+                        fontSize = 13;
+
+                    if (containerWidth >= tableWidth) {
+                        return;
+                    }
+
+                    do {
+                        theadTr.style.fontSize = --fontSize + 'px';
+                    } while (fontSize > 10 && containerWidth < htmlTable.clientWidth);
+                }
+            };
+
+
+            function assignHeaderEvents() {
+                var tr = htmlTable.children[0].children[0],
+                    startTh,
+                    startId;
+
+                tr.addEventListener('click', function (evt) {
+                    startTh = evt.target;
+                    startId = parseInt(startTh.id);
+
+                    if (sortingCol === startId) {
+                        sortingOrder *= -1;
+                    }
+                    else {
+                        sortingOrder = -1;
+                    }
+                    sortingCol = startId;
+                    if (startId) {
+                        sortTable();
+                        if (EMBEDDED) {
+                            createReport();
+                        }
+                        else {
+                            TABS.update();
+                        }
+                    }
+                    else {
+                        createReport();
+                    }
+                });
+
+                tr.addEventListener('dragstart', function (evt) {
+                    blockRefresh = true;
+                    startTh = evt.target;
+                    startId = parseInt(startTh.id);
+                    startTh.style.opacity = 0.5;
+                    startTh.style.outline = '1px dashed white';
+                    evt.dataTransfer.effectAllowed = 'move';
+                    evt.dataTransfer.dropEffect = 'move';
+                });
+
+                tr.addEventListener('dragover', function (evt) {
+                    var target = evt.target;
+
+                    for (var i = 0, n = theadChildren.length; i < n; i++) {
+                        var el = theadChildren[i];
+                        if (el !== startTh && el !== target) {
+                            el.style.opacity = '';
+                        }
+                    }
+
+                    var currId = parseInt(target.id);
+                    if (!currId) {
+                        return false;
+                    }
+
+                    if (startTh !== target) {
+                        target.style.opacity = 0.75;
+                    }
+                    else {
+                        return false;
+                    }
+                });
+
+                tr.addEventListener('dragend', function () {
+                    blockRefresh = false;
+                    for (var i = 0, n = theadChildren.length; i < n; i++) {
+                        theadChildren[i].style.opacity = '';
+                        startTh.style.outline = '';
+                    }
+                });
+
+                tr.addEventListener('drop', function (evt) {
+                    blockRefresh = false;
+                    var target = evt.target,
+                        currId = parseInt(target.id);
+
+                    startTh.style.opacity = 1;
+                    if (startTh !== target) {
+                        var id1 = reorder.indexOf(currId - 1),
+                            id2 = reorder.indexOf(startId - 1);
+                        var temp = reorder[id1];
+                        reorder[id1] = reorder[id2];
+                        reorder[id2] = temp;
+                        getColumnPositions();
+                        createReport();
+                    }
+                });
+            }
+
+
+            function assignBodyEvents() {
+                var tbody = htmlTable.children[1],
+                    mouseMoves = 0;
+
+                tbody.addEventListener('mousedown', function () {
+                    mouseMoves = 0;
+                });
+
+                tbody.addEventListener('mousemove', function () {
+                    mouseMoves++;
+                });
+
+                tbody.addEventListener('mouseup', function (evt) {
+                    if (mouseMoves < 3) {
+                        var target = evt.target;
+                        if (target.tagName === 'SMALL') {
+                            target = target.parentNode;
+                        }
+                        var row = target.parentNode,
+                            bc = tbody.children;
+                        for (var i = 0, n = bc.length; i < n; i++) {
+                            if (row === bc[i]) {
+                                var rc = row.children;
+                                for (var j = 1, m = rc.length; j < m; j++) {
+                                    if (target === rc[j]) {
+                                        break;
+                                    }
+                                }
+                                break;
+                            }
+                        }
+
+                        j -= 1;
+                        var jj = colPos[j];
+
+                        if (j !== m - 1) {
+                            if (jj === 0 || (jj >= COL_timeStart && jj < COL_timeEnd)) {
+                                new Popup(table[i].calls, j);
+                            }
+                            else if (jj !== COL_loggedIn) {
+                                new Popup(table[i].info[j + 1], j);
+                            }
+                            else {
+                                new Popup(table[i], j, true);
+                            }
+                        }
+                    }
+                });
+            }
+
+
+            var rightMenu = byId('right-menu'),
+                panelOpenBtn = byId('panel-open-button');
+
+            if (!EMBEDDED) {
+                var banner = byId('h_title'),
+                    bannerHeight = banner.clientHeight;
+
+                this.onscroll = function () {
+                    if (theadChildren) {
+                        if (bannerHeight < 40) {
+                            bannerHeight = banner.clientHeight;
+                        }
+                        if (bannerHeight) {
+                            var scroll = window.pageYOffset - 53 - bannerHeight;
+
+                            if (scroll > 0) {
+                                panelOpenBtn.style.top = scroll + 'px';
+                                rightMenu.style.top = scroll + 43 + 'px';
+                                if (options.type === 'table') {
+                                    for (var i = 0, n = theadChildren.length; i < n; i++) {
+                                        theadChildren[i].style.top = scroll + 'px';
+                                    }
+                                }
+                            }
+                            else {
+                                panelOpenBtn.style.top = '';
+                                rightMenu.style.top = '43px';
+                                if (options.type === 'table') {
+                                    for (i = 0, n = theadChildren.length; i < n; i++) {
+                                        theadChildren[i].style.top = '';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+
+                window.addEventListener('scroll', this.onscroll);
+            }
+        }
+
+
+        function Tabs() {
+            var types = ['table', 'linechart', 'barchart', 'stacked', 'piechart'],
+                type = options.type,
+                upToDate = [],
+                zIndex = 1,
+                slideIndex = types.indexOf(type),
+                str = '';
+
+            for (var i in types) {
+                str += '<slide style="z-index: ' + (+i === slideIndex ? 1 : 0) + '"></slide>';
+            }
+
+            container.innerHTML = str +
+                '<div id="piechart-chooser"></div><button id="zoom-out" onclick="vs.chart.resetZoom()" class="universal">Reset chart</button>' +
+                '<div id="zooming-overlay" ondragstart="return false"></div><div id="left-overlay">&#10096;</div><div id="right-overlay">&#10097;</div>';
+            byId('main-content').insertAdjacentHTML('afterend', '<section id="right-menu"><button id="go-table" onclick="vs.tabs.goTo(\'table\')" disabled></button><button id="go-linechart" onclick="vs.tabs.goTo(\'linechart\')" disabled></button><button id="go-barchart" onclick="vs.tabs.goTo(\'barchart\')" disabled></button><button id="go-stacked" onclick="vs.tabs.goTo(\'stacked\')" disabled></button><button id="go-piechart" onclick="vs.tabs.goTo(\'piechart\')" disabled></button><button id="go-csv" onclick="vs.report.downloadCSV()" disabled></button><button id="go-png" onclick="vs.chart.downloadPNG()" disabled></button></section>');
+            // todo put this in thml
+
+            var children = container.children,
+                goPng = byId('go-png'),
+                piechartChooser = byId('piechart-chooser');
+
+            this.tabs = {};
+
+
+            this.goTo = function (nextType) {
+                var slide = children[slideIndex],
+                    nextSlideIndex = types.indexOf(nextType),
+                    nextSlide = children[nextSlideIndex];
+
+                // if chart has bee zoomed and we are moving to other tab, then cancel zoom and recreate report
+                if (CHART.savedZoom && slideIndex !== nextSlideIndex) {
+                    byId('go-' + type).className = '';
+                    type = nextType;
+                    CHART.resetZoom();
+                    return; // .resetZoom() will call goTo in the end
+                }
+
+                this.tabs[nextType] = nextSlide;
+
+                if (nextSlideIndex !== slideIndex) {
+                    slide.style.opacity = 0;
+                    nextSlide.style.zIndex = ++zIndex;
+                    nextSlide.style.opacity = 1;
+                    byId('go-' + type).className = '';
+                    FORM.enableSaveButton();
+                }
+
+                type = options.type = nextType;
+
+                if (!upToDate[nextSlideIndex]) {
+                    if (nextType === 'table') {
+                        TABLE.render(nextSlide, true);
+                    }
+                    else {
+                        CHART.render(nextSlide, nextType);
+                    }
+                }
+                upToDate[nextSlideIndex] = true;
+
+                goPng.disabled = (nextType === 'table');
+                piechartChooser.style.display = nextType === 'piechart' ? '' : 'none';
+                byId('go-' + nextType).className = 'active';
+                toggleLROverlay(nextType);
+
+                slideIndex = nextSlideIndex;
+
+                equalHeight();
+                TABLE.onscroll();
+            };
+
+
+            this.update = function () {
+                upToDate = [];
+                this.goTo(type);
+            };
+        }
+
+
+        var SERVER = this.server = new Server();
+
+        if (!EMBEDDED) {
+            var TABS = new Tabs(),
+                TABLE = new Table(),
+                FORM = new Form(formEl);
+
+            htmlConstructor();
+        }
+
+
+        for (var i = 0, n = COLUMNS.length; i < n; i++) {
+            reorder[i] = i;
+        }
+
+        getVisibleColumnsAndRows();
+
+
+        if (EMBEDDED) {
+            container = container.children[1] || container;
+            if (options.type === 'table') {
+                var TABLE = new Table();
+                container.classList.add('results');
+            }
+            else {
+                var CHART = new Chart();
+            }
+
+            if (options.time) {
+                var DD = byId(options.time);
+                DD.addEventListener('change', function () {
+                    SERVER.updateRange();
+                });
+            }
+            SERVER.updateRange();
+        }
+        else {
+            var CHART = new Chart();
+            toggleLROverlay('table');
+            equalHeight();
+        }
+
+        window.vs = {
+            tabs: TABS,
+            chart: CHART,
+            report: report
+        };
+
     }
 
 
-    this.getColumns = function () {
-        var result = [];
-        for (var i in columnControls) {
-            result[i] = +this.get(columnControls[i]);
-        }
-        return result;
-    };
+    function Utils() {
+        var DAY = 86400;
+
+        this.pad = function (s) {
+            if (s < 10) {
+                s = '0' + s;
+            }
+            return s;
+        };
 
 
-    this.getRows = function () {
-        var result = [];
-        for (var i in destControls) {
-            result[i] = +this.get(destControls[i]);
-        }
-        return result;
-    };
+        this.timeFormat = function (period, minPeriod) {
+            period = Math.round(period);
+            var time = Math.floor(period / DAY),
+                str = '';
+
+            if (time || minPeriod === 4) {
+                str = this.pad(time) + ':';
+            }
+            time = Math.floor((period % DAY) / 3600);
+            if (time || str || minPeriod === 3) {
+                str += this.pad(time) + ':';
+            }
+            time = Math.floor((period % 3600) / 60);
+            if (time || str || minPeriod === 2) {
+                str += this.pad(time) + ':';
+            }
+            time = period % 60;
+            str += this.pad(time);
+            return str;
+        };
 
 
-    this.config = function (field) {
-        return document.settings[field].value;
-    };
+        this.googleTimeFormat = function (period, length) {
+            var result = [];
+
+            if (length === 4) {
+                result.push(Math.floor(period / DAY));
+            }
+
+            result.push(Math.floor((period % DAY) / 3600), Math.floor((period % 3600) / 60), Math.floor(period % 60));
+            return result;
+        };
 
 
-    this.get = function (id) {
-        return byId(id).value;
-    };
+        this.downloadUrl = function (url, fileName, str) {
+            var link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', fileName);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            if (link.download || !str) {
+                link.click();
+            }
+            else {
+                location.href = "data:application/octet-stream," + encodeURIComponent(str);
+                alert('Sorry, downloads don\'t work well in your browser. Please add extension to your newly downloaded file.');
+            }
+            document.body.removeChild(link);
+        };
 
 
-    PERIOD = +this.get('period');
-    this.recursive = +byName('recursive');
-    this.slaTime = +this.get('slatime');
-    this.totalRow = +this.get('totalrow');
-    this.title = document.getElementsByTagName('title')[0];
-    this.timeformat = this.config('timeformat');
-    this.dateformat = this.config('dateformat');
-    moment.tz.setDefault(this.config('timezone'));
-    SAME_TZ = (new Date()).getTimezoneOffset() === moment().utcOffset();
-    // todo will not work so good in periods with daylight time saving
+        this.get = function (uri, success, failure) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', '/local/qstatistics/update/' + uri);
+            xhr.onload = function () {
+                // anything smarter? detect network loss?
+                if (xhr.status === 200) {
+                    success(xhr.responseXML);
+                }
+                else {
+                    failure();
+                }
+            };
+            xhr.onerror = failure;
+            xhr.send();
+
+            return xhr;
+        };
 
 
-    // FORM
+        this.post = function (url, payload, callback) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', url);
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+            xhr.onload = function () {
+                // anything smarter? detect network loss?
+                if (xhr.status === 200) {
+                    callback && callback(xhr.responseXML);
+                }
+            };
+            xhr.onerror = function () {
+                alert('Can\'t reach server to save report settings!');
+            };
+            xhr.send(payload);
 
-    var form = $('form').last(),
-        inputs = form.find('select[multiple!=multiple], input'),
-        submitBtn = form.find('input[type="submit"]'),
-        originalName = form[0].name.value,
-        submitUpdate = submitBtn[0],
-        submitCopy = submitBtn[1],
-        copyButtonClicked,
-        dirty,
-        typeChanged,
-        appended;
-
-    setWatchers();
+            return xhr;
+        };
 
 
-    function onFormDirty () {
-        dirty = true;
-        that.enableSaveButton();
+        this.contains = function (haystack, needle) {
+            if (haystack.contains) {
+                return haystack.contains(needle);
+            }
+            else {
+                while (needle && needle !== haystack) {
+                    needle = needle.parentNode;
+                }
+                return needle;
+            }
+        };
+
+
+        this.formToJson = function (formEl) {
+            var result = {};
+
+            for (var i = 0, n = formEl.length; i < n; i++) {
+                var el = formEl[i];
+                // don't add those selects to options
+                if (el.getAttribute('multiple') === null) {
+                    result[el.name] = el.value;
+                }
+            }
+            return result;
+        };
+
+
+        this.jsonToForm = function (json, formEl) {
+            for (var i in json) {
+                if (i) {
+                    if (formEl[i] !== undefined) {
+                        formEl[i].value = json[i];
+                    }
+                    else {
+                        formEl.insertAdjacentHTML('beforeend', '<input type="hidden" name="' + i + '" value="' + UTILS.escapeHtml(json[i]) + '"/>');
+                    }
+                }
+            }
+        };
+
+
+        this.serialize = function (json, form) {
+            var result = [];
+
+            for (i in json) {
+                if (i) {
+                    result.push(i + '=' + encodeURIComponent(json[i]));
+                }
+            }
+
+            if (form) {
+                var destination = ['queues', 'agents', 'phones'];
+                for (var i = 0, n = destination.length; i < n; i++) {
+                    var dest = destination[i],
+                        selected = byId(dest + 'include_selected').options,
+                        unselected = byId(dest + 'include_unselected').options;
+
+                    for (var j = 0, m = selected.length; j < m; j++) {
+                        result.push(dest + 'include' + '=' + encodeURIComponent(selected[j].value));
+                    }
+
+                    for (j = 0, m = unselected.length; j < m; j++) {
+                        result.push(dest + 'include_unselected' + '=' + encodeURIComponent(unselected[j].value));
+                    }
+                }
+            }
+
+            return result.join('&');
+        };
+
+
+        this.escapeHtml = function (value) {
+            var map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+
+            if (typeof value !== 'string') {
+                return value;
+            }
+            else {
+                return value.replace(/[&<>"']/g, function (m) {
+                    return map[m];
+                });
+            }
+        };
     }
 
 
-    this.enableSaveButton = function () {
-        typeChanged = true;
-        submitUpdate.disabled = false;
-        submitUpdate.value = 'Save report';
-        submitCopy.disabled = false;
-        submitCopy.value = 'Save as copy';
-    };
-
-
-    function onFormClean () {
-        submitUpdate.disabled = true;
-        submitUpdate.value = 'Report saved';
-        if (copyButtonClicked) {
-            submitCopy.disabled = true;
-            submitCopy.value = 'Report copied';
-        }
-        dirty = false;
-        typeChanged = false;
+    function byId(id) {
+        return document.getElementById(id);
     }
 
 
-    if (form[0].id.value) {
-        onFormClean();
-        this.title.innerHTML = 'Call statistics :: ' + qUtils.escapeHtml(form[0].name.value);
+    // INIT
+    // singletons are UPPER case
+    var UTILS = new Utils();
+    var CONFIG = UTILS.formToJson(document.settings);
+    if (!CONFIG.dateformat) {
+        CONFIG.dateformat = 'YYYY-MM-DD';
+    }
+    if (!CONFIG.timeformat) {
+        CONFIG.timeformat = '24';
+    }
+    moment.tz.setDefault(CONFIG.timezone);
+    var SAME_TZ = (new Date()).getTimezoneOffset() === moment().utcOffset();      // same timezone
+
+    var reports = [];
+
+    if (EMBEDDED) {
+        for (var i = 0; i < EMBEDDED.length; i++) {
+            var em = EMBEDDED[i];
+            em.report.time = em.time;
+            em.report.include = em.include;
+            reports.push((new Report(em.report, byId(em.container))).server);
+        }
     }
     else {
-        this.title.innerHTML = 'Call statistics :: New report';
+        var formEl = document.getElementsByTagName('form');
+        formEl = formEl[formEl.length - 1];
+
+        reports.push((new Report(UTILS.formToJson(formEl), byId('left-content'), formEl)).server);
     }
 
 
-    inputs.on('change', onFormDirty);
-    form.on('submit', submit);
-    submitCopy.addEventListener('click', function () {
-        copyButtonClicked = true;
-    });
-    window.addEventListener("popstate", function() {
-        location.reload();
-    });
 
-    // submitting form
-    function submit () {
+    if (EMBEDDED) {
+        var offsetTimeouts = [],
+            requestsEnded,
+            postId = EMBEDDED[0].postid;
 
-        function markAllOptions (mark) {
-            var arr = ['queues', 'agents', 'phones'];
-            for (var i in arr) {
-                if (qOpts.get(arr[i]) === 'use_include') {
-                    var options = byId(arr[i] + 'include_selected').options;
-                    for (var j = options.length - 1; j >= 0; j--) {
-                        options[j].selected = mark;
-                    }
+
+        function poll() {
+            requestsEnded = 0;
+
+            function promiseAll () {
+                requestsEnded++;
+                if (EMBEDDED.length === requestsEnded) {
+                    timeoutHandle = setTimeout(poll, +CONFIG.refresh);
+                }
+            }
+
+
+            for (var i = 0; i < reports.length; i++) {
+                var offset = EMBEDDED && (+EMBEDDED[i].offset) || 0;
+                if (offset) {
+                    offsetTimeouts[i] = setTimeout(reports[i].tryNewRequest.bind(reports[i], promiseAll), offset);
+                }
+                else {
+                    reports[i].tryNewRequest(promiseAll);
                 }
             }
         }
 
-        if (!dirty && !typeChanged && !copyButtonClicked) {
-            return false;
-        }
-
-        if (!form[0].name.value) {
-            window.scrollTo(0, 0);
-            form[0].name.focus();
-            alert('Please enter the report name.');
-            return false;
-        }
-
-        markAllOptions(true);
-        qChart.resetZoom();
-
-
-        if (appended) {
-            for (var i = 0; i < 4; i++) {
-                form.find('input').last().remove();
-            }
-        }
-        appended = true;
-        form.append('<input type="hidden" name="startdate" value="' + START + '"/>' +
-            '<input type="hidden" name="enddate" value="' + END + '"/>' +
-            '<input type="hidden" name="starttime" value="' + (START - moment.unix(START).startOf('day').unix()) + '"/>' +
-            '<input type="hidden" name="endtime" value="' + (END - moment.unix(END).startOf('day').unix()) + '"/>');
-
-        if (qChart.pieFilter && qChart.pieFilter.id) {
-            form[0].piesource.value = qChart.pieFilter.by + '_' + qChart.pieFilter.id;
+        if (!document.hidden) {
+            var timeoutHandle = setTimeout(poll, +CONFIG.refresh);
         }
 
 
-        form[0].type.value = qMenu.type;
-
-
-        if (copyButtonClicked) {
-            form[0].id.value = 0;
-            if (form[0].name.value === originalName) {
-                form[0].name.value += ' (copy)';
-            }
-        }
-        originalName = form[0].name.value;
-
-
-        $.post(form.attr('action'), form.serialize(), function (response) {
-            var id = response.getElementsByTagName('return')[0].getAttribute('id');
-            form[0].id.value = id;
-            window.history.pushState('', form[0].name, '//' + location.host + location.pathname + '?id=' + id);
-            onFormClean();
-            copyButtonClicked = false;
-        });
-
-
-        markAllOptions(false);
-        submitCopy.style.display = '';
-        qUtils.eqHeight();
-        return false;
-    }
-
-
-    if (!form[0].id.value) {
-        submitCopy.style.display = 'none';
-    }
-
-
-    this.showNewTime = function () {
-        byId('startday').value = 1;
-        byId('endday').value = 1;
-        var start = moment.unix(START),
-            end = moment.unix(END),
-            y1,m1,d1,y2,m2,d2;
-        byId('startdate').style.display = '';
-        byId('enddate').style.display = '';
-        byId('start_year').value = y1 = start.year();
-        byId('end_year').value = y2 = end.year();
-        byId('start_month').value = m1 = start.month() + 1;
-        byId('end_month').value = m2 = end.month() + 1;
-        byId('start_day').value = d1 = start.date();
-        byId('end_day').value = d2 = end.date();
-        byId('start_hour').value = start.hours();
-        byId('end_hour').value = end.hours();
-        byId('start_minute').value = start.minutes();
-        byId('end_minute').value = end.minutes();
-        byId('start_second').value = start.seconds();
-        byId('end_second').value = end.seconds();
-        byId('start_buffer').value = y1 + '-' + m1 + '-' + d1;
-        byId('end_buffer').value = y2 + '-' + m2 + '-' + d2;
-    };
-
-
-    window.onbeforeunload = function () {
-        if (dirty) {
-            return "You have not saved your report options. If you navigate away, your changes will be lost";
-        }
-    };
-}
-function QPolling (onFreshData) {
-    var username = qOpts.config('username'),
-        password = qOpts.config('password'),
-        xhr,
-        preloaderShown,
-        startDay,
-        endDay,
-        lastToday,
-        requestStart,
-        requestEnd,
-        stopPolling = false,
-        firstRequest,
-        timeoutHandle,
-        pollDelay = +qOpts.config('refresh');
-
-
-    function ajaxGet (uri, success, failure) {
-        xhr = new XMLHttpRequest();
-        xhr.open('GET', '/local/qstatistics/update/' + uri);
-        xhr.onload = function() {
-            if (xhr.status === 200) {
-                success(xhr.responseXML);
-            }
-            else {
-                failure();
-            }
-        };
-        xhr.onerror = failure;
-        xhr.send();
-    }
-
-
-    function calcTimeFrame () {
-        lastToday = moment().startOf('day');
-
-        startDay = qOpts.get('startday');
-        if (startDay === '1') {
-            START = moment({
-                year: qOpts.get('start_year'),
-                month: qOpts.get('start_month') - 1,
-                day: qOpts.get('start_day')
-            });
-        }
-        else {
-            START = moment().add(startDay, 'days');
-        }
-        START.set({
-            hour: qOpts.get('start_hour'),
-            minute: qOpts.get('start_minute'),
-            second: qOpts.get('start_second')
-        });
-
-        endDay = qOpts.get('endday');
-        if (endDay == '1') {
-            END = moment({
-                year: qOpts.get('end_year'),
-                month: qOpts.get('end_month') - 1,
-                day: qOpts.get('end_day')
-            });
-        }
-        else {
-            END = moment().add(endDay, 'days');
-        }
-        END.set({
-            hour: qOpts.get('end_hour'),
-            minute: qOpts.get('end_minute'),
-            second: qOpts.get('end_second')
-        });
-
-        START = START.unix();
-        END = END.unix();
-
-        var temp1 = Math.min(START, END);
-        var temp2 = Math.max(START, END);
-        START = temp1;
-        END = temp2;
-
-        if (START > moment().unix()) {
-            alert('We are not supporting reports which start in the future.');
-            // todo
-            stopPolling = true;
-            throw 'start > now';
-        }
-
-        qChart.originalZoom = null;
-    }
-
-
-    function tryNewRequest () {
-        if (!stopPolling && !document.hidden) {
-            var request = '?_username=' + username + ';_password=' + password + ';start=' + requestStart + ';end=' + requestEnd + ';recursive=' + qOpts.recursive;
-            ajaxGet(request, response, function () {    // on error, poll again
-                timeoutHandle = setTimeout(tryNewRequest, qMenu.type === 'table' ? pollDelay : Math.max(20000, pollDelay));
-            });
-        }
-    }
-
-
-    this.update = function () {
-        byId('zoom-out').style.display = 'none';
-        qChart.originalZoom = null;
-
-        stopCurrentRequest();
-        calcTimeFrame();
-
-        stopPolling = false;
-        firstRequest = true;
-
-        // if all required data is in the cache, don't query server
-        if (START >= qDB.minTime && END <= qDB.maxTime) {
-            onFreshData();
-            stopPolling = true;
-            return;
-        }
-        // query only what is missing (but only from the beginning)
-        else if (START < qDB.minTime && END >= qDB.minTime) {
-            onFreshData();
-            requestStart = START;
-            requestEnd = qDB.minTime;
-        }
-        // query only what is missing (but only from the end)
-        else if (START <= qDB.maxTime && END > qDB.maxTime) {
-            onFreshData();
-            requestStart = qDB.maxTime;
-            requestEnd = END;
-        }
-        // if missing data is on both sides, just query everything
-        else {
-            requestStart = START;
-            requestEnd = END;
-        }
-
-        if (!preloaderShown && requestEnd - requestStart > DAY / 2) {
-            showPreloader();
-        }
-
-        tryNewRequest();
-    };
-
-
-    function response(response) {
-        var update = response.getElementsByTagName('update')[0];
-
-        // break polling loop on error
-        if (!update) {
-            var error = response.getElementsByTagName('errors')[0];
-            if (error) {
-                alert(error.getElementsByTagName('error')[0].getAttribute('message'));
-                hidePreloader();
-            }
-        }
-        else {
-            var updateEnd = +update.getAttribute('timestamp'),
-                anythingChanged = qDB.add(update, requestStart, Math.min(requestEnd, updateEnd));
-
-            if (firstRequest || anythingChanged) {
-                onFreshData();
-            }
-
-            firstRequest = false;
-            hidePreloader();
-
-            // Handle the change of day at midnight. If the start or end day is not a specific date then the report
-            // period will change every day.
-            var today = moment().startOf('day');
-            if (today.unix() !== lastToday.unix()) {
-                if (startDay === '0') {
-                    START = moment.unix(START).add(1, 'days').unix();
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden) {
+                for (var i = 0; i < reports.length; i++) {
+                    reports[i].stopRequest();
+                    clearTimeout(offsetTimeouts[i]);
                 }
-                if (endDay === '0') {
-                    END = moment.unix(END).add(1, 'days').unix();
+                clearTimeout(timeoutHandle);
+            }
+            else {
+                for (i = 0; i < reports.length; i++) {
+                    reports[i].tryNewRequest();
                 }
-            }
-            lastToday = today;
-
-            if (START >= END) {
-                stopPolling = true;
-                alert('Because start_time was set for "Today", it became greater than end_time after midnight. Stopping.');
-                return;
-            }
-
-            if (END <= qDB.maxTime) {
-                stopPolling = true;
-                return;
-            }
-
-            requestStart = qDB.maxTime;
-            requestEnd = END;
-
-            timeoutHandle = setTimeout(tryNewRequest, qMenu.type === 'table' ? pollDelay : Math.max(20000, pollDelay));
-        }
-    }
-
-
-    function stopCurrentRequest () {
-        clearTimeout(timeoutHandle);
-        if (xhr) {
-            xhr.abort();
-        }
-    }
-
-
-    function visibilityChange () {
-        stopCurrentRequest();
-        tryNewRequest();
-    }
-
-
-    window.addEventListener('beforeunload', visibilityChange);
-
-
-    function showPreloader () {
-        preloaderShown = true;
-        var img = document.createElement('IMG');
-        img.src = '/local/qstatistics/include/img/ajax.gif';
-        img.alt = '';
-        img.id = 'ajax-preloader';
-        document.body.appendChild(img);
-    }
-
-
-    function hidePreloader () {
-        if (preloaderShown) {
-            var el = byId('ajax-preloader');
-            if (el) {
-                el.parentNode.removeChild(el);
-            }
-            preloaderShown = false;
-        }
-    }
-
-
-    document.addEventListener('visibilitychange', visibilityChange);
-    this.update();
-}
-
-
-function QTable () {
-    var that = this,
-        container,
-        table,
-        theadTr,
-        theadChildren,
-        tbody,
-        blockRefresh;
-
-    this.sortingCol = 0;
-    this.sortingOrder = 1;
-
-
-    this.render = function (slide) {
-        if (blockRefresh) {
-            return;
-        } // todo deep vs shallow rerender
-
-        var i,
-            str = '',
-            data = qDB.getTable();
-
-        container = slide;
-        if (data) {
-            for (i in data) {
-                str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
-            }
-        }
-        slide.innerHTML = '<table cellpadding="0" cellspacing="0"><thead><tr class="head">' + createHeader() + '</tr></thead><tbody>' + str + '</tbody></table>';
-
-        table = slide.children[0];
-        theadTr = table.children[0].children[0];
-        theadChildren = theadTr.children;
-        tbody = table.children[1];
-
-        this.resizeHeader();
-        assignHeaderEvents();
-
-        qUtils.eqHeight();
-        qOpts.preventScroll();
-    };
-
-
-    function createHeader () {
-        function getSorting (i) {
-            if (that.sortingCol === i) {
-                return that.sortingOrder === 1 ? ' class="asc"' : ' class="desc"';
-            }
-            else {
-                return '';
-            }
-        }
-
-
-        var str = '<th style="position: relative" id="0col" align="left"' + getSorting(0) + '>' + (PERIOD ? 'Time' : 'Destination') + '</th>';
-
-        for (var i in qDB.colPos) {
-            var newI = qDB.colPos[i];
-            str += '<th style="position: relative" id="' + (newI + 1) + 'col" draggable="true" ondragover="return false" align="left"' + getSorting(newI + 1) + '>' + COLUMNS[newI] + '</th>';
-        }
-
-        return str;
-    }
-
-
-    this.resizeHeader = function () {
-        if (theadTr) {
-            theadTr.style.fontSize = '';
-            var containerWidth = container.clientWidth,
-                tableWidth = table.clientWidth,
-                fontSize = 13;
-
-            if (containerWidth >= tableWidth) {
-                return;
-            }
-
-            do {
-                theadTr.style.fontSize = --fontSize + 'px';
-            } while (fontSize > 10 && containerWidth < table.clientWidth);
-        }
-    };
-
-
-    function assignHeaderEvents() {
-        var tr = table.children[0].children[0],
-            startTh,
-            startId;
-
-        tr.addEventListener('click', function (evt) {
-            startTh = evt.target;
-            startId = parseInt(startTh.id);
-
-            if (that.sortingCol === startId) {
-                that.sortingOrder *= -1;
-            }
-            else {
-                that.sortingOrder = -1;
-            }
-            that.sortingCol = startId;
-            if (startId) {
-                qDB.sort();
-                qMenu.update();
-            }
-            else {
-                qDB.filter();
+                timeoutHandle = setTimeout(poll, +CONFIG.refresh);
             }
         });
+        window.addEventListener('beforeunload', poll);
 
-        tr.addEventListener('dragstart', function (evt) {
-            blockRefresh = true;
-            startTh = evt.target;
-            startId = parseInt(startTh.id);
-            startTh.style.opacity = 0.5;
-            startTh.style.outline = '1px dashed white';
-            evt.dataTransfer.effectAllowed = 'move';
-            evt.dataTransfer.dropEffect = 'move';
-        });
-
-        tr.addEventListener('dragover', function (evt) {
-            var target = evt.target;
-
-            for (var i = 0, n = theadChildren.length; i < n; i++) {
-                var el = theadChildren[i];
-                if (el !== startTh && el !== target) {
-                    el.style.opacity = '';
-                }
-            }
-
-            var currId = parseInt(target.id);
-            if (!currId) {
-                return false;
-            }
-
-            if (startTh !== target) {
-                target.style.opacity = 0.75;
-            }
-            else {
-                return false;
-            }
-        });
-
-        tr.addEventListener('dragend', function () {
-            blockRefresh = false;
-            for (var i = 0, n = theadChildren.length; i < n; i++) {
-                theadChildren[i].style.opacity = '';
-                startTh.style.outline = '';
-            }
-        });
-
-        tr.addEventListener('drop', function (evt) {
-            blockRefresh = false;
-            var target = evt.target,
-                currId = parseInt(target.id);
-
-            startTh.style.opacity = 1;
-            if (startTh !== target) {
-                var id1 = COL_POS.indexOf(currId - 1),
-                    id2 = COL_POS.indexOf(startId - 1);
-                var temp = COL_POS[id1];
-                COL_POS[id1] = COL_POS[id2];
-                COL_POS[id2] = temp;
-                qDB.calculateColPos();
-                qDB.filter();
-            }
-        });
     }
-
-
-    var rightMenu = byId('right-menu'),
-        panelOpenBtn = byId('panel-open-button'),
-        banner = byId('h_title'),
-        bannerHeight = banner.clientHeight;
-
-    this.onscroll = function () {
-        if (!bannerHeight) {
-            bannerHeight = banner.clientHeight;
-        }
-        if (bannerHeight) {
-            var scroll = window.pageYOffset - 53 - bannerHeight;
-
-            if (scroll > 0) {
-                panelOpenBtn.style.top = scroll + 'px';
-                rightMenu.style.top = scroll + 43 + 'px';
-                if (qMenu.type === 'table') {
-                    for (var i = 0, n = theadChildren.length; i < n; i++) {
-                        theadChildren[i].style.top = scroll + 'px';
-                    }
-                }
-            }
-            else {
-                panelOpenBtn.style.top = '';
-                rightMenu.style.top = '43px';
-                if (qMenu.type === 'table') {
-                    for (i = 0, n = theadChildren.length; i < n; i++) {
-                        theadChildren[i].style.top = '';
-                    }
-                }
-            }
-        }
-    };
-
-    window.addEventListener('scroll', this.onscroll);
-}
-
-
-function QMenu (container) {
-    this.types = ['table', 'linechart', 'barchart', 'stacked', 'piechart'];
-
-    this.type = byName('type') || 'table';
-
-    var that = this,
-        upToDate = [],
-        zIndex = 1,
-        slideIndex = this.types.indexOf(this.type);
-
-
-    var str = '';
-    for (var i in this.types) {
-        str += '<slide style="z-index: ' + (+i === slideIndex ? 1 : 0) + '"></slide>';
-    }
-
-    container.innerHTML = str +
-        '<div id="piechart-chooser"></div><button id="zoom-out" onclick="qChart.resetZoom()" class="universal">Reset chart</button>' +
-        '<div id="zooming-overlay" ondragstart="return false"></div><div id="left-overlay">&#10096;</div><div id="right-overlay">&#10097;</div>';
-    byId('main-content').insertAdjacentHTML('afterend', '<section style="right: 5px; top: 43px;" id="right-menu"><button id="go-table" onclick="qMenu.goTo(\'table\')"></button><button id="go-linechart" onclick="qMenu.goTo(\'linechart\')"></button><button id="go-barchart" onclick="qMenu.goTo(\'barchart\')"></button><button id="go-stacked" onclick="qMenu.goTo(\'stacked\')"></button><button id="go-piechart" onclick="qMenu.goTo(\'piechart\')"></button><button id="go-csv" onclick="qDB.downloadCSV()"></button><button id="go-png" onclick="qChart.downloadPNG()"></button></section>');
-    // todo put this in thml
-
-    var slides = container.children;
-
-
-    this.goTo = function (nextType) {
-        var slide = slides[slideIndex],
-            nextSlideIndex = qMenu.types.indexOf(nextType),
-            nextSlide = slides[nextSlideIndex];
-
-        SLIDES[nextType] = nextSlide;
-
-        if (nextSlideIndex !== slideIndex) {
-            slide.style.opacity = 0;
-            nextSlide.style.zIndex = ++zIndex;
-            nextSlide.style.opacity = 1;
-            byId('go-' + this.type).className = '';
-            qOpts.enableSaveButton();
-        }
-
-        if (qChart.originalZoom && slideIndex !== nextSlideIndex) {
-            slideIndex = nextSlideIndex;
-            this.type = nextType;
-
-            qChart.resetZoom();
-            qDB.filter();
-            return; // because filter will call goTo again
-        }
-
-        if (!upToDate[nextSlideIndex]) {
-            if (nextType === 'table') {
-                qTable.render(nextSlide);
-            }
-            else {
-                qChart.render(nextType, nextSlide);
-            }
-        }
-        upToDate[nextSlideIndex] = true;
-
-        byId('go-png').disabled = (nextType === 'table');
-        byId('piechart-chooser').style.display = nextType === 'piechart' ? 'block' : 'none';
-        byId('go-' + nextType).className = 'active';
-        qUtils.toggleLROverlay(nextType);
-
-        slideIndex = nextSlideIndex;
-        this.type = nextType;
-
-        qUtils.eqHeight();
-        qTable.onscroll();
-    };
-
-
-    this.update = function () {
-        upToDate = [];
-        this.goTo(this.type);
-    };
-}
-
-
-function QUtils () {
-    this.pad = function (s) {
-        if (s < 10) {
-            s = '0' + s;
-        }
-        return s;
-    };
-
-
-    this.timeFormat = function (period, minPeriod) {
-        period = Math.round(period);
-        var time = Math.floor(period / DAY),
-            str = '';
-
-        if (time || minPeriod === 4) {
-            str = this.pad(time) + ':';
-        }
-        time = Math.floor((period % DAY) / 3600);
-        if (time || str || minPeriod === 3) {
-            str += this.pad(time) + ':';
-        }
-        time = Math.floor((period % 3600) / 60);
-        if (time || str) {
-            str += this.pad(time) + ':';
-        }
-        time = period % 60;
-        str += this.pad(time);
-        return str;
-    };
-
-
-    this.googleTimeFormat = function (period, length) {
-        var result = [];
-
-        if (length === 4) {
-            result.push(Math.floor(period / DAY));
-        }
-
-        result.push(Math.floor((period % DAY) / 3600), Math.floor((period % 3600) / 60), Math.floor(period % 60));
-        return result;
-    };
-
-
-    this.downloadUrl = function (url, fileName) {
-        var link = document.createElement('a');
-        link.setAttribute('href', url);
-        link.setAttribute('download', fileName);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-    
-    
-    this.contains = function (haystack, needle) {
-        if (haystack.contains) {
-            return haystack.contains(needle);
-        }
-        else {
-            while (needle && needle !== haystack) {
-                needle = needle.parentNode;
-            }
-            return needle;
-        }
-    };
-
-
-    this.escapeHtml = function (text) {
-        var map = {
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#039;'
-        };
-
-        return text.replace(/[&<>"']/g, function(m) { return map[m]; });
-    };
-
-
-    this.toggleLROverlay = function (nextType) {
-        var showMoveLeftRight = (PERIOD <= 0 || nextType === 'table' || nextType === 'piechart') ? 'none' : 'block';
-        byId('left-overlay').style.display = showMoveLeftRight;
-        byId('right-overlay').style.display = showMoveLeftRight;
-    };
-
-
-    var openButton = byId('panel-open-button'),
-        optionsHeading = byId('options-heading'),
-        mainContent = byId('main-content'),
-        rightPanel = byId('right-panel'),
-        rightMenuHeight = 280 + 38,
-        isExpanded = false;
-
-
-    this.eqHeight = function () {
-        mainContent.style.height = Math.max(SLIDES[qMenu.type].offsetHeight, rightMenuHeight, isExpanded ? (rightPanel.clientHeight + 9) : 0) + 'px';
-    };
-
-
-    function toggle () {
-        isExpanded = !isExpanded;
-        if (isExpanded) {
-            rightPanel.classList.add('expanded');
-            openButton.classList.add('expanded');
-        }
-        else {
-            rightPanel.classList.remove('expanded');
-            openButton.classList.remove('expanded');
-        }
-        qUtils.eqHeight();
-    }
-
-    openButton.addEventListener('click', toggle);
-    optionsHeading.addEventListener('click', toggle);
-
-    openButton.innerHTML = '';      // bad initial html
-
-    isExpanded = true;
-    rightPanel.classList.add('expanded');
-    openButton.classList.add('expanded');
-}
-
-
-function byId (id) {
-    return document.getElementById(id);
-}
-
-function byName (name) {
-    return document.getElementsByName(name)[0].value;
-}
-
-
-function qstatistics_begin () {
-    var leftContent = byId('left-content');
-    window.qUtils = new QUtils();
-    window.qOpts = new QOptions();
-    window.qMenu = new QMenu(leftContent);
-
-    window.qDB = new QDataBase(qOpts.getColumns(), qOpts.getRows());
-
-    window.qTable = new QTable();
-    window.qChart = new QChart(leftContent);
-
-    window.qPolling = window.qsPolling = new QPolling(function () {
-        qDB.filter();
-    });
-
-
-
-    var handler;
-    window.addEventListener('resize', function () {
-        clearTimeout(handler);
-
-        handler = setTimeout(function () {
-            if (qMenu.type === 'table') {
-                qTable.resizeHeader();
-            }
-            else {
-                qChart.resize();
-            }
-            qUtils.eqHeight();
-        }, 100);
-    });
-
 }
