@@ -50,12 +50,15 @@ function qstatistics_begin(EMBEDDED) {
                 'holdmin',
                 'holdavg',
                 'holdmax',
+                'holdtotal',
                 'talkmin',
                 'talkavg',
                 'talkmax',
+                'talktotal',
                 'totalmin',
                 'totalavg',
                 'totalmax',
+                'totaltotal',
                 'abandon',
                 'noagent',
                 'timeout',
@@ -88,12 +91,15 @@ function qstatistics_begin(EMBEDDED) {
                 'Hold time min',
                 'Hold time avg',
                 'Hold time max',
+                'Hold time total',
                 'Talk time min',
                 'Talk time avg',
                 'Talk time max',
+                'Talk time total',
                 'Total time min',
                 'Total time avg',
                 'Total time max',
+                'Total time total',
                 'Abandoned by caller',
                 'No agents available',
                 'Time-out in queue',
@@ -105,8 +111,8 @@ function qstatistics_begin(EMBEDDED) {
             ],
 
             COL_timeStart = 13,
-            COL_timeEnd = 22,
-            COL_loggedIn = 29;
+            COL_timeEnd = 25,
+            COL_loggedIn = 32;
 
 
         options.type = options.type || 'table';
@@ -1245,6 +1251,11 @@ function qstatistics_begin(EMBEDDED) {
                 queue.name = queue.getAttribute('name');
                 queues[queueId] = queue;
                 queue.marked = true;
+                // queue.agents = [];
+                // var queueAgents = queue.children[0].children;
+                // for (var j = 0, m = queueAgents.length; j < m; j++) {
+                //     queue.agents.push(queueAgents.getAttribute('id'));
+                // }
             }
 
             for (i in queues) {
@@ -1831,7 +1842,7 @@ function qstatistics_begin(EMBEDDED) {
                     addToTableOrMultiRow(1, row, multiRow);
                 }
                 // internal callers
-                if (stype !== external && stype !== local && dtype != external && dtype !== local) {
+                if (stype !== external && stype !== local && dtype !== external && dtype !== local) {
                     addToTableOrMultiRow(2, row, multiRow);
                 }
                 // external destinations
@@ -1862,12 +1873,15 @@ function qstatistics_begin(EMBEDDED) {
                     minhold = Infinity,
                     avghold = 0,
                     maxhold = 0,
+                    sumhold = 0,
                     mintalk = Infinity,
                     avgtalk = 0,
                     maxtalk = 0,
+                    sumtalk = 0,
                     mintotal = Infinity,
                     avgtotal = 0,
                     maxtotal = 0,
+                    sumtotal = 0,
                     abandon = 0,
                     noagent = 0,
                     timeout = 0,
@@ -1883,20 +1897,20 @@ function qstatistics_begin(EMBEDDED) {
 
                     minhold = Math.min(minhold, call.hold);
                     minHold = Math.min(minHold, minhold);
-                    avghold += call.hold;
+                    sumhold += call.hold;
                     maxhold = Math.max(maxhold, call.hold);
                     maxHold = Math.max(maxHold, maxhold);
                     if (call.answer) {
                         mintalk = Math.min(mintalk, call.talk);
                         minTalk = Math.min(minTalk, mintalk);
-                        avgtalk += call.talk;
+                        sumtalk += call.talk;
                         maxtalk = Math.max(maxtalk, call.talk);
                         maxTalk = Math.max(maxTalk, maxtalk);
                         talkCount++;
                     }
                     mintotal = Math.min(mintotal, call.total);
                     minTotal = Math.min(minTotal, mintotal);
-                    avgtotal += call.total;
+                    sumtotal += call.total;
                     maxtotal = Math.max(maxtotal, call.total);
                     maxTotal = Math.max(maxTotal, maxtotal);
                 }
@@ -1914,26 +1928,26 @@ function qstatistics_begin(EMBEDDED) {
 
                         if (q === 'abandon') {
                             abandon++;
-                            addInfo(row, call, 23);
+                            addInfo(row, call, 26);
                         } else if (q === 'exitwithtimeout') {
                             timeout++;
-                            addInfo(row, call, 25);
+                            addInfo(row, call, 28);
                         } else if (q === 'completeagent') {
                             agent++;
-                            addInfo(row, call, 27);
+                            addInfo(row, call, 30);
                         } else if (q === 'completecaller') {
                             caller++;
-                            addInfo(row, call, 28);
+                            addInfo(row, call, 31);
                         } else if (q === 'transfer') {
                             transfer++;
-                            addInfo(row, call, 29);
+                            addInfo(row, call, 32);
                         } else if (dtypeQueue) {
                             if (q === 'exitempty') {
                                 noagent++;
-                                addInfo(row, call, 24);
+                                addInfo(row, call, 27);
                             } else if (q === 'exitwithkey') {
                                 keypress++;
-                                addInfo(row, call, 26);
+                                addInfo(row, call, 29);
                             }
                         }
                     }
@@ -1949,17 +1963,17 @@ function qstatistics_begin(EMBEDDED) {
                     mintotal = 0;
                 }
                 if (rowTotal) {
-                    sumHold += avghold;
-                    sumTalk += avgtalk;
+                    sumHold += sumhold;
+                    sumTalk += sumtalk;
                     talkCallsCount += talkCount;
-                    sumTotal += avgtotal;
+                    sumTotal += sumtotal;
 
-                    avghold /= rowTotal;
-                    avgtalk = talkCount ? avgtalk / talkCount : 0;
-                    avgtotal /= rowTotal;
+                    avghold = sumhold / rowTotal;
+                    avgtalk = talkCount ? sumtalk / talkCount : 0;
+                    avgtotal = sumtotal / rowTotal;
                 }
 
-                row.splice(COL_timeStart + 1, 0, minhold, avghold, maxhold, mintalk, avgtalk, maxtalk, mintotal, avgtotal, maxtotal, abandon, noagent, timeout, keypress, agent, caller, transfer);
+                row.splice(COL_timeStart + 1, 0, minhold, avghold, maxhold, sumhold, mintalk, avgtalk, maxtalk, sumtalk, mintotal, avgtotal, maxtotal, sumtotal, abandon, noagent, timeout, keypress, agent, caller, transfer);
             }
 
 
@@ -1980,12 +1994,15 @@ function qstatistics_begin(EMBEDDED) {
                         13: minHold,
                         14: sumHold / totalCallsCount,
                         15: maxHold,
-                        16: minTalk,
-                        17: talkCallsCount ? sumTalk / talkCallsCount : 0,
-                        18: maxTalk,
-                        19: minTotal,
-                        20: sumTotal / totalCallsCount,
-                        21: maxTotal
+                        16: sumHold,
+                        17: minTalk,
+                        18: talkCallsCount ? sumTalk / talkCallsCount : 0,
+                        19: maxTalk,
+                        20: sumTalk,
+                        21: minTotal,
+                        22: sumTotal / totalCallsCount,
+                        23: maxTotal,
+                        24: sumTotal
                     };
                     for (var i = COL_timeStart; i < COL_timeEnd; i++) {
                         if (visibleCols[i]) {
@@ -2303,6 +2320,8 @@ function qstatistics_begin(EMBEDDED) {
 
             for (var d in destinations) {
                 var dest = destinations[d],
+                    visibleQueues,
+                    visibleQueuesLength,
                     ids = [],
                     arr,
                     destFilter = options[dest];
@@ -2333,6 +2352,11 @@ function qstatistics_begin(EMBEDDED) {
                     }
                 }
 
+                if (dest === 'queues') {
+                    visibleQueues = ids;
+                    visibleQueuesLength = visibleQueues.length;
+                }
+
                 for (var j = 0, m = ids.length; j < m; j++) {
                     var call,
                         id = ids[j],
@@ -2356,7 +2380,7 @@ function qstatistics_begin(EMBEDDED) {
                         }
                     }
 
-                    for (i in filteredCalls) {
+                    for (var i = 0,  in filteredCalls) {//
                         call = filteredCalls[i];
 
                         switch (dest) {
@@ -2365,7 +2389,7 @@ function qstatistics_begin(EMBEDDED) {
                                 break;
 
                             case 'agents':
-                                match = call.stype === 'queue' && call.dnumber === el.dnumber && call.dtype === el.dtype;
+                                match = call.stype === 'queue' && call.dnumber === el.dnumber && call.dtype === el.dtype && visibleQueues.indexOf(call.snumber) !== -1;
                                 break;
 
                             case 'phones':
