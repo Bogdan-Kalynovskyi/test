@@ -1251,11 +1251,17 @@ function qstatistics_begin(EMBEDDED) {
                 queue.name = queue.getAttribute('name');
                 queues[queueId] = queue;
                 queue.marked = true;
-                // queue.agents = [];
-                // var queueAgents = queue.children[0].children;
-                // for (var j = 0, m = queueAgents.length; j < m; j++) {
-                //     queue.agents.push(queueAgents.getAttribute('id'));
-                // }
+                queue.agents = [];
+                queue.availableAgents = [];
+                var queueAgents = queue.children[0].children;
+                for (var j = 0, m = queueAgents.length; j < m; j++) {
+                    var ag = queueAgents[j],
+                    agId = ag.getAttribute('id');
+                    queue.agents.push(agId);
+                    if (ag.getAttribute('available') === '1') {
+                        queue.availableAgents.push(agId);
+                    }
+                }
             }
 
             for (i in queues) {
@@ -2338,18 +2344,30 @@ function qstatistics_begin(EMBEDDED) {
                         break;
                 }
 
-                if (destFilter === 'none') {
-
-                }
-                else if (destFilter === 'use_include') {
-                    getInclude(dest, ids);
-                }
-                else {
-                    for (i in arr) {
-                        if (destFilter === 'all' || arr[i].getAttribute('panel') === '1') {
-                            ids.push(i);
+                switch (destFilter) {
+                    case 'use_include':
+                        getInclude(dest, ids);
+                        break;
+                    case 'queues':
+                        for (var o = 0; o < visibleQueuesLength; o++) {
+                            ids = ids.concat(queues[visibleQueues[o]].agents);
                         }
-                    }
+                        UTILS.unique(ids);
+                        break;
+                    case 'queues_available':
+                        for (var o = 0; o < visibleQueuesLength; o++) {
+                            ids = ids.concat(queues[visibleQueues[o]].availableAgents);
+                        }
+                        UTILS.unique(ids);
+                        break;
+                    case 'none':
+                        break;
+                    default:
+                        for (i in arr) {
+                            if (destFilter === 'all' || arr[i].getAttribute('panel') === '1') {
+                                ids.push(i);
+                            }
+                        }
                 }
 
                 if (dest === 'queues') {
@@ -2380,7 +2398,7 @@ function qstatistics_begin(EMBEDDED) {
                         }
                     }
 
-                    for (var i = 0,  in filteredCalls) {//
+                    for (var i = 0, n = filteredCalls.length; i < n; i++) {//
                         call = filteredCalls[i];
 
                         switch (dest) {
@@ -2891,16 +2909,6 @@ function qstatistics_begin(EMBEDDED) {
             }
 
 
-            function unique(arr) {
-                // if (options.period < 0) {
-                //     for (var i = 0, j; i < arr.length; i++) {
-                //         while ((j = arr.indexOf(arr[i], i + 1)) !== -1) {
-                //             arr.splice(j, 1);
-                //         }
-                //     }
-                // }
-            }
-
             function capitalise(str) {
                 return str.charAt(0).toUpperCase() + str.slice(1);
             }
@@ -2912,7 +2920,6 @@ function qstatistics_begin(EMBEDDED) {
                 if (!isLoggedInTime) {
                     filenameCsv = COLUMNS[colPos[col]] + '.csv';
                     headlineCsv = 'Status,Direction,Calling type,Calling number,Called type,Called number,Start,End,Billable time,Cost,Call ID\n';
-                    unique(calls);
 
                     var secondTable = [], row1;
 
@@ -2989,7 +2996,6 @@ function qstatistics_begin(EMBEDDED) {
 
                     var info = calls.info[col + 1];
                     if (info) {
-                        unique(info);
                         for (var j = 0, m = intervals.length; j < m; j++) {
                             var interval = intervals[j];
                             for (var i = 0, n = info.length; i < n; i++) {
@@ -3782,6 +3788,16 @@ function qstatistics_begin(EMBEDDED) {
 
     function Utils() {
         var DAY = 86400;
+
+
+        this.unique = function (arr) {
+            for (var i = 0, j; i < arr.length; i++) {
+                while ((j = arr.indexOf(arr[i], i + 1)) !== -1) {
+                    arr.splice(j, 1);
+                }
+            }
+        };
+
 
         this.pad = function (s) {
             if (s < 10) {
