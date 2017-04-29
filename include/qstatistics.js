@@ -209,16 +209,6 @@ function qstatistics_begin(EMBEDDED) {
 
                 return total;
             };
-
-
-            // Checks if queue agent is currently logged in
-            this.isLoggedIn = function () {
-                var n = this.events.length;
-                if (n) {
-                    return this.events[n - 1].isLogin;
-                }
-                return false;
-            };
         }
 
 
@@ -1083,17 +1073,7 @@ function qstatistics_begin(EMBEDDED) {
                                         j -= 1;
                                     }
 
-                                    var jj = colPos[j];
-
-                                    if (jj === 0 || (jj >= COL_timeStart && jj < COL_timeEnd)) {
-                                        new Popup(table[i].calls, j);
-                                    }
-                                    else if (jj !== COL_loggedIn) {
-                                        new Popup(table[i].info[j + 1], j);
-                                    }
-                                    else {
-                                        new Popup(table[i], j, true);
-                                    }
+                                    openCallDetails(i, j);
                                 }
                             });
                         }
@@ -1245,15 +1225,19 @@ function qstatistics_begin(EMBEDDED) {
                 var queue = newQueues[i],
                     queueId = queue.getAttribute('id');
                 if (!queues[queueId]) {
-                    dbChanged = true;
+                    if (options.queues !== 'none') {
+                        dbChanged = true;
+                    }
                     queuesChanged = true;
                 }
                 queue.name = queue.getAttribute('name');
                 queues[queueId] = queue;
                 queue.marked = true;
+
+                // todo detect change of available agents
                 queue.agents = [];
                 queue.availableAgents = [];
-                var queueAgents = queue.children[0].children;
+                var queueAgents = queue.children[0] && queue.children[0].children;
                 for (var j = 0, m = queueAgents.length; j < m; j++) {
                     var ag = queueAgents[j],
                     agId = ag.getAttribute('id');
@@ -1267,7 +1251,9 @@ function qstatistics_begin(EMBEDDED) {
             for (i in queues) {
                 if (!queues[i].marked) {
                     delete queues[i];
-                    dbChanged = true;
+                    if (options.queues !== 'none') {
+                        dbChanged = true;
+                    }
                     queuesChanged = true;
                 }
                 else {
@@ -1280,14 +1266,17 @@ function qstatistics_begin(EMBEDDED) {
                 // todo: now I simply overwrite queues. Todo detect queue changes
                 var agent = newAgents[i],
                     agentId = agent.getAttribute('id'),
-                    oldAgent = agents[agentId];
+                    oldAgent = agents[agentId],
+                    oldAgentEvents = null;
 
                 if (!oldAgent) {
-                    dbChanged = true;
+                    if (options.agents !== 'none') {
+                        dbChanged = true;
+                    }
                     agentPhoneChanged = true;
                 }
                 else {
-                    var oldAgentEvents = oldAgent.events;
+                    oldAgentEvents = oldAgent.events;
                 }
 
                 cacheFields(agent);
@@ -1297,7 +1286,8 @@ function qstatistics_begin(EMBEDDED) {
                 agents[agentId] = agent;
                 agent.marked = true;
 
-                if ((agent.events.add(agent.getElementsByTagName('event')) || agent.events.isLoggedIn()) && visibleCols[COL_loggedIn]) {
+                agent.events.add(agent.getElementsByTagName('event'));
+                if (!dbChanged && visibleCols[COL_loggedIn] && agent.events.events.length && !(options.period === 0 && options.agents === 'none')) {
                     dbChanged = true;
                 }
             }
@@ -1305,7 +1295,9 @@ function qstatistics_begin(EMBEDDED) {
             for (i in agents) {
                 if (!agents[i].marked) {
                     delete agents[i];
-                    dbChanged = true;
+                    if (options.agents !== 'none') {
+                        dbChanged = true;
+                    }
                     agentPhoneChanged = true;
                 }
                 else {
@@ -1319,19 +1311,22 @@ function qstatistics_begin(EMBEDDED) {
                 var phone = newPhones[i],
                     phoneName = phone.getAttribute('name');
                 if (!phones[phoneName]) {
-                    dbChanged = true;
+                    if (options.phones !== 'none') {
+                        dbChanged = true;
+                    }
                     agentPhoneChanged = true;
                 }
                 cacheFields(phone);
                 phones[phoneName] = phone;
                 phone.marked = true;
             }
-            // todo: ask David if we should update dropdowns
 
             for (i in phones) {
                 if (!phones[i].marked) {
                     delete phones[i];
-                    dbChanged = true;
+                    if (options.phones !== 'none') {
+                        dbChanged = true;
+                    }
                     agentPhoneChanged = true;
                 }
                 else {
@@ -1348,7 +1343,7 @@ function qstatistics_begin(EMBEDDED) {
                 }
             }
 
-            // TODO: probably update view only if relevant info changed
+            // TODO: update view only if visually displayed info has changed
             return dbChanged;
         }
 
@@ -2353,18 +2348,23 @@ function qstatistics_begin(EMBEDDED) {
                             ids = ids.concat(queues[visibleQueues[o]].agents);
                         }
                         UTILS.unique(ids);
+                        ids.sort();
                         break;
                     case 'queues_available':
                         for (var o = 0; o < visibleQueuesLength; o++) {
                             ids = ids.concat(queues[visibleQueues[o]].availableAgents);
                         }
                         UTILS.unique(ids);
+                        ids.sort();
+                        break;
+                    case 'all':
+                        ids = Object.keys(arr);
                         break;
                     case 'none':
                         break;
                     default:
                         for (i in arr) {
-                            if (destFilter === 'all' || arr[i].getAttribute('panel') === '1') {
+                            if (arr[i].getAttribute('panel') === '1') {
                                 ids.push(i);
                             }
                         }
@@ -2881,6 +2881,31 @@ function qstatistics_begin(EMBEDDED) {
         }
 
 
+        function openCallDetails (i, j) {
+            var jj = colPos[j];
+
+            if (jj === 0 || (jj >= COL_timeStart && jj < COL_timeEnd)) {
+                var calls = table[i].calls;
+                if (jj >= COL_timeStart + 4 && jj < COL_timeStart + 8) { // talk time
+                    var newCalls = [];
+                    for (var x = 0, xx = calls.length; x < xx; x++) {
+                        if (calls[x].talk) {
+                            newCalls.push(calls[x]);
+                        }
+                    }
+                    calls = newCalls;
+                }
+                new Popup(calls, j);
+            }
+            else if (jj !== COL_loggedIn) {
+                new Popup(table[i].info[j + 1], j);
+            }
+            else {
+                new Popup(table[i], j, true);
+            }
+        }
+
+
         function Popup(calls, col, isLoggedInTime) {
             var overlay,
                 modal,
@@ -2962,7 +2987,7 @@ function qstatistics_begin(EMBEDDED) {
                             calledNumber,
                             moment.unix(call.start).format(formatStr),
                             moment.unix(call.end).format(formatStr),
-                            UTILS.timeFormat(call.total, 2),
+                            UTILS.timeFormat(call.talk, 2),
                             call.getAttribute('symbol') + call.getAttribute('cost'),
                             call.getAttribute('callid')
                         ];
@@ -2975,7 +3000,7 @@ function qstatistics_begin(EMBEDDED) {
                             call.getAttribute('cnumber'),
                             moment.unix(call.start).format(formatStr),
                             moment.unix(call.end).format(formatStr),
-                            UTILS.timeFormat(call.total, 2),
+                            UTILS.timeFormat(call.talk, 2),
                             call.getAttribute('symbol') + call.getAttribute('cost'),
                             call.getAttribute('callid')
                         ];
@@ -2992,7 +3017,7 @@ function qstatistics_begin(EMBEDDED) {
                     filenameCsv = 'Available time.csv';
                     headlineCsv = 'Agent,Time,Event\n';
                     theadHtml = '<th>Agent</th><th>Time</th><th>Event</th>';
-                    var intervals = calls.intervals || [[START, END]];
+                    var intervals = calls.intervals || [[START, reportEnd]];
 
                     var info = calls.info[col + 1];
                     if (info) {
@@ -3225,7 +3250,7 @@ function qstatistics_begin(EMBEDDED) {
                     }
                 }
 
-                if (!xhr && !stopPolling && !document.hidden && requestEnd >= requestStart) {
+                if (!xhr && !stopPolling && !document.hidden && requestEnd >= requestStart/* && requestStart < Date.now() / 1000*/) {
                     var request = '?_username=' + encodeURIComponent(username) + ';_password=' + encodeURIComponent(password) + ';start=' + requestStart + ';end=' + requestEnd + ';recursive=' + options.recursive + ';id=' + (options.id || 0) + ';refresh=' + (CONFIG.refresh);
                     xhr = UTILS.get(request,
                         function (r) {
@@ -3596,18 +3621,9 @@ function qstatistics_begin(EMBEDDED) {
                         }
 
                         j -= 1;
-                        var jj = colPos[j];
 
                         if (j !== m - 1) {
-                            if (jj === 0 || (jj >= COL_timeStart && jj < COL_timeEnd)) {
-                                new Popup(table[i].calls, j);
-                            }
-                            else if (jj !== COL_loggedIn) {
-                                new Popup(table[i].info[j + 1], j);
-                            }
-                            else {
-                                new Popup(table[i], j, true);
-                            }
+                            openCallDetails(i, j);
                         }
                     }
                 });
