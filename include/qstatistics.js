@@ -432,7 +432,7 @@ function qstatistics_begin(EMBEDDED) {
                 }
 
                 if (isRendered || !lastPieSource || lastPieSource.by !== pieSource.by || lastPieSource.id !== pieSource.id) {
-                    // init dropdown
+                    // set dropdowns' value
                     if (pieSource.by === 'column') {
                         byCol.value = pieSource.id;
                     }
@@ -510,6 +510,8 @@ function qstatistics_begin(EMBEDDED) {
                     id = pieSource.id,
                     data = [['', '']],                    // in pieChart, first row seems not to have any useful information
                     sumOfVisibleCells = 0;
+                // todo what if piechart displays only duration cols?
+                // display units for duration cols to make them more friendly
 
                 hiddenInPie = [];
 
@@ -526,7 +528,7 @@ function qstatistics_begin(EMBEDDED) {
                         cacheTableHeader(undefined, id === COL_loggedIn);
                         var pos = colPos.indexOf(id) + 1,
                             i = (!options.period && +options.allcalls) ? 1 : 0,              // in Destination mode, don't show "All calls" in chart
-                            n = table.length - (options.totalrow ? 1 : 0);                                       // also, never show "Total" row in piechart
+                            n = table.length - (options.totalrow ? 1 : 0);                   // also, never show "Total" row in piechart
 
                         if (i === n && table.length > 1) {
                             if (options.totalrow) {
@@ -636,7 +638,7 @@ function qstatistics_begin(EMBEDDED) {
             function getDataTable() {
                 cacheTableHeader();
                 var data = [tableHeader],
-                    hasNumericCols = false,
+                    hasIntegerCols = false,
                     hasDurationCols = false,
                     colAxisIndex = [],
                     j = 0,
@@ -670,22 +672,22 @@ function qstatistics_begin(EMBEDDED) {
                             row[j1] = +(row[j1] / loggedInTimeDivider).toFixed(2);
                         }
 
-                        // once, check for column types
+                        // on first row only, check column types
                         if (j === 0) {
                             if (isTime) {
                                 hasDurationCols = true;
                                 colAxisIndex.push(1);
                             }
                             else {
-                                hasNumericCols = true;
+                                hasIntegerCols = true;
                                 colAxisIndex.push(0);
                             }
                         }
                     }
 
-                    // then reflect column types in options
+                    // then reflect column types in chart options
                     if (j === 0) {
-                        if (hasNumericCols && hasDurationCols) {   // then display two axes, right is timeOfDay
+                        if (hasIntegerCols && hasDurationCols) {   // then display two axes, right is timeOfDay
                             for (i = 0; i < n; i++) {
                                 series[i].targetAxisIndex = colAxisIndex[i];
                             }
@@ -750,17 +752,9 @@ function qstatistics_begin(EMBEDDED) {
             }
 
 
-            function reRenderWithoutAnimation(startday, endday) {
-                if (startday === undefined) {
-                    startday = '1';
-                }
-                if (endday === undefined) {
-                    endday = '1';
-                }
+            function changeChartRange(startday, endday) {
                 FORM.showNewTime(startday, endday);
-                chartOptions[options.type].animation.duration = 0;
                 createReport();
-                chartOptions[options.type].animation.duration = 300;
             }
 
 
@@ -775,7 +769,7 @@ function qstatistics_begin(EMBEDDED) {
                     START += delta;
                     END = rightTime + delta;
 
-                    reRenderWithoutAnimation();
+                    changeChartRange();
                 }
             }
 
@@ -823,7 +817,7 @@ function qstatistics_begin(EMBEDDED) {
                     END = rightTime - (rightTime - leftTime) * (rectSVG.right + window.pageXOffset - maxX) / rectSVG.width;
                     options.period = that.savedZoom.period * (Math.min(now, END) - START) / (Math.min(now, that.savedZoom.end) - that.savedZoom.start);
 
-                    reRenderWithoutAnimation();
+                    changeChartRange();
 
                     container.onmousemove = null;
                 }
@@ -851,7 +845,7 @@ function qstatistics_begin(EMBEDDED) {
                         END = rightTime - (rightTime - leftTime) * right / rectSVG.width * zoom;
                         options.period = that.savedZoom.period * (Math.min(now, END) - START) / (Math.min(now, that.savedZoom.end) - that.savedZoom.start);
 
-                        reRenderWithoutAnimation();
+                        changeChartRange();
                     }
                     evt.preventDefault();
                     evt.stopPropagation();
@@ -1135,7 +1129,7 @@ function qstatistics_begin(EMBEDDED) {
                     options.period = orig.period;
                     this.savedZoom = null;
                     resetZoomBtn.style.display = '';
-                    reRenderWithoutAnimation(orig.startday, orig.endday);
+                    changeChartRange(orig.startday, orig.endday);
                 }
             };
 
@@ -1237,16 +1231,18 @@ function qstatistics_begin(EMBEDDED) {
                 // todo detect change of available agents
                 queue.agents = [];
                 queue.availableAgents = [];
-                var queueAgents = queue.children[0] && queue.children[0].children;
+
+                var queueAgents = queue.getElementsByTagName('agent');
                 for (var j = 0, m = queueAgents.length; j < m; j++) {
                     var ag = queueAgents[j],
-                    agId = ag.getAttribute('id');
+                        agId = ag.getAttribute('id');
                     queue.agents.push(agId);
                     if (ag.getAttribute('available') === '1') {
                         queue.availableAgents.push(agId);
                     }
                 }
             }
+
 
             for (i in queues) {
                 if (!queues[i].marked) {
@@ -1739,6 +1735,10 @@ function qstatistics_begin(EMBEDDED) {
         }
 
 
+        // cases:
+        // 1) if report type is Destination and it's about "static rows": adds things to particular row in the table, if it's visible
+        // 2) otherwise the row is passed as an argument and incremented multiple times, and that row is called "multiRow"
+
         function addToTableOrMultiRow(rowIndex, row, multiRow) {
             if (visibleRows[rowIndex]) {
                 multiRow = multiRow || table[rowPos[rowIndex]];
@@ -1866,6 +1866,10 @@ function qstatistics_begin(EMBEDDED) {
                 talkCallsCount = 0,
                 sumTotal = 0;
 
+
+            // columns from COL_timeStart till COL_timeEnd are called secondary columns.
+            // They should be calculated after primary calls are done. That's because we should know
+            // which calls go to the row. So that average values can be counted
 
             function calcSecondaryCols(row) {
                 var call,
@@ -2383,51 +2387,53 @@ function qstatistics_begin(EMBEDDED) {
                         match,
                         row = multiRow || newRow();
 
-                    if (!multiRow) {
-                        if (dest === 'queues') {
-                            row[0] = 'Queue: ' + el.name;
-                        }
-                        else {
-                            name = phoneTitleDisplay(el);
-                            if (dest === 'agents') {
-                                row[0] = 'Queue agent: ' + name;
+                    if (el) {
+                        if (!multiRow) {
+                            if (dest === 'queues') {
+                                row[0] = 'Queue: ' + el.name;
                             }
                             else {
-                                row[0] = 'Ext: ' + name;
+                                name = phoneTitleDisplay(el);
+                                if (dest === 'agents') {
+                                    row[0] = 'Queue agent: ' + name;
+                                }
+                                else {
+                                    row[0] = 'Ext: ' + name;
+                                }
                             }
                         }
-                    }
 
-                    for (var i = 0, n = filteredCalls.length; i < n; i++) {//
-                        call = filteredCalls[i];
+                        for (var i = 0, n = filteredCalls.length; i < n; i++) {//
+                            call = filteredCalls[i];
 
-                        switch (dest) {
-                            case 'queues':
-                                match = call.dtype === 'queue' && call.dnumber === id;
-                                break;
+                            switch (dest) {
+                                case 'queues':
+                                    match = call.dtype === 'queue' && call.dnumber === id;
+                                    break;
 
-                            case 'agents':
-                                match = call.stype === 'queue' && call.dnumber === el.dnumber && call.dtype === el.dtype && visibleQueues.indexOf(call.snumber) !== -1;
-                                break;
+                                case 'agents':
+                                    match = call.stype === 'queue' && call.dnumber === el.dnumber && call.dtype === el.dtype && visibleQueues.indexOf(call.snumber) !== -1;
+                                    break;
 
-                            case 'phones':
-                                match = (call.stype === 'phone' && call.snumber === id) || (call.dtype === 'phone' && call.dnumber === id);
-                                break;
+                                case 'phones':
+                                    match = (call.stype === 'phone' && call.snumber === id) || (call.dtype === 'phone' && call.dnumber === id);
+                                    break;
+                            }
+
+                            if (match) {
+                                putCallToTable(call, row, true, dest === 'phones');
+                            }
                         }
 
-                        if (match) {
-                            putCallToTable(call, row, true, dest === 'phones');
+                        if (dest === 'agents' && visibleCols[COL_loggedIn]) {
+                            row[COL_timeStart + 1] += el.events.calcLoggedTime(periodStart || START, periodEnd || END);
+                            addInfo(row, el, COL_loggedIn + 1);
                         }
-                    }
 
-                    if (dest === 'agents' && visibleCols[COL_loggedIn]) {
-                        row[COL_timeStart + 1] += el.events.calcLoggedTime(periodStart || START, periodEnd || END);
-                        addInfo(row, el, COL_loggedIn + 1);
-                    }
-
-                    if (!multiRow) {
-                        row.hasLIT = dest === 'agents';
-                        table.push(row);
+                        if (!multiRow) {
+                            row.hasLIT = dest === 'agents';
+                            table.push(row);
+                        }
                     }
                 }
             }
@@ -2588,9 +2594,17 @@ function qstatistics_begin(EMBEDDED) {
 
 
             this.showNewTime = function (startDay, endDay) {
+                if (startDay === undefined) {
+                    startDay = '1';
+                }
+                if (endDay === undefined) {
+                    endDay = '1';
+                }
+
                 var start = moment.unix(START),
                     end = moment.unix(END),
                     y1, m1, d1, y2, m2, d2;
+
                 options.startday = startDay;
                 options.endday = endDay;
                 if (!EMBEDDED) {
@@ -3239,11 +3253,11 @@ function qstatistics_begin(EMBEDDED) {
             }
 
 
-            this.tryNewRequest = function (callback) {
-                this.stopRequest();
+            this.tryNewRequest = function (success, error) {
+                clearTimeout(timeoutHandle);  // stop polling isn't harmful?
 
                 if (!EMBEDDED) {
-                    callback = function() {
+                    var polling = function() {
                         timeoutHandle = setTimeout(function () {
                             that.tryNewRequest();
                         }, +CONFIG.refresh);
@@ -3256,11 +3270,16 @@ function qstatistics_begin(EMBEDDED) {
                         function (r) {
                             xhr = null;
                             response(r);
-                            callback && callback();
+                            success && success();
+                            polling && polling();
                         }, function () {    // on error, poll again
                             xhr = null;
-                            callback && callback();
+                            error && error();
+                            polling && polling();
                         });
+                }
+                else {
+                    error && error();
                 }
             };
 
@@ -3275,8 +3294,6 @@ function qstatistics_begin(EMBEDDED) {
 
 
             this.updateRange = function () {
-                this.stopRequest();
-
                 lastToday = moment().startOf('day');
 
                 if (EMBEDDED && options.time) {
@@ -3322,10 +3339,11 @@ function qstatistics_begin(EMBEDDED) {
                     delta += Math.min(requestEnd, Date.now() / 1000) - maxRecordedTime;
                 }
 
-                if (!preloader && delta > 60) {
+                if (!preloader && delta > 40) {
                     showPreloader();
                 }
 
+                this.stopRequest();
                 this.tryNewRequest();
             };
 
@@ -3405,12 +3423,15 @@ function qstatistics_begin(EMBEDDED) {
             if (!EMBEDDED) {
                 document.addEventListener('visibilitychange', function () {
                     if (document.hidden) {
-                        that.stopRequest();
+                        clearTimeout(timeoutHandle);
                     }
                     else {
                         that.tryNewRequest();
                     }
                 });
+                // window.addEventListener('beforeunload', function () {
+                //     that.tryNewRequest();
+                // });
             }
         }
 
@@ -3479,6 +3500,8 @@ function qstatistics_begin(EMBEDDED) {
                 return str;
             }
 
+            // TODO old table compare with new one, and then rerender
+
 
             this.resizeHeader = function () {
                 if (theadTr) {
@@ -3515,11 +3538,11 @@ function qstatistics_begin(EMBEDDED) {
                     }
                     sortingCol = startId;
                     if (startId) {
-                        sortTable();
                         if (EMBEDDED) {
                             createReport();
                         }
                         else {
+                            sortTable();
                             TABS.update();
                         }
                     }
@@ -3692,7 +3715,7 @@ function qstatistics_begin(EMBEDDED) {
 
             var children = container.children,
                 goPng = byId('go-png'),
-                piechartChooser = byId('piechart-chooser');
+                pieSourceChooser = byId('piechart-chooser');
 
             this.tabs = {};
 
@@ -3733,7 +3756,7 @@ function qstatistics_begin(EMBEDDED) {
                 upToDate[nextSlideIndex] = true;
 
                 goPng.disabled = (nextType === 'table');
-                piechartChooser.style.display = nextType === 'piechart' ? '' : 'none';
+                pieSourceChooser.style.display = nextType === 'piechart' ? '' : 'none';
                 byId('go-' + nextType).className = 'active';
                 toggleLROverlay(nextType);
 
@@ -4061,10 +4084,10 @@ function qstatistics_begin(EMBEDDED) {
             for (var i = 0; i < reports.length; i++) {
                 var offset = EMBEDDED && (+EMBEDDED[i].offset) || 0;
                 if (offset) {
-                    offsetTimeouts[i] = setTimeout(reports[i].tryNewRequest.bind(reports[i], promiseAll), offset);
+                    offsetTimeouts[i] = setTimeout(reports[i].tryNewRequest.bind(reports[i], promiseAll, promiseAll), offset);
                 }
                 else {
-                    reports[i].tryNewRequest(promiseAll);
+                    reports[i].tryNewRequest(promiseAll, promiseAll);
                 }
             }
         }
@@ -4077,10 +4100,9 @@ function qstatistics_begin(EMBEDDED) {
         document.addEventListener('visibilitychange', function () {
             if (document.hidden) {
                 for (var i = 0; i < reports.length; i++) {
-                    reports[i].stopRequest();
-                    clearTimeout(offsetTimeouts[i]);
+                    clearTimeout(offsetTimeouts[i]); // clear individual timeout with offset
                 }
-                clearTimeout(timeoutHandle);
+                clearTimeout(timeoutHandle);   // clear global polling cycle
             }
             else {
                 for (i = 0; i < reports.length; i++) {
@@ -4089,7 +4111,7 @@ function qstatistics_begin(EMBEDDED) {
                 timeoutHandle = setTimeout(poll, +CONFIG.refresh);
             }
         });
-        window.addEventListener('beforeunload', poll);
 
+        //window.addEventListener('beforeunload', poll);
     }
 }
