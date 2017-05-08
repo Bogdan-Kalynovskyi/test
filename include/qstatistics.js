@@ -3351,6 +3351,8 @@ function qstatistics_begin(EMBEDDED) {
             function response(response) {
                 that.hidePreloader();
 
+                var json = JSON.parse(response);
+
                 var update = response.getElementsByTagName('update')[0];
 
                 // break polling loop on error
@@ -3903,7 +3905,7 @@ function qstatistics_begin(EMBEDDED) {
             xhr.onload = function () {
                 // anything smarter? detect network loss?
                 if (xhr.status === 200) {
-                    success(xhr.responseXML);
+                    success(xhr.responseText);
                 }
                 else {
                     failure();
