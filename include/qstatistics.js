@@ -131,13 +131,13 @@ function qstatistics_begin(EMBEDDED) {
 
 
             // Takes htmlNodesCollection and adds them to array. Checks for duplicates. Sorts. Returns whether array was changed
-            this.add = function (nodes) {
+            this.add = function (arr) {
                 var isChanged = false;
 
-                for (var i = 0, n = nodes.length; i < n; i++) {
+                for (var i = 0, n = arr.length; i < n; i++) {
                     var event = {
-                        time: +nodes[i].getAttribute('time'),
-                        isLogin: nodes[i].getAttribute('type') === 'agentlogin'
+                        time: +arr[i].time,
+                        isLogin: arr[i].event === 'agentlogin'
                     };
 
                     for (var j = this.events.length - 1; j >= 0; j--) {
@@ -235,9 +235,10 @@ function qstatistics_begin(EMBEDDED) {
                 hiddenInPie,
                 pauseRedraw,
                 dateFormat = CONFIG.dateformat.replace('YYYY', 'yyyy').replace('DD', 'dd'),
+                containerClientWidth,
                 chartArea = {
                     left: '5.5%',
-                    top: (EMBEDDED ? (container.clientWidth > 840 ? '18%' : '22.5%') : '11.5%'),
+                    top: 0,
                     height: (EMBEDDED ? '62%' : null),
                     bottom: '19%'
                 },
@@ -774,17 +775,20 @@ function qstatistics_begin(EMBEDDED) {
             }
 
 
+            var bodyClientWidth;
+
             function mousedown(evt) {
                 var svgr = charts[options.type] && charts[options.type].svgr;
                 goodEvt = svgr && (svgr === evt.target || UTILS.contains(svgr, evt.target));
 
                 if (goodEvt) {
+                    bodyClientWidth = document.body.clientWidth;
                     rectSVG = svgr.getBoundingClientRect();
                     startX = evt.pageX;
                     zoomingOverlay.style.top = rectSVG.top + 'px';
                     zoomingOverlay.style.bottom = document.body.clientHeight - rectSVG.bottom + 'px';
                     zoomingOverlay.style.left = startX - window.pageXOffset + 'px';
-                    zoomingOverlay.style.right = document.body.clientWidth + window.pageXOffset - startX + 'px';
+                    zoomingOverlay.style.right = bodyClientWidth + window.pageXOffset - startX + 'px';
                     zoomingOverlay.style.display = 'block';
                     container.onmousemove = mousemove;
                 }
@@ -794,7 +798,7 @@ function qstatistics_begin(EMBEDDED) {
             function mousemove(evt) {
                 endX = evt.pageX;
                 zoomingOverlay.style.left = Math.min(startX, endX) - window.pageXOffset + 'px';
-                zoomingOverlay.style.right = document.body.clientWidth + window.pageXOffset - Math.max(startX, endX) + 'px';
+                zoomingOverlay.style.right = bodyClientWidth + window.pageXOffset - Math.max(startX, endX) + 'px';
             }
 
 
@@ -860,8 +864,7 @@ function qstatistics_begin(EMBEDDED) {
                     return;
                 }
 
-                var containerWidth = container.clientWidth,
-                    ua = navigator.userAgent,
+                var ua = navigator.userAgent,
                     isIE = ua.indexOf('MSIE') !== -1 || navigator.appVersion.indexOf('Trident/') > 0,
                     isFF = ua.toLowerCase().indexOf('firefox') > -1,
                     isPhantom = ua.indexOf('PhantomJS') > 0,
@@ -949,18 +952,18 @@ function qstatistics_begin(EMBEDDED) {
                             top = EMBEDDED ? 2.2 : 3;
                         }
 
-                        if (containerWidth > 310) {
+                        if (containerClientWidth > 310) {
                             left++;
                         }
-                        if (containerWidth > 440) {
+                        if (containerClientWidth > 440) {
                             left++;
                             top -= 0.5;
                         }
-                        if (containerWidth > 650) {
+                        if (containerClientWidth > 650) {
                             left++;
                             top += 0.5;
                         }
-                        if (containerWidth > 950) {
+                        if (containerClientWidth > 950) {
                             left++;
                             top += 0.5;
                         }
@@ -973,7 +976,7 @@ function qstatistics_begin(EMBEDDED) {
                         var circle = document.createElementNS("http://www.w3.org/2000/svg", 'circle');
                         circle.setAttribute('cx', cx);
                         circle.setAttribute('cy', cy);
-                        circle.setAttribute('r', EMBEDDED ? '6' : (containerWidth < 870 ? '7' : '7.5'));
+                        circle.setAttribute('r', EMBEDDED ? '6' : (containerClientWidth < 870 ? '7' : '7.5'));
                         circle.setAttribute('fill', color);
                         base.appendChild(circle);
                     }
@@ -985,6 +988,7 @@ function qstatistics_begin(EMBEDDED) {
 
             function renderChart() {
                 if (!pauseRedraw) {
+                    onResize();
                     dataTable = getDataTable();
                     charts[type].draw(dataTable, chartOptions[type]);
                 }
@@ -993,6 +997,7 @@ function qstatistics_begin(EMBEDDED) {
 
             function renderPieChart() {
                 if (!pauseRedraw) {
+                    onResize();
                     dataTable = getPieDataTable();
                     charts.piechart.draw(dataTable, chartOptions.piechart);
                 }
@@ -1076,9 +1081,16 @@ function qstatistics_begin(EMBEDDED) {
             };
 
 
+            function onResize() {
+                containerClientWidth = container.clientWidth;
+                chartArea.top = (EMBEDDED ? (containerClientWidth > 840 ? '18%' : '22.5%') : '11.5%');
+            }
+
+
             this.resize = function () {
                 var type = options.type;
                 if (charts[type]) {
+                    onResize();
                     charts[type].draw(dataTable, chartOptions[type]);
                 }
             };
@@ -1158,10 +1170,13 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function addRecordsToDatabase(update) {
-            var newCalls = update.getElementsByTagName('call');
-            var newQueues = update.getElementsByTagName('queue');
-            var newAgents = update.getElementsByTagName('agent');
-            var newPhones = update.getElementsByTagName('phone');
+            var newCalls = update.cdrs_values;
+            var newQueues = update.queues;
+            var newAgents = update.agents;
+            var newPhones = update.phones;
+            var decodeMap = update.cdrs_columns;
+            var ulen = decodeMap.length;
+
             var dbChanged = false;
             var queuesChanged = false;
             var agentPhoneChanged = false;
@@ -1171,21 +1186,14 @@ function qstatistics_begin(EMBEDDED) {
             }
 
             for (var i = 0, n = newCalls.length; i < n; i++) {
-                var call = newCalls[i];
-                call.start = +call.getAttribute('start');
-                call.answer = +call.getAttribute('answered');
-                call.end = +call.getAttribute('end');
-                call.dtype = call.getAttribute('dtype');
-                call.stype = call.getAttribute('stype');
-                call.dnumber = call.getAttribute('dnumber');
-                call.snumber = call.getAttribute('snumber');
-                call.queuestatus = call.getAttribute('queuestatus');
-                call.hold = +call.getAttribute('holdtime');
-                call.talk = +call.getAttribute('talktime');
-                call.total = +call.getAttribute('totaltime');
+                var encodedCall = newCalls[i];
+                var call = {};
 
-                var callId = call.getAttribute('id'),
-                    oldCall = callIds[callId];
+                for (var j = 0; j < ulen; j++) {
+                    call[decodeMap[j]] = encodedCall[j];
+                }
+
+                var oldCall = callIds[call.id];
                 if (oldCall) {
                     calls.splice(calls.indexOf(oldCall), 1, call);
                 }
@@ -1197,7 +1205,7 @@ function qstatistics_begin(EMBEDDED) {
                         calls.push(call);
                     }
                 }
-                callIds[callId] = call;
+                callIds[call.id] = call;
 
                 dbChanged = true;
             }
@@ -1207,38 +1215,28 @@ function qstatistics_begin(EMBEDDED) {
             }
 
 
-            function cacheFields(tag) {
-                tag.name = tag.getAttribute('name');
-                tag.description = tag.getAttribute('description');
-                tag.callerid = tag.getAttribute('callerid_internal');
-            }
-
-
             for (i = 0, n = newQueues.length; i < n; i++) {
                 // todo: now I simply overwrite queues. Todo detect queue changes
-                var queue = newQueues[i],
-                    queueId = queue.getAttribute('id');
-                if (!queues[queueId]) {
+                var queue = newQueues[i];
+                if (!queues[queue.id]) {
                     if (options.queues !== 'none') {
                         dbChanged = true;
                     }
                     queuesChanged = true;
                 }
-                queue.name = queue.getAttribute('name');
-                queues[queueId] = queue;
+                queues[queue.id] = queue;
                 queue.marked = true;
 
                 // todo detect change of available agents
+                var queueAgents = queue.agents;
                 queue.agents = [];
                 queue.availableAgents = [];
 
-                var queueAgents = queue.getElementsByTagName('agent');
-                for (var j = 0, m = queueAgents.length; j < m; j++) {
-                    var ag = queueAgents[j],
-                        agId = ag.getAttribute('id');
-                    queue.agents.push(agId);
-                    if (ag.getAttribute('available') === '1') {
-                        queue.availableAgents.push(agId);
+                for (j = 0, m = queueAgents.length; j < m; j++) {
+                    var ag = queueAgents[j];
+                    queue.agents.push(ag.id);
+                    if (ag.available === '1') {
+                        queue.availableAgents.push(ag.id);
                     }
                 }
             }
@@ -1261,8 +1259,7 @@ function qstatistics_begin(EMBEDDED) {
             for (i = 0, n = newAgents.length; i < n; i++) {
                 // todo: now I simply overwrite queues. Todo detect queue changes
                 var agent = newAgents[i],
-                    agentId = agent.getAttribute('id'),
-                    oldAgent = agents[agentId],
+                    oldAgent = agents[agent.id],
                     oldAgentEvents = null;
 
                 if (!oldAgent) {
@@ -1272,18 +1269,15 @@ function qstatistics_begin(EMBEDDED) {
                     agentPhoneChanged = true;
                 }
                 else {
-                    oldAgentEvents = oldAgent.events;
+                    oldAgentEvents = oldAgent.E;
                 }
 
-                cacheFields(agent);
-                agent.dtype = agent.getAttribute('dtype');
-                agent.dnumber = agent.getAttribute('dnumber');
-                agent.events = oldAgentEvents || new QAgentEvents();
-                agents[agentId] = agent;
+                agent.E = oldAgentEvents || new QAgentEvents();
+                agents[agent.id] = agent;
                 agent.marked = true;
 
-                agent.events.add(agent.getElementsByTagName('event'));
-                if (!dbChanged && visibleCols[COL_loggedIn] && agent.events.events.length && !(options.period === 0 && options.agents === 'none')) {
+                agent.E.add(agent.events);
+                if (!dbChanged && visibleCols[COL_loggedIn] && agent.E.events.length && !(options.period === 0 && options.agents === 'none')) {
                     dbChanged = true;
                 }
             }
@@ -1304,16 +1298,14 @@ function qstatistics_begin(EMBEDDED) {
 
             for (i = 0, n = newPhones.length; i < n; i++) {
                 // todo: now I simply overwrite queues. Todo detect queue changes
-                var phone = newPhones[i],
-                    phoneName = phone.getAttribute('name');
-                if (!phones[phoneName]) {
+                var phone = newPhones[i];
+                if (!phones[phone.name]) {
                     if (options.phones !== 'none') {
                         dbChanged = true;
                     }
                     agentPhoneChanged = true;
                 }
-                cacheFields(phone);
-                phones[phoneName] = phone;
+                phones[phone.name] = phone;
                 phone.marked = true;
             }
 
@@ -1643,15 +1635,15 @@ function qstatistics_begin(EMBEDDED) {
                 case 'description':
                     return arrEl.description || arrEl.name;
                 case 'internal':
-                    return arrEl.callerid;
+                    return arrEl.callerid_internal;
                 case 'name_description':
                     return arrEl.name + ' ' + (arrEl.description || arrEl.name);
                 case 'internal_description':
-                    return arrEl.callerid + ' ' + (arrEl.description || arrEl.name);
+                    return arrEl.callerid_internal + ' ' + (arrEl.description || arrEl.name);
                 case 'description_name':
                     return (arrEl.description || arrEl.name) + ' ' + arrEl.name;
                 case 'description_internal':
-                    return (arrEl.description || arrEl.name) + ' ' + arrEl.callerid;
+                    return (arrEl.description || arrEl.name) + ' ' + arrEl.callerid_internal;
             }
         }
 
@@ -1765,7 +1757,7 @@ function qstatistics_begin(EMBEDDED) {
         function putCallToTable(call, multiRow, dontAddToMultipleRows, cameFromPhoneFilter) {
             var stype = call.stype,
                 dtype = call.dtype,
-                answered = call.answer,
+                answered = call.answered,
                 external = 'external',
                 local = 'local',
                 isInbound,
@@ -1784,7 +1776,7 @@ function qstatistics_begin(EMBEDDED) {
             // total calls
             row[1]++;
             // sla time
-            if (answered && (call.hold <= options.slatime)) {
+            if (answered && (+call.holdtime <= options.slatime)) {
                 row[2]++;addInfo(row, call, 2);
             }
             // answered
@@ -1809,7 +1801,7 @@ function qstatistics_begin(EMBEDDED) {
                 row[7]++;addInfo(row, call, 7);
             }
             // internal calls
-            isInternal = stype !== external && stype !== local && dtype != external && dtype !== local;
+            isInternal = stype !== external && stype !== local && dtype !== external && dtype !== local;
             if (isInternal) {
                 row[8]++;addInfo(row, call, 8);
             }
@@ -1900,23 +1892,23 @@ function qstatistics_begin(EMBEDDED) {
                 for (var i = 0, n = rowTotal; i < n; i++) {
                     call = rc[i];
 
-                    minhold = Math.min(minhold, call.hold);
+                    minhold = Math.min(minhold, +call.holdtime);
                     minHold = Math.min(minHold, minhold);
-                    sumhold += call.hold;
-                    maxhold = Math.max(maxhold, call.hold);
+                    sumhold += +call.holdtime;
+                    maxhold = Math.max(maxhold, +call.holdtime);
                     maxHold = Math.max(maxHold, maxhold);
-                    if (call.answer) {
-                        mintalk = Math.min(mintalk, call.talk);
+                    if (call.answered) {
+                        mintalk = Math.min(mintalk, +call.talktime);
                         minTalk = Math.min(minTalk, mintalk);
-                        sumtalk += call.talk;
-                        maxtalk = Math.max(maxtalk, call.talk);
+                        sumtalk += +call.talktime;
+                        maxtalk = Math.max(maxtalk, +call.talktime);
                         maxTalk = Math.max(maxTalk, maxtalk);
                         talkCount++;
                     }
-                    mintotal = Math.min(mintotal, call.total);
+                    mintotal = Math.min(mintotal, +call.totaltime);
                     minTotal = Math.min(minTotal, mintotal);
-                    sumtotal += call.total;
-                    maxtotal = Math.max(maxtotal, call.total);
+                    sumtotal += +call.totaltime;
+                    maxtotal = Math.max(maxtotal, +call.totaltime);
                     maxTotal = Math.max(maxTotal, maxtotal);
                 }
 
@@ -2145,7 +2137,7 @@ function qstatistics_begin(EMBEDDED) {
                 formatStr += ' ' + (CONFIG.timeformat === '12' ? 'hh:mma' : 'HH:mm');
             }
 
-            if ((reportEnd - START) / options.period > container.clientWidth - 70) {
+            if ((reportEnd - START) / options.period > container.clientWidth - 70) {  /* hope here clientWidth won't be calculated twice */
                 alert('Too many rows to display. Please set bigger interval.');
                 options.period = 0;
                 if (!EMBEDDED) {
@@ -2368,7 +2360,7 @@ function qstatistics_begin(EMBEDDED) {
                         break;
                     default:
                         for (i in arr) {
-                            if (arr[i].getAttribute('panel') === '1') {
+                            if (arr[i].panel === '1') {
                                 ids.push(i);
                             }
                         }
@@ -2426,7 +2418,7 @@ function qstatistics_begin(EMBEDDED) {
                         }
 
                         if (dest === 'agents' && visibleCols[COL_loggedIn]) {
-                            row[COL_timeStart + 1] += el.events.calcLoggedTime(periodStart || START, periodEnd || END);
+                            row[COL_timeStart + 1] += el.E.calcLoggedTime(periodStart || START, periodEnd || END);
                             addInfo(row, el, COL_loggedIn + 1);
                         }
 
@@ -2903,7 +2895,7 @@ function qstatistics_begin(EMBEDDED) {
                 if (jj >= COL_timeStart + 4 && jj < COL_timeStart + 8) { // talk time
                     var newCalls = [];
                     for (var x = 0, xx = calls.length; x < xx; x++) {
-                        if (calls[x].talk) {
+                        if (calls[x].answered) {
                             newCalls.push(calls[x]);
                         }
                     }
@@ -2933,7 +2925,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
             function escListen (evt) {
-                if (evt.keyCode == 27) {
+                if (evt.keyCode === 27) {
                     closeModal();
                 }
             }
@@ -2965,7 +2957,7 @@ function qstatistics_begin(EMBEDDED) {
                     for (var i = 0, n = calls.length; i < n; i++) {
                         var call = calls[i],
                             destination,
-                            ctype = call.getAttribute('ctype'),
+                            ctype = call.ctype,
                             stype = call.stype,
                             callingNumber,
                             calledNumber;
@@ -2987,13 +2979,13 @@ function qstatistics_begin(EMBEDDED) {
                             callingNumber = capitalise(stype);
                         }
 
-                        calledNumber = call.getAttribute('cnumber');
+                        calledNumber = call.cnumber;
                         if (calledNumber === '' || calledNumber === null) {
                             calledNumber = capitalise(ctype);
                         }
 
                         row = [
-                            +call.answer ? 'Answered' : 'Not answered',
+                            call.answered ? 'Answered' : 'Not answered',
                             destination,
                             stype,
                             callingNumber,
@@ -3001,22 +2993,22 @@ function qstatistics_begin(EMBEDDED) {
                             calledNumber,
                             moment.unix(call.start).format(formatStr),
                             moment.unix(call.end).format(formatStr),
-                            UTILS.timeFormat(call.talk, 2),
-                            call.getAttribute('symbol') + call.getAttribute('cost'),
-                            call.getAttribute('callid')
+                            UTILS.timeFormat(+call.talktime, 2),
+                            call.symbol + call.cost,
+                            call.callid
                         ];
                         row1 = [
-                            +call.answer ? 'Answered' : 'Not answered',
+                            call.answered ? 'Answered' : 'Not answered',
                             destination,
                             stype,
                             call.snumber,
                             ctype,
-                            call.getAttribute('cnumber'),
+                            call.cnumber,
                             moment.unix(call.start).format(formatStr),
                             moment.unix(call.end).format(formatStr),
-                            UTILS.timeFormat(call.talk, 2),
-                            call.getAttribute('symbol') + call.getAttribute('cost'),
-                            call.getAttribute('callid')
+                            UTILS.timeFormat(+call.talktime, 2),
+                            call.symbol + call.cost,
+                            call.callid
                         ];
                         tbodyHtml += '<tr><td>' +
                             row[0] + '</br>' + row[1] + '</td><td>' +
@@ -3038,7 +3030,7 @@ function qstatistics_begin(EMBEDDED) {
                         for (var j = 0, m = intervals.length; j < m; j++) {
                             var interval = intervals[j];
                             for (var i = 0, n = info.length; i < n; i++) {
-                                var el = info[i].events.events;
+                                var el = info[i].E.events;
                                 for (var ii = 0, nn = el.length; ii < nn; ii++) {
                                     var time = el[ii].time;
                                     if (time >= interval[0] && time < interval[1]) {
@@ -3353,18 +3345,13 @@ function qstatistics_begin(EMBEDDED) {
 
                 var json = JSON.parse(response);
 
-                var update = response.getElementsByTagName('update')[0];
-
                 // break polling loop on error
-                if (!update) {
-                    var error = response.getElementsByTagName('errors')[0];
-                    if (error) {
-                        alert(error.getElementsByTagName('error')[0].getAttribute('message'));
-                    }
+                if (json.error) {
+                    alert(json.error[0].message);
                 }
                 else {
-                    var updateEnd = +update.getAttribute('timestamp'),
-                        anythingChanged = addRecordsToDatabase(update);
+                    var updateEnd = +json.updated,
+                        anythingChanged = addRecordsToDatabase(json);
 
                     minRecordedTime = Math.min(minRecordedTime, requestStart);
                     maxRecordedTime = Math.max(maxRecordedTime, Math.min(requestEnd, updateEnd));
