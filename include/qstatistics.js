@@ -10,20 +10,32 @@ function qstatistics_begin(EMBEDDED) {
         var report = this,
             visibleCols = [],
             visibleRows = [],
-            reportEnd,
+            currentEndTime,
             reorder = [],
             colPos,
             rowPos,
+            colPos1,
+            loggedInPos,
+            colPosLength,
             table,
             sortingCol = 0,
             sortingOrder = 1,
-            secondaryColVisible,
+            timeColVisible,
 
             START,
             END,
 
-            maxNum,
+            minHold,
+            minTalk,
+            minTotal,
+            maxHold,
+            maxTalk,
+            maxTotal,
+            sumHold,
+            sumTalk,
+            sumTotal,
             maxLoggedIn,
+
             menuButtons,
 
             equalHeight,
@@ -34,6 +46,7 @@ function qstatistics_begin(EMBEDDED) {
         var DAY = 86400,
 
             columnNames = [
+                '',
                 'totalcalls',
                 'slaok',
                 'answercalls',
@@ -75,6 +88,7 @@ function qstatistics_begin(EMBEDDED) {
                 'outbound'
             ],
             COLUMNS = [
+                '',
                 'Total calls',
                 'SLA ok',
                 'Answered',
@@ -110,9 +124,11 @@ function qstatistics_begin(EMBEDDED) {
                 'Available time'
             ],
 
-            COL_timeStart = 13,
-            COL_timeEnd = 25,
-            COL_loggedIn = 32;
+            COL_timeStart = 14,
+            COL_talkMin = 18,
+            COL_totalMin = 22,
+            COL_timeEnd = 26,
+            COL_loggedIn = 33;
 
 
         options.type = options.type || 'table';
@@ -293,7 +309,7 @@ function qstatistics_begin(EMBEDDED) {
                 else {
                     pieSource = {
                         by: 'column',
-                        id: colPos[0]
+                        id: colPos1
                     };
                 }
             }
@@ -337,9 +353,9 @@ function qstatistics_begin(EMBEDDED) {
                 if (type === 'piechart') {
                     var arr = [];
                     if (pieSource.by === 'row') {
-                        var totalCallsColOnly = colPos.length === 1;
-                        for (var i = 0, n = colPos.length; i < n; i++) {
-                            if (colPos[i] !== 0 || totalCallsColOnly) {      // don't include "Total calls" column
+                        var totalCallsColOnly = colPosLength === 1;
+                        for (var i = 1; i < colPosLength; i++) {
+                            if (colPos[i] !== 1 || totalCallsColOnly) {      // don't include "Total calls" column
                                 arr.push({color: colors[colPos[i]]});
                             }
                         }
@@ -364,7 +380,7 @@ function qstatistics_begin(EMBEDDED) {
                     }
                 }
                 else {
-                    for (i = 0, n = colPos.length; i < n; i++) {
+                    for (i = 1; i < colPosLength; i++) {
                         series[i] = {color: colors[colPos[i]]};
                     }
                     chartOptions[type].series = series;
@@ -376,7 +392,7 @@ function qstatistics_begin(EMBEDDED) {
                 var str = 'Display:<label> column <select id="piechart-by-column"><option value>Choose column</option>',
                     isRendered = false;
 
-                for (var i = 0, n = COLUMNS.length; i < n; i++) {
+                for (var i = 1, n = COLUMNS.length; i < n; i++) {
                     if (visibleCols[i]) {
                         str += '<option value="' + i + '">' + COLUMNS[i] + '</option>';
                     }
@@ -446,32 +462,36 @@ function qstatistics_begin(EMBEDDED) {
 
 
             function cacheTableHeader(pieChartRow, pieChartCol) {
-                var loggedInPos = colPos.indexOf(COL_loggedIn) + 1,
-                    maxNum1 = 0,
-                    maxLoggedIn1 = 0;
+                var maxNumber = 0,
+                    maxLoggedIn1 = 0,
+                    row;
 
                 // when table row is displayed as pie chart
                 if (pieChartRow !== undefined) {
-                    for (var i = 0, n = colPos.length; i < n; i++) {
-                        var pos = colPos[i],
-                            el = table[pieChartRow][i + 1];
-
-                        if (pos === COL_loggedIn) {
-                            maxLoggedIn1 = Math.max(maxLoggedIn1, el);
+                    row = table[pieChartRow];
+                    for (var i = 1; i < colPosLength; i++) {
+                        if (i === loggedInPos) {
+                            maxLoggedIn1 = Math.max(maxLoggedIn1, row[i]);
                         }
                         else {
-                            maxNum1 = Math.max(maxNum1, el);
+                            maxNumber = Math.max(maxNumber, row[i]);
                         }
                     }
-                    loggedInTimeDivider = maxNum1 ? (maxLoggedIn1 / maxNum1 * 21) : maxLoggedIn;
+                    loggedInTimeDivider = maxNumber ? (maxLoggedIn1 / maxNumber * 21) : maxLoggedIn;
                 }
                 // when logged in time column is displayed
-                else if (pieChartCol) {
+                else if (pieChartCol === COL_loggedIn) {
                     loggedInTimeDivider = maxLoggedIn;      // average
                 }
-                // other cases
-                else {
-                    loggedInTimeDivider = maxNum ? (maxLoggedIn / maxNum * 21) : maxLoggedIn;
+                // not a pie chart
+                else if (visibleCols[COL_loggedIn]) {
+                    for (i = 0, n = table.length; i < n; i++) {
+                        row = table[i];
+                        for (var j = 1; j < colPosLength; j++) {
+                            maxNumber = Math.max(maxNumber, row[j]);
+                        }
+                    }
+                    loggedInTimeDivider = maxNumber ? (maxLoggedIn / maxNumber * 21) : maxLoggedIn;
                 }
 
                 if (loggedInTimeDivider > DAY) {
@@ -498,8 +518,8 @@ function qstatistics_begin(EMBEDDED) {
                 tableHeader = [options.period ? 'Time' : 'Destination'];
 
                 if (!pieChartCol) {
-                    for (i = 0, n = colPos.length; i < n; i++) {
-                        tableHeader.push(COLUMNS[colPos[i]] + ((i + 1 === loggedInPos) ? timeUnit : ''));
+                    for (i = 1; i < colPosLength; i++) {
+                        tableHeader.push(COLUMNS[colPos[i]] + ((i === loggedInPos) ? timeUnit : ''));
                     }
                 }
             }
@@ -517,17 +537,17 @@ function qstatistics_begin(EMBEDDED) {
                 hiddenInPie = [];
 
                 if (pieSource.by === 'column') {
-                    if (colPos.length) {
+                    if (colPosLength) {
                         if (!visibleCols[id]) {
-                            id = colPos[0];
+                            id = colPos1;
                             pieSource.id = id;
                             if (!EMBEDDED) {
                                 byCol.value = id;
                             }
                             options.piesource = pieSource.by + '_' + pieSource.id;
                         }
-                        cacheTableHeader(undefined, id === COL_loggedIn);
-                        var pos = colPos.indexOf(id) + 1,
+                        cacheTableHeader(undefined, id);
+                        var pos = colPos.indexOf(id),
                             i = (!options.period && +options.allcalls) ? 1 : 0,              // in Destination mode, don't show "All calls" in chart
                             n = table.length - (options.totalrow ? 1 : 0);                   // also, never show "Total" row in piechart
 
@@ -585,10 +605,9 @@ function qstatistics_begin(EMBEDDED) {
                     }
 
                     if (table[id] && (options.period === 0 || table[id].total)) {
-                        var totalCallsPos = colPos.indexOf(0) + 1,
-                            loggedInPos = colPos.indexOf(COL_loggedIn) + 1;
+                        var totalCallsPos = colPos.indexOf(0);
 
-                        if (colPos.length === 1 && visibleCols[0]) {
+                        if (colPosLength === 1 && visibleCols[0]) {
                             totalCallsPos = -1;
                         }
 
@@ -655,9 +674,9 @@ function qstatistics_begin(EMBEDDED) {
                         row[0] = new Date(start * 1000);
                     }
 
-                    for (var i = 0, n = colPos.length; i < n; i++) {
+                    for (var i = 1; i < colPosLength; i++) {
                         var i1 = colPos[i],
-                            j1 = i + 1,
+                            j1 = i,
                             isTime = i1 >= COL_timeStart && i1 < COL_timeEnd;
 
                         if (isTime) {
@@ -1189,7 +1208,7 @@ function qstatistics_begin(EMBEDDED) {
                 var encodedCall = newCalls[i];
                 var call = {};
 
-                for (var j = 0; j < ulen; j++) {
+                for (j = 0; j < ulen; j++) {
                     call[decodeMap[j]] = encodedCall[j];
                 }
 
@@ -1232,7 +1251,7 @@ function qstatistics_begin(EMBEDDED) {
                 queue.agents = [];
                 queue.availableAgents = [];
 
-                for (j = 0, m = queueAgents.length; j < m; j++) {
+                for (var j = 0, m = queueAgents.length; j < m; j++) {
                     var ag = queueAgents[j];
                     queue.agents.push(ag.id);
                     if (ag.available === '1') {
@@ -1364,7 +1383,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function getVisibleColumnsAndRows() {
-            for (var i in columnNames) {
+            for (var i = 1, n = columnNames.length; i < n; i++) {
                 visibleCols[i] = +options[columnNames[i]];
             }
             for (i in destinationNames) {
@@ -1390,51 +1409,76 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function getColumnPositions() {
-            colPos = [];
-            secondaryColVisible = false;
-            for (var i = 0, n = COLUMNS.length; i < n; i++) {
+            colPos = [0];
+            timeColVisible = false;
+            for (var i = 1, n = COLUMNS.length; i < n; i++) {
                 var j = reorder[i];
                 if (visibleCols[j]) {
-                    if (i >= COL_timeStart) {
-                        secondaryColVisible = true;
+                    if (i >= COL_timeStart && i < COL_timeEnd) {
+                        timeColVisible = true;
                     }
                     colPos.push(j);
                 }
             }
+            colPos1 = colPos[1];
+            loggedInPos = colPos.indexOf(COL_loggedIn);
+            colPosLength = colPos.length;
         }
 
 
         function getRowPositions() {
             rowPos = [];
-            var row = 0;
+            var rowIndex = 0;
             for (var i = 0, n = visibleRows.length; i < n; i++) {
                 if (visibleRows[i]) {
-                    rowPos[i] = row++;
+                    rowPos[i] = rowIndex++;
                 }
             }
         }
 
 
-        function getInclude(destination, ids) {
+        var memorizedIncludeIds = {};
+
+        function getInclude(destination) {
+
+            function getFromMultiSelect(elementId) {
+                if (memorizedIncludeIds[elementId]) {
+                    return memorizedIncludeIds[elementId];
+                }
+                else {
+                    var options = byId(elementId).options,
+                        ids = [];
+                    for (var i = 0, n = options.length; i < n; i++) {
+                        ids.push(options[i].value);
+                    }
+                    memorizedIncludeIds[elementId] = ids;
+                    return ids;
+                }
+            }
+
+
             if (EMBEDDED) {
-                var include = options.include;
-                for (var i in include) {
-                    var inc = include[i];
-                    if (inc.feature === destination) {
-                        if (destination === 'agents') {
-                            ids.push(inc.dtype + '_' + inc.dnumber);
-                        }
-                        else {
-                            ids.push(inc.dnumber);
+                if (destination === 'queues' && options.queuesSelect) {
+                    return getFromMultiSelect(options.queuesSelect);
+                }
+                else {
+                    var include = options.include,
+                        ids = [];
+                    for (var i in include) {
+                        var inc = include[i];
+                        if (inc.feature === destination) {
+                            if (destination === 'agents') {
+                                ids.push(inc.dtype + '_' + inc.dnumber);
+                            }
+                            else {
+                                ids.push(inc.dnumber);
+                            }
                         }
                     }
                 }
             }
             else {
-                var selected = byId(destination + 'include_selected').options;
-                for (i = 0, n = selected.length; i < n; i++) {
-                    ids.push(selected[i].value);
-                }
+                return getFromMultiSelect(destination + 'include_selected');
             }
         }
 
@@ -1450,9 +1494,9 @@ function qstatistics_begin(EMBEDDED) {
                 }
             }
 
-            for (var j = 0, m = colPos.length; j < m; j++) {
+            for (var j = 1; j < colPosLength; j++) {
                 var i1 = colPos[j],
-                    j0 = j + 1,
+                    j0 = j,
                     j1 = j0 + inserts,
                     withPercentage = visibleCols[i1] === 2,
                     time = i1 >= COL_timeStart && i1 < COL_timeEnd,
@@ -1486,7 +1530,7 @@ function qstatistics_begin(EMBEDDED) {
                             }
 
                             if (csv) {
-                                row.splice(j1 + 1, 0, perc);
+                                row.splice(j1, 0, perc);
                             }
                             else {
                                 if (perc !== '') {
@@ -1528,7 +1572,7 @@ function qstatistics_begin(EMBEDDED) {
             }
             if (TABLE) {
                 if (sortingCol > 0) {
-                    table.sort(byCol(colPos.indexOf(sortingCol - 1) + 1, sortingOrder));
+                    table.sort(byCol(colPos.indexOf(sortingCol), sortingOrder));
                 }
                 else if (sortingOrder === -1) {
                     table.reverse();
@@ -1555,7 +1599,7 @@ function qstatistics_begin(EMBEDDED) {
                 str = '';
                 row = [options.period ? 'Time' : 'Destination'];
 
-                for (var i = 0, n = colPos.length; i < n; i++) {
+                for (var i = 1; i < colPosLength; i++) {
                     var newI = colPos[i];
                     row.push(COLUMNS[newI]);
                     if (visibleCols[newI] === 2) {
@@ -1690,39 +1734,60 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function newRow() {
-            var length = COL_timeStart + 1 + (visibleCols[COL_loggedIn] ? 1 : 0),
-                row = new Array(length);
+            var row = new Array(colPosLength);
 
-            while (length--) {
-                row[length] = 0;
+            for (var i = 1; i < colPosLength; i++) {
+                row[i] = 0;
+            }
+
+            if (timeColVisible) {
+                if (visibleCols[COL_timeStart]) {
+                    row[colPos.indexOf(COL_timeStart)] = Infinity;
+                }
+                if (visibleCols[COL_talkMin]) {
+                    row[colPos.indexOf(COL_talkMin)] = Infinity;
+                }
+                if (visibleCols[COL_totalMin]) {
+                    row[colPos.indexOf(COL_totalMin)] = Infinity;
+                }
             }
 
             row.total = 0;
-            row.calls = [];
-            row.info = new Array(COL_loggedIn + 2);
-            row.qnaCalls = [];
+            row.answered = 0;
+            row.info = new Array(colPosLength);
             row.hasLIT = false;
+            if (timeColVisible) {
+                row.calls = [];
+            }
 
             return row;
         }
 
 
         function addInfo(row, call, i) {
-            if (row.info[i]) {
-                row.info[i].push(call);
-            } else {
-                row.info[i] = [call];
+            if (visibleCols[i]) {
+                var pos = colPos.indexOf(i);  // this gonna be slow!  what about hash table?
+                var ri = row.info;
+                row[pos]++;
+                if (ri[pos]) {
+                    ri[pos].push(call);
+                } else {
+                    ri[pos] = [call];
+                }
             }
         }
 
 
         function addInfos(row, calls, i) {
-            var ri = row.info;
+            if (visibleCols[i]) {
+                var pos = colPos.indexOf(i);  // this gonna be slow!
+                var ri = row.info;
 
-            if (ri[i]) {
-                ri[i] = ri[i].concat(calls);
-            } else {
-                ri[i] = calls;
+                if (ri[pos]) {
+                    ri[pos] = ri[pos].concat(calls);
+                } else {
+                    ri[pos] = calls;
+                }
             }
         }
 
@@ -1736,15 +1801,15 @@ function qstatistics_begin(EMBEDDED) {
                 multiRow = multiRow || table[rowPos[rowIndex]];
 
                 var ri = row.info;
+                multiRow.total += row.total;
 
-                for (var i = 1, n = row.length; i < n; i++) {
+                for (var i = 1; i < colPosLength; i++) {
                     multiRow[i] += row[i];
-                    if (i !== 1 && (i < COL_timeStart || i >= COL_timeEnd) && i !== COL_loggedIn && ri[i]) {
+                    var pos = colPos[i];
+                    if ((pos < COL_timeStart || pos >= COL_timeEnd) && pos !== COL_loggedIn && ri[i]) {
                         addInfos(multiRow, ri[i], i);
                     }
                 }
-                multiRow.calls = multiRow.calls.concat(row.calls);
-                multiRow.qnaCalls = multiRow.qnaCalls.concat(row.qnaCalls);
             }
         }
 
@@ -1766,65 +1831,70 @@ function qstatistics_begin(EMBEDDED) {
                 row;
 
             row = dontAddToMultipleRows ? multiRow : newRow();
-            row.calls.push(call);
-
-            // rather weird requirement not to count queuestatus for calls that came from "Telephone lines" filter
-            if (!cameFromPhoneFilter) {
-                row.qnaCalls.push(call);
-            }
+            row.total++;
 
             // total calls
-            row[1]++;
+            addInfo(row, call, 1);
             // sla time
             if (answered && (+call.holdtime <= options.slatime)) {
-                row[2]++;addInfo(row, call, 2);
+                addInfo(row, call, 2);
             }
             // answered
             if (answered) {
-                row[3]++;addInfo(row, call, 3);
+                addInfo(row, call, 3);
             }
             // not answered
             if (!answered) {
-                row[4]++;addInfo(row, call, 4);
+                addInfo(row, call, 4);
             }
             // inbound calls
             isInbound = stype === external || stype === local;
             if (isInbound) {
-                row[5]++;addInfo(row, call, 5);
+                addInfo(row, call, 5);
             }
             // inbound answered
             if (isInbound && answered) {
-                row[6]++;addInfo(row, call, 6);
+                addInfo(row, call, 6);
             }
             // inbound no answer
             if (isInbound && !answered) {
-                row[7]++;addInfo(row, call, 7);
+                addInfo(row, call, 7);
             }
             // internal calls
             isInternal = stype !== external && stype !== local && dtype !== external && dtype !== local;
             if (isInternal) {
-                row[8]++;addInfo(row, call, 8);
+                addInfo(row, call, 8);
             }
             // internal answered
             if (isInternal && answered) {
-                row[9]++;addInfo(row, call, 9);
+                addInfo(row, call, 9);
             }
             // internal no answer
             if (isInternal && !answered) {
-                row[10]++;addInfo(row, call, 10);
+                addInfo(row, call, 10);
             }
             // outbound
             isOutbound = dtype === external || dtype === local;
             if (isOutbound) {
-                row[11]++;addInfo(row, call, 11);
+                addInfo(row, call, 11);
             }
             // outbound answered
             if (isOutbound && answered) {
-                row[12]++;addInfo(row, call, 12);
+                addInfo(row, call, 12);
             }
             // outbound no answer
             if (isOutbound && !answered) {
-                row[13]++;addInfo(row, call, 13);
+                addInfo(row, call, 13);
+            }
+
+            if (timeColVisible) {
+                calcTimeCols(row, call);
+                row.calls.push(call);
+            }
+
+            // rather weird requirement not to count queuestatus for calls that came from "Telephone lines" filter
+            if (!cameFromPhoneFilter) {
+                calcQueueuStatusCols(row, call);
             }
 
             if (!dontAddToMultipleRows) {
@@ -1844,136 +1914,118 @@ function qstatistics_begin(EMBEDDED) {
                 }
             }
         }
+        
+
+        function calcTimeCols(row, call) {
+            var hold = +call.holdtime,
+                talk = +call.talktime,
+                total = +call.totaltime,
+                showTotal = options.totalrow,
+                pos;
+
+            if (visibleCols[14]) {
+                pos = colPos.indexOf(14);
+                row[pos] = Math.min(row[pos], hold);
+                if (showTotal) {
+                    minHold = Math.min(minHold, hold);
+                }
+            }
+            if (visibleCols[16]) {
+                pos = colPos.indexOf(16);
+                row[pos] = Math.max(row[pos], hold);
+                if (showTotal) {
+                    maxHold = Math.max(maxHold, hold);
+                }
+            }
+            if (visibleCols[17]) {
+                pos = colPos.indexOf(17);
+                row[pos] += hold;
+                sumHold += hold;
+            }if (visibleCols[15]) {
+                pos = colPos.indexOf(15);
+                row[pos] += hold;
+            }
+
+            if (call.answered) {
+                if (visibleCols[18]) {
+                    pos = colPos.indexOf(18);
+                    row[pos] = Math.min(row[pos], talk);
+                    if (showTotal) {
+                        minTalk = Math.min(minTalk, talk);
+                    }
+                }
+                if (visibleCols[20]) {
+                    pos = colPos.indexOf(20);
+                    row[pos] = Math.max(row[pos], talk);
+                    if (showTotal) {
+                        maxTalk = Math.max(maxTalk, talk);
+                    }
+                }
+                if (visibleCols[21]) {
+                    pos = colPos.indexOf(21);
+                    row[pos] += talk;
+                    sumTalk += talk;
+                }if (visibleCols[19]) {
+                    pos = colPos.indexOf(19);
+                    row[pos] += talk;
+                }
+                row.answered++;
+            }
+
+            if (visibleCols[22]) {
+                pos = colPos.indexOf(22);
+                row[pos] = Math.min(row[pos], total);
+                if (showTotal) {
+                    minTotal = Math.min(minTotal, total);
+                }
+            }
+            if (visibleCols[24]) {
+                pos = colPos.indexOf(24);
+                row[pos] = Math.max(row[pos], total);
+                if (showTotal) {
+                    maxTotal = Math.max(maxTotal, total);
+                }
+            }
+            if (visibleCols[25]) {
+                pos = colPos.indexOf(25);
+                row[pos] += total;
+                sumTotal += total;
+            }if (visibleCols[23]) {
+                pos = colPos.indexOf(23);
+                row[pos] += total;
+            }
+        }
+
+        
+        function calcQueueuStatusCols(row, call) {
+            var dtypeQueue = call.dtype === 'queue',
+                stypeQueue = call.stype === 'queue';
+
+            if (dtypeQueue || stypeQueue) {
+                var q = call.queuestatus;
+
+                if (q === 'abandon') {
+                    addInfo(row, call, 26);
+                } else if (q === 'exitwithtimeout') {
+                    addInfo(row, call, 28);
+                } else if (q === 'completeagent') {
+                    addInfo(row, call, 30);
+                } else if (q === 'completecaller') {
+                    addInfo(row, call, 31);
+                } else if (q === 'transfer') {
+                    addInfo(row, call, 32);
+                } else if (dtypeQueue) {
+                    if (q === 'exitempty') {
+                        addInfo(row, call, 27);
+                    } else if (q === 'exitwithkey') {
+                        addInfo(row, call, 29);
+                    }
+                }
+            }
+        }
 
 
         function reduceTable() {
-            var minHold = Infinity,
-                minTalk = Infinity,
-                minTotal = Infinity,
-                maxHold = 0,
-                maxTalk = 0,
-                maxTotal = 0,
-                sumHold = 0,
-                sumTalk = 0,
-                talkCallsCount = 0,
-                sumTotal = 0;
-
-
-            // columns from COL_timeStart till COL_timeEnd are called secondary columns.
-            // They should be calculated after primary calls are done. That's because we should know
-            // which calls go to the row. So that average values can be counted
-
-            function calcSecondaryCols(row) {
-                var call,
-                    rc = row.calls,
-                    rowTotal = rc.length,
-                    minhold = Infinity,
-                    avghold = 0,
-                    maxhold = 0,
-                    sumhold = 0,
-                    mintalk = Infinity,
-                    avgtalk = 0,
-                    maxtalk = 0,
-                    sumtalk = 0,
-                    mintotal = Infinity,
-                    avgtotal = 0,
-                    maxtotal = 0,
-                    sumtotal = 0,
-                    abandon = 0,
-                    noagent = 0,
-                    timeout = 0,
-                    keypress = 0,
-                    agent = 0,
-                    caller = 0,
-                    transfer = 0,
-                    talkCount = 0;
-
-
-                for (var i = 0, n = rowTotal; i < n; i++) {
-                    call = rc[i];
-
-                    minhold = Math.min(minhold, +call.holdtime);
-                    minHold = Math.min(minHold, minhold);
-                    sumhold += +call.holdtime;
-                    maxhold = Math.max(maxhold, +call.holdtime);
-                    maxHold = Math.max(maxHold, maxhold);
-                    if (call.answered) {
-                        mintalk = Math.min(mintalk, +call.talktime);
-                        minTalk = Math.min(minTalk, mintalk);
-                        sumtalk += +call.talktime;
-                        maxtalk = Math.max(maxtalk, +call.talktime);
-                        maxTalk = Math.max(maxTalk, maxtalk);
-                        talkCount++;
-                    }
-                    mintotal = Math.min(mintotal, +call.totaltime);
-                    minTotal = Math.min(minTotal, mintotal);
-                    sumtotal += +call.totaltime;
-                    maxtotal = Math.max(maxtotal, +call.totaltime);
-                    maxTotal = Math.max(maxTotal, maxtotal);
-                }
-
-                row.total = rowTotal;
-
-                for (i = 0, n = row.qnaCalls.length; i < n; i++) {
-                    call = row.qnaCalls[i];
-
-                    var dtypeQueue = call.dtype === 'queue',
-                        stypeQueue = call.stype === 'queue';
-
-                    if (dtypeQueue || stypeQueue) {
-                        var q = call.queuestatus;
-
-                        if (q === 'abandon') {
-                            abandon++;
-                            addInfo(row, call, 26);
-                        } else if (q === 'exitwithtimeout') {
-                            timeout++;
-                            addInfo(row, call, 28);
-                        } else if (q === 'completeagent') {
-                            agent++;
-                            addInfo(row, call, 30);
-                        } else if (q === 'completecaller') {
-                            caller++;
-                            addInfo(row, call, 31);
-                        } else if (q === 'transfer') {
-                            transfer++;
-                            addInfo(row, call, 32);
-                        } else if (dtypeQueue) {
-                            if (q === 'exitempty') {
-                                noagent++;
-                                addInfo(row, call, 27);
-                            } else if (q === 'exitwithkey') {
-                                keypress++;
-                                addInfo(row, call, 29);
-                            }
-                        }
-                    }
-                }
-
-                if (minhold === Infinity) {
-                    minhold = 0;
-                }
-                if (mintalk === Infinity) {
-                    mintalk = 0;
-                }
-                if (mintotal === Infinity) {
-                    mintotal = 0;
-                }
-                if (rowTotal) {
-                    sumHold += sumhold;
-                    sumTalk += sumtalk;
-                    talkCallsCount += talkCount;
-                    sumTotal += sumtotal;
-
-                    avghold = sumhold / rowTotal;
-                    avgtalk = talkCount ? sumtalk / talkCount : 0;
-                    avgtotal = sumtotal / rowTotal;
-                }
-
-                row.splice(COL_timeStart + 1, 0, minhold, avghold, maxhold, sumhold, mintalk, avgtalk, maxtalk, sumtalk, mintotal, avgtotal, maxtotal, sumtotal, abandon, noagent, timeout, keypress, agent, caller, transfer);
-            }
-
-
             function calcTotalRow() {
                 if (totalCallsCount) {
                     if (minHold === Infinity) {
@@ -1988,30 +2040,29 @@ function qstatistics_begin(EMBEDDED) {
 
                     var pos,
                         map = {
-                        13: minHold,
-                        14: sumHold / totalCallsCount,
-                        15: maxHold,
-                        16: sumHold,
-                        17: minTalk,
-                        18: talkCallsCount ? sumTalk / talkCallsCount : 0,
-                        19: maxTalk,
-                        20: sumTalk,
-                        21: minTotal,
-                        22: sumTotal / totalCallsCount,
-                        23: maxTotal,
-                        24: sumTotal
+                        14: minHold,
+                        15: sumHold / totalCallsCount,
+                        16: maxHold,
+                        17: sumHold,
+                        18: minTalk,
+                        19: totalAnswered ? sumTalk / totalAnswered : 0,
+                        20: maxTalk,
+                        21: sumTalk,
+                        22: minTotal,
+                        23: sumTotal / totalCallsCount,
+                        24: maxTotal,
+                        25: sumTotal
                     };
                     for (var i = COL_timeStart; i < COL_timeEnd; i++) {
                         if (visibleCols[i]) {
                             pos = colPos.indexOf(i);
-                            colSum[pos + 1] = map[i];
+                            colSum[pos] = map[i];
                         }
                     }
                 }
 
                 if (visibleCols[COL_loggedIn] && options.period !== 0) {
-                    pos = colPos.indexOf(COL_loggedIn);
-                    colSum.info[pos + 1] = table[0].info[pos + 1];
+                    colSum.info[loggedInPos] = table[0].info[loggedInPos];
                 }
 
                 colSum.total = totalCallsCount;
@@ -2020,66 +2071,19 @@ function qstatistics_begin(EMBEDDED) {
             }
 
 
-            function reduceRow(row) {
-                var result = [row[0]],
-                    resultInfo = [undefined];
-
-                for (var j = 0, m = colPos.length; j < m; j++) {
-                    var pos = colPos[j],
-                        el = row[pos + 1],
-                        data = row.info[pos + 1];
-
-                    result.push(el);
-                    resultInfo.push(data);
-
-                    if (pos === COL_loggedIn) {
-                        maxLoggedIn = Math.max(maxLoggedIn, el);
-                    }
-                    else if (pos < COL_timeStart || pos >= COL_timeEnd) {
-                        maxNum = Math.max(maxNum, el);
-                    }
-
-                    if (showTotal) {
-                        if (data) {
-                            if ((pos === COL_loggedIn && options.period === 0) ||
-                                (pos !== 0 && (pos < COL_timeStart || pos >= COL_timeEnd))) {
-                                    addInfos(colSum, data, j + 1);
-                            }
-                        }
-                        colSum.hasLIT |= row.hasLIT;
-                        colSum[j + 1] += el;
-                    }
-                }
-
-                if (showTotal) {
-                    colSum.calls = colSum.calls.concat(row.calls);
-                }
-                result.intervals = row.intervals;
-                result.total = row.total;
-                result.totalTime = options.period ? row.totalTime : reportDuration;
-                totalCallsCount += result.total;
-                result.hasLIT = row.hasLIT;
-                result.calls = row.calls;
-                result.info = resultInfo;
-                return result;
-            }
-
-            maxNum = 0;
-            maxLoggedIn = 0;
-
-            var reportDuration = reportEnd - START,
+            var reportDuration = currentEndTime - START,
+                totalAnswered = 0,
                 totalCallsCount = 0,
-                showTotal = options.totalrow;
+                showTotal = options.totalrow,
+                pos;
 
             if (showTotal) {
-                var length = colPos.length + 1,
-                    colSum = new Array(length);
+                var colSum = new Array(colPosLength),
+                    colSumInfo = colSum.info = new Array(colPosLength);
 
-                colSum.calls = [];
-                colSum.info = new Array(length);
-
-                while (length--) {
-                    colSum[length] = 0;
+                for (var j = 1; j < colPosLength; j++) {
+                    colSum[j] = 0;
+                    colSumInfo[j] = [];
                 }
 
                 colSum[0] = 'Total';
@@ -2087,14 +2091,65 @@ function qstatistics_begin(EMBEDDED) {
 
             for (var i = 0, n = table.length; i < n; i++) {
                 var row = table[i];
-                if (secondaryColVisible) {
-                    calcSecondaryCols(row);
+                if (showTotal) {
+                    for (j = 1; j < colPosLength; j++) {
+                        colSum.hasLIT |= row.hasLIT;
+                        colSum[j] += row[j];
+                        var rowInfo = row[j].info;
+                        if (rowInfo) {
+                            colSumInfo[j] = colSumInfo[j].concat(rowInfo);
+                        }
+                    }
+
+                    totalAnswered += row.answered;
+                    totalCallsCount += row.total;
                 }
-                else {
-                    row[COL_loggedIn + 1] = row[COL_timeStart + 1];
-                    row.total = row.calls.length;
+
+                if (!options.period) {
+                    row.totalTime = reportDuration;
                 }
-                table[i] = reduceRow(row);
+
+                if (visibleCols[COL_timeStart]) {
+                    pos = colPos.indexOf(COL_timeStart);
+                    if (row[pos] === Infinity) {
+                        row[pos] = 0;
+                    }
+                }
+
+                if (visibleCols[COL_talkMin]) {
+                    pos = colPos.indexOf(COL_talkMin);
+                    if (row[pos] === Infinity) {
+                        row[pos] = 0;
+                    }
+                }
+
+                if (visibleCols[COL_totalMin]) {
+                    pos = colPos.indexOf(COL_totalMin);
+                    if (row[pos] === Infinity) {
+                        row[pos] = 0;
+                    }
+                }
+
+                if (visibleCols[COL_timeStart + 1]) {
+                    pos = colPos.indexOf(COL_timeStart + 1);
+                    if (row.total) {
+                        row[pos] /= row.total;
+                    }
+                }
+
+                if (visibleCols[COL_talkMin + 1]) {
+                    pos = colPos.indexOf(COL_talkMin + 1);
+                    if (row.answered) {
+                        row[pos] /= row.answered;
+                    }
+                }
+
+                if (visibleCols[COL_totalMin + 1]) {
+                    pos = colPos.indexOf(COL_totalMin + 1);
+                    if (row.total) {
+                        row[pos] /= row.total;
+                    }
+                }
             }
 
             if (showTotal) {
@@ -2137,7 +2192,7 @@ function qstatistics_begin(EMBEDDED) {
                 formatStr += ' ' + (CONFIG.timeformat === '12' ? 'hh:mma' : 'HH:mm');
             }
 
-            if ((reportEnd - START) / options.period > container.clientWidth - 70) {  /* hope here clientWidth won't be calculated twice */
+            if ((currentEndTime - START) / options.period > container.clientWidth - 70) {  /* hope here clientWidth won't be calculated twice */
                 alert('Too many rows to display. Please set bigger interval.');
                 options.period = 0;
                 if (!EMBEDDED) {
@@ -2147,7 +2202,7 @@ function qstatistics_begin(EMBEDDED) {
                 throw 'too many rows to display';
             }
 
-            while (startTime < reportEnd) {
+            while (startTime < currentEndTime) {
                 row = newRow();
 
                 var start = moment.unix(startTime);
@@ -2159,7 +2214,7 @@ function qstatistics_begin(EMBEDDED) {
                 else {
                     endTime = start.add(options.period / DAY, 'days').unix();
                 }
-                endTime = Math.min(endTime, reportEnd);
+                endTime = Math.min(endTime, currentEndTime);
                 row.intervals = [[startTime, endTime]];
 
                 calls = getCallsFromTimePeriod(startTime, endTime);
@@ -2221,9 +2276,9 @@ function qstatistics_begin(EMBEDDED) {
                 table[i] = row;
             }
 
-            while (startTime < reportEnd) {
+            while (startTime < currentEndTime) {
                 endTime += period;
-                endTime = Math.min(endTime, reportEnd);
+                endTime = Math.min(endTime, currentEndTime);
 
                 date = moment.unix(startTime);
                 reportIndex = date.hour();
@@ -2319,7 +2374,7 @@ function qstatistics_begin(EMBEDDED) {
                 var dest = destinations[d],
                     visibleQueues,
                     visibleQueuesLength,
-                    ids = [],
+                    ids,
                     arr,
                     destFilter = options[dest];
 
@@ -2337,9 +2392,10 @@ function qstatistics_begin(EMBEDDED) {
 
                 switch (destFilter) {
                     case 'use_include':
-                        getInclude(dest, ids);
+                        ids = getInclude(dest);
                         break;
                     case 'queues':
+                        ids = [];
                         for (var o = 0; o < visibleQueuesLength; o++) {
                             ids = ids.concat(queues[visibleQueues[o]].agents);
                         }
@@ -2347,6 +2403,7 @@ function qstatistics_begin(EMBEDDED) {
                         ids.sort();
                         break;
                     case 'queues_available':
+                        ids = [];
                         for (var o = 0; o < visibleQueuesLength; o++) {
                             ids = ids.concat(queues[visibleQueues[o]].availableAgents);
                         }
@@ -2357,8 +2414,10 @@ function qstatistics_begin(EMBEDDED) {
                         ids = Object.keys(arr);
                         break;
                     case 'none':
+                        ids = [];
                         break;
                     default:
+                        ids = [];
                         for (i in arr) {
                             if (arr[i].panel === '1') {
                                 ids.push(i);
@@ -2418,8 +2477,8 @@ function qstatistics_begin(EMBEDDED) {
                         }
 
                         if (dest === 'agents' && visibleCols[COL_loggedIn]) {
-                            row[COL_timeStart + 1] += el.E.calcLoggedTime(periodStart || START, periodEnd || END);
-                            addInfo(row, el, COL_loggedIn + 1);
+                            row[loggedInPos] += el.E.calcLoggedTime(periodStart || START, periodEnd || END);
+                            maxLoggedIn = Math.max(maxLoggedIn, row[loggedInPos]);
                         }
 
                         if (!multiRow) {
@@ -2503,8 +2562,19 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function createReport(doResize) {
+            minHold = Infinity;
+            minTalk = Infinity;
+            minTotal = Infinity;
+            maxHold = 0;
+            maxTalk = 0;
+            maxTotal = 0;
+            sumHold = 0;
+            sumTalk = 0;
+            sumTotal = 0;
+            maxLoggedIn = 0;
+
             table = [];
-            reportEnd = Math.min(Date.now() / 1000, END);
+            currentEndTime = Math.min(Date.now() / 1000, END);
 
             if (options.period === 0) {
                 var filteredCalls = getCallsFromTimePeriod(START, END);
@@ -2692,7 +2762,7 @@ function qstatistics_begin(EMBEDDED) {
                         }
                     });
                 }
-                for (i in columnNames) {
+                for (i = 1, n = columnNames.length; i < n; i++) {
                     byId(columnNames[i]).addEventListener('change', function () {
                         var pos = columnNames.indexOf(this.id);
                         if (!loadButton) {
@@ -2890,21 +2960,21 @@ function qstatistics_begin(EMBEDDED) {
         function openCallDetails (i, j) {
             var jj = colPos[j];
 
-            if (jj === 0 || (jj >= COL_timeStart && jj < COL_timeEnd)) {
-                var calls = table[i].calls;
+            if (jj >= COL_timeStart && jj < COL_timeEnd) {
+                var info = table[i].calls;
                 if (jj >= COL_timeStart + 4 && jj < COL_timeStart + 8) { // talk time
-                    var newCalls = [];
-                    for (var x = 0, xx = calls.length; x < xx; x++) {
-                        if (calls[x].answered) {
-                            newCalls.push(calls[x]);
+                    var newInfo = [];
+                    for (var x = 0, xx = info.length; x < xx; x++) {
+                        if (info[x].answered) {
+                            newInfo.push(info[x]);
                         }
                     }
-                    calls = newCalls;
+                    info = newInfo;
                 }
-                new Popup(calls, j);
+                new Popup(info, j);
             }
             else if (jj !== COL_loggedIn) {
-                new Popup(table[i].info[j + 1], j);
+                new Popup(table[i].info[j], j);
             }
             else {
                 new Popup(table[i], j, true);
@@ -3023,9 +3093,9 @@ function qstatistics_begin(EMBEDDED) {
                     filenameCsv = 'Available time.csv';
                     headlineCsv = 'Agent,Time,Event\n';
                     theadHtml = '<th>Agent</th><th>Time</th><th>Event</th>';
-                    var intervals = calls.intervals || [[START, reportEnd]];
+                    var intervals = calls.intervals || [[START, currentEndTime]];
 
-                    var info = calls.info[col + 1];
+                    var info = calls.info[col];
                     if (info) {
                         for (var j = 0, m = intervals.length; j < m; j++) {
                             var interval = intervals[j];
@@ -3103,6 +3173,7 @@ function qstatistics_begin(EMBEDDED) {
                 stopPolling = false,
                 timeoutHandle,
                 isFirstRequest,
+                errorsShown = 0,
                 updateRangeOnEveryRequest = false;
 
 
@@ -3294,6 +3365,7 @@ function qstatistics_begin(EMBEDDED) {
                     this.getRangeFromOptions();
                 }
 
+                errorsShown = 0;
                 stopPolling = false;
                 isFirstRequest = true;
                 this.addToBeginning = false;
@@ -3346,8 +3418,13 @@ function qstatistics_begin(EMBEDDED) {
                 var json = JSON.parse(response);
 
                 // break polling loop on error
-                if (json.error) {
-                    alert(json.error[0].message);
+                if (json.errors) {
+                    if (!errorsShown) {
+                        errorsShown++;
+                        for (var j in json.errors) {
+                            alert(json.errors[j].message);  // todo concat
+                        }
+                    }
                 }
                 else {
                     var updateEnd = +json.updated,
@@ -3481,7 +3558,7 @@ function qstatistics_begin(EMBEDDED) {
 
                 var str = '<th style="position: relative" id="0col"' + getSorting(0) + '>' + (options.period ? 'Time' : 'Destination') + '</th>';
 
-                for (var i = 0, n = colPos.length; i < n; i++) {
+                for (var i = 1; i < colPosLength; i++) {
                     var newI = colPos[i];
                     str += '<th style="position: relative" id="' + (newI + 1) + 'col" draggable="true" ondragover="return false"' + getSorting(newI + 1) + '>' + COLUMNS[newI] + '</th>';
                 }
@@ -3588,8 +3665,8 @@ function qstatistics_begin(EMBEDDED) {
 
                     startTh.style.opacity = 1;
                     if (startTh !== target) {
-                        var id1 = reorder.indexOf(currId - 1),
-                            id2 = reorder.indexOf(startId - 1);
+                        var id1 = reorder.indexOf(currId),
+                            id2 = reorder.indexOf(startId);
                         var temp = reorder[id1];
                         reorder[id1] = reorder[id2];
                         reorder[id2] = temp;
@@ -3774,7 +3851,7 @@ function qstatistics_begin(EMBEDDED) {
         }
 
 
-        for (var i = 0, n = COLUMNS.length; i < n; i++) {
+        for (var i = 1, n = COLUMNS.length; i < n; i++) {
             reorder[i] = i;
         }
 
@@ -3790,11 +3867,19 @@ function qstatistics_begin(EMBEDDED) {
             else {
                 var CHART = new Chart();
             }
+            // todo do I recalculate everything if sorting of first column changes?
 
             if (options.time) {
-                var DD = byId(options.time);
-                DD.addEventListener('change', function () {
+                byId(options.time).addEventListener('change', function () {
                     SERVER.updateRange();
+                });
+            }
+            if (options.queuesSelect) {
+                byId(options.queuesSelect).addEventListener('change', function () {
+                    debugger;
+                    options.queues = 'use_include';
+                    delete memorizedIncludeIds[options.queuesSelect];
+                    createReport();
                 });
             }
             SERVER.updateRange();
@@ -4034,24 +4119,30 @@ function qstatistics_begin(EMBEDDED) {
     moment.tz.setDefault(CONFIG.timezone);
     var SAME_TZ = (new Date()).getTimezoneOffset() === moment().utcOffset();      // same timezone
 
-    var reports = [];
+    var reportServers = [];
 
     if (EMBEDDED) {
         for (var i = 0; i < EMBEDDED.length; i++) {
             var em = EMBEDDED[i];
             em.report.time = em.time;
             em.report.include = em.include;
-            reports.push((new Report(em.report, byId(em.container))).server);
+            em.report.queuesSelect = em.queues;
+
+            var report = new Report(em.report, byId(em.container));
+            reportServers.push(report.server);
         }
     }
     else {
         var formEl = document.getElementsByTagName('form');
         formEl = formEl[formEl.length - 1];
 
-        reports.push((new Report(UTILS.formToJson(formEl), byId('left-content'), formEl)).server);
+        new Report(UTILS.formToJson(formEl), byId('left-content'), formEl);
     }
 
 
+
+
+// TODO move the below to separate class
 
     if (EMBEDDED) {
         var offsetTimeouts = [],
@@ -4070,13 +4161,13 @@ function qstatistics_begin(EMBEDDED) {
             }
 
 
-            for (var i = 0; i < reports.length; i++) {
+            for (var i = 0; i < reportServers.length; i++) {
                 var offset = EMBEDDED && (+EMBEDDED[i].offset) || 0;
                 if (offset) {
-                    offsetTimeouts[i] = setTimeout(reports[i].tryNewRequest.bind(reports[i], promiseAll, promiseAll), offset);
+                    offsetTimeouts[i] = setTimeout(reportServers[i].tryNewRequest.bind(reportServers[i], promiseAll, promiseAll), offset);
                 }
                 else {
-                    reports[i].tryNewRequest(promiseAll, promiseAll);
+                    reportServers[i].tryNewRequest(promiseAll, promiseAll);
                 }
             }
         }
@@ -4088,14 +4179,14 @@ function qstatistics_begin(EMBEDDED) {
 
         document.addEventListener('visibilitychange', function () {
             if (document.hidden) {
-                for (var i = 0; i < reports.length; i++) {
+                for (var i = 0; i < reportServers.length; i++) {
                     clearTimeout(offsetTimeouts[i]); // clear individual timeout with offset
                 }
                 clearTimeout(timeoutHandle);   // clear global polling cycle
             }
             else {
-                for (i = 0; i < reports.length; i++) {
-                    reports[i].tryNewRequest();
+                for (i = 0; i < reportServers.length; i++) {
+                    reportServers[i].tryNewRequest();
                 }
                 timeoutHandle = setTimeout(poll, +CONFIG.refresh);
             }
