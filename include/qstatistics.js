@@ -14,7 +14,8 @@ function qstatistics_begin(EMBEDDED) {
             reorder = [],
             colPos,
             rowPos,
-            colPos1,
+            colPos1,//
+            colZZZ,
             loggedInPos,
             colPosLength,
             table,
@@ -37,6 +38,7 @@ function qstatistics_begin(EMBEDDED) {
             maxLoggedIn,
 
             menuButtons,
+            containerClientWidth,
 
             equalHeight,
             toggleLROverlay;
@@ -251,7 +253,6 @@ function qstatistics_begin(EMBEDDED) {
                 hiddenInPie,
                 pauseRedraw,
                 dateFormat = CONFIG.dateformat.replace('YYYY', 'yyyy').replace('DD', 'dd'),
-                containerClientWidth,
                 chartArea = {
                     left: '5.5%',
                     top: 0,
@@ -547,7 +548,7 @@ function qstatistics_begin(EMBEDDED) {
                             options.piesource = pieSource.by + '_' + pieSource.id;
                         }
                         cacheTableHeader(undefined, id);
-                        var pos = colPos.indexOf(id),
+                        var pos = colZZZ[id],
                             i = (!options.period && +options.allcalls) ? 1 : 0,              // in Destination mode, don't show "All calls" in chart
                             n = table.length - (options.totalrow ? 1 : 0);                   // also, never show "Total" row in piechart
 
@@ -605,7 +606,7 @@ function qstatistics_begin(EMBEDDED) {
                     }
 
                     if (table[id] && (options.period === 0 || table[id].total)) {
-                        var totalCallsPos = colPos.indexOf(0);
+                        var totalCallsPos = colZZZ[0];
 
                         if (colPosLength === 1 && visibleCols[0]) {
                             totalCallsPos = -1;
@@ -1007,7 +1008,7 @@ function qstatistics_begin(EMBEDDED) {
 
             function renderChart() {
                 if (!pauseRedraw) {
-                    onResize();
+                    setChartArea();
                     dataTable = getDataTable();
                     charts[type].draw(dataTable, chartOptions[type]);
                 }
@@ -1016,7 +1017,7 @@ function qstatistics_begin(EMBEDDED) {
 
             function renderPieChart() {
                 if (!pauseRedraw) {
-                    onResize();
+                    setChartArea();
                     dataTable = getPieDataTable();
                     charts.piechart.draw(dataTable, chartOptions.piechart);
                 }
@@ -1080,15 +1081,14 @@ function qstatistics_begin(EMBEDDED) {
                                 if (selection) {
                                     if (_type === 'piechart') {
                                         if (pieSource.by === 'column') {
-                                            var i = hiddenInPie[selection.row], j = +colPos.indexOf(pieSource.id);
+                                            var i = hiddenInPie[selection.row], j = +colZZZ[pieSource.id] + 1;
                                         }
                                         else {
-                                            var j = hiddenInPie[selection.row] - 1, i = pieSource.id;
+                                            var j = hiddenInPie[selection.row], i = pieSource.id;
                                         }
                                     }
                                     else {
                                         var i = selection.row, j = selection.column;
-                                        j -= 1;
                                     }
 
                                     openCallDetails(i, j);
@@ -1100,8 +1100,7 @@ function qstatistics_begin(EMBEDDED) {
             };
 
 
-            function onResize() {
-                containerClientWidth = container.clientWidth;
+            function setChartArea() {
                 chartArea.top = (EMBEDDED ? (containerClientWidth > 840 ? '18%' : '22.5%') : '11.5%');
             }
 
@@ -1109,7 +1108,7 @@ function qstatistics_begin(EMBEDDED) {
             this.resize = function () {
                 var type = options.type;
                 if (charts[type]) {
-                    onResize();
+                    setChartArea();
                     charts[type].draw(dataTable, chartOptions[type]);
                 }
             };
@@ -1207,7 +1206,7 @@ function qstatistics_begin(EMBEDDED) {
             for (var i = 0, n = newCalls.length; i < n; i++) {
                 var encodedCall = newCalls[i];
                 var call = {};
-
+// todo decode as a literal or do not decode at all, use constants for access instead
                 for (j = 0; j < ulen; j++) {
                     call[decodeMap[j]] = encodedCall[j];
                 }
@@ -1355,13 +1354,13 @@ function qstatistics_begin(EMBEDDED) {
         }
 
 
-        function getCallsFromTimePeriod(start, end) {
+        function getCallsFromTimePeriod(start, end) {       // todo search index from
             var startIndex,
                 endIndex,
                 callEnd;
 
             for (var i = 0, n = calls.length; i < n; i++) {
-                callEnd = +calls[i].end;
+                callEnd = +calls[i].end;            //TODO do binary search, stupid!!!!!!
                 if (startIndex === undefined && callEnd >= start) {
                     startIndex = i;
                 }
@@ -1421,8 +1420,13 @@ function qstatistics_begin(EMBEDDED) {
                 }
             }
             colPos1 = colPos[1];
-            loggedInPos = colPos.indexOf(COL_loggedIn);
             colPosLength = colPos.length;
+
+            colZZZ = new Array(COL_loggedIn + 1);
+            for (i = 1, n = COLUMNS.length; i < n; i++) {
+                colZZZ[i] = colPos.indexOf(i);
+            }
+            loggedInPos = colZZZ[COL_loggedIn];
         }
 
 
@@ -1503,7 +1507,7 @@ function qstatistics_begin(EMBEDDED) {
                     loggedInCol = i1 === COL_loggedIn;
 
                 if (withPercentage || time || loggedInCol) {
-                    for (i = 0, n = result.length; i < n; i++) {
+                    for (i = 0; i < n; i++) {
                         var row = result[i],
                             perc;
 
@@ -1572,7 +1576,7 @@ function qstatistics_begin(EMBEDDED) {
             }
             if (TABLE) {
                 if (sortingCol > 0) {
-                    table.sort(byCol(colPos.indexOf(sortingCol), sortingOrder));
+                    table.sort(byCol(colZZZ[sortingCol], sortingOrder));
                 }
                 else if (sortingOrder === -1) {
                     table.reverse();
@@ -1735,26 +1739,23 @@ function qstatistics_begin(EMBEDDED) {
 
         function newRow() {
             var row = new Array(colPosLength);
+            row.info = new Array(colPosLength);
 
             for (var i = 1; i < colPosLength; i++) {
                 row[i] = 0;
+                // var pos = colPos[i];
+                // if (pos !== COL_loggedIn && (pos < COL_timeStart || pos >= COL_timeEnd)) {   // TODO bottleneck here
+                row.info[i] = [];
             }
 
             if (timeColVisible) {
-                if (visibleCols[COL_timeStart]) {
-                    row[colPos.indexOf(COL_timeStart)] = Infinity;
-                }
-                if (visibleCols[COL_talkMin]) {
-                    row[colPos.indexOf(COL_talkMin)] = Infinity;
-                }
-                if (visibleCols[COL_totalMin]) {
-                    row[colPos.indexOf(COL_totalMin)] = Infinity;
-                }
+                row[colZZZ[COL_timeStart]] = Infinity;
+                row[colZZZ[COL_talkMin]] = Infinity;
+                row[colZZZ[COL_totalMin]] = Infinity;
             }
 
             row.total = 0;
             row.answered = 0;
-            row.info = new Array(colPosLength);
             row.hasLIT = false;
             if (timeColVisible) {
                 row.calls = [];
@@ -1765,29 +1766,10 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function addInfo(row, call, i) {
-            if (visibleCols[i]) {
-                var pos = colPos.indexOf(i);  // this gonna be slow!  what about hash table?
-                var ri = row.info;
+            var pos = colZZZ[i];
+            if (pos !== -1) {
                 row[pos]++;
-                if (ri[pos]) {
-                    ri[pos].push(call);
-                } else {
-                    ri[pos] = [call];
-                }
-            }
-        }
-
-
-        function addInfos(row, calls, i) {
-            if (visibleCols[i]) {
-                var pos = colPos.indexOf(i);  // this gonna be slow!
-                var ri = row.info;
-
-                if (ri[pos]) {
-                    ri[pos] = ri[pos].concat(calls);
-                } else {
-                    ri[pos] = calls;
-                }
+                row.info[pos].push(call);
             }
         }
 
@@ -1800,14 +1782,16 @@ function qstatistics_begin(EMBEDDED) {
             if (visibleRows[rowIndex]) {
                 multiRow = multiRow || table[rowPos[rowIndex]];
 
-                var ri = row.info;
+                var ri = row.info,
+                    mri = multiRow.info;
+
                 multiRow.total += row.total;
 
                 for (var i = 1; i < colPosLength; i++) {
                     multiRow[i] += row[i];
                     var pos = colPos[i];
-                    if ((pos < COL_timeStart || pos >= COL_timeEnd) && pos !== COL_loggedIn && ri[i]) {
-                        addInfos(multiRow, ri[i], i);
+                    if (pos !== COL_loggedIn && (pos < COL_timeStart || pos >= COL_timeEnd)) {   // TODO bottleneck here
+                        Array.prototype.push.apply(mri[i], ri[i]);
                     }
                 }
             }
@@ -1920,79 +1904,73 @@ function qstatistics_begin(EMBEDDED) {
             var hold = +call.holdtime,
                 talk = +call.talktime,
                 total = +call.totaltime,
-                showTotal = options.totalrow,
+                showTotal = options.totalrow,// todo cache
                 pos;
 
-            if (visibleCols[14]) {
-                pos = colPos.indexOf(14);
+            pos = colZZZ[14];
+            if (pos !== -1) {
                 row[pos] = Math.min(row[pos], hold);
-                if (showTotal) {
-                    minHold = Math.min(minHold, hold);
-                }
             }
-            if (visibleCols[16]) {
-                pos = colPos.indexOf(16);
+            pos = colZZZ[16];
+            if (pos !== -1) {
                 row[pos] = Math.max(row[pos], hold);
-                if (showTotal) {
-                    maxHold = Math.max(maxHold, hold);
-                }
             }
-            if (visibleCols[17]) {
-                pos = colPos.indexOf(17);
+            pos = colZZZ[15];
+            if (pos !== -1) {
                 row[pos] += hold;
-                sumHold += hold;
-            }if (visibleCols[15]) {
-                pos = colPos.indexOf(15);
+            }
+            pos = colZZZ[17];
+            if (pos !== -1) {
                 row[pos] += hold;
             }
 
             if (call.answered) {
-                if (visibleCols[18]) {
-                    pos = colPos.indexOf(18);
+                pos = colZZZ[18];
+                if (pos !== -1) {
                     row[pos] = Math.min(row[pos], talk);
-                    if (showTotal) {
-                        minTalk = Math.min(minTalk, talk);
-                    }
                 }
-                if (visibleCols[20]) {
-                    pos = colPos.indexOf(20);
+                pos = colZZZ[20];
+                if (pos !== -1) {
                     row[pos] = Math.max(row[pos], talk);
-                    if (showTotal) {
-                        maxTalk = Math.max(maxTalk, talk);
-                    }
                 }
-                if (visibleCols[21]) {
-                    pos = colPos.indexOf(21);
+                pos = colZZZ[19];
+                if (pos !== -1) {
                     row[pos] += talk;
-                    sumTalk += talk;
-                }if (visibleCols[19]) {
-                    pos = colPos.indexOf(19);
+                }
+                pos = colZZZ[21];
+                if (pos !== -1) {
                     row[pos] += talk;
                 }
                 row.answered++;
             }
 
-            if (visibleCols[22]) {
-                pos = colPos.indexOf(22);
+            pos = colZZZ[22];
+            if (pos !== -1) {
                 row[pos] = Math.min(row[pos], total);
-                if (showTotal) {
-                    minTotal = Math.min(minTotal, total);
-                }
             }
-            if (visibleCols[24]) {
-                pos = colPos.indexOf(24);
+            pos = colZZZ[24];
+            if (pos !== -1) {
                 row[pos] = Math.max(row[pos], total);
-                if (showTotal) {
-                    maxTotal = Math.max(maxTotal, total);
-                }
             }
-            if (visibleCols[25]) {
-                pos = colPos.indexOf(25);
+            pos = colZZZ[23];
+            if (pos !== -1) {
                 row[pos] += total;
+            }
+            pos = colZZZ[25];
+            if (pos !== -1) {
+                row[pos] += total;
+            }
+
+            if (showTotal) {
+                minHold = Math.min(minHold, hold);
+                maxHold = Math.max(maxHold, hold);
+                sumHold += hold;
+                minTalk = Math.min(minTalk, talk);
+                maxTalk = Math.max(maxTalk, talk);
+                sumTalk += talk;
+                minTotal = Math.min(minTotal, total);
+                maxTotal = Math.max(maxTotal, total);
                 sumTotal += total;
-            }if (visibleCols[23]) {
-                pos = colPos.indexOf(23);
-                row[pos] += total;
             }
         }
 
@@ -2055,7 +2033,7 @@ function qstatistics_begin(EMBEDDED) {
                     };
                     for (var i = COL_timeStart; i < COL_timeEnd; i++) {
                         if (visibleCols[i]) {
-                            pos = colPos.indexOf(i);
+                            pos = colZZZ[i];
                             colSum[pos] = map[i];
                         }
                     }
@@ -2087,68 +2065,67 @@ function qstatistics_begin(EMBEDDED) {
                 }
 
                 colSum[0] = 'Total';
+
+                if (timeColVisible) {
+                    colSum.calls = [];
+                }
             }
 
             for (var i = 0, n = table.length; i < n; i++) {
                 var row = table[i];
                 if (showTotal) {
+                    var ri = row.info;
                     for (j = 1; j < colPosLength; j++) {
                         colSum.hasLIT |= row.hasLIT;
                         colSum[j] += row[j];
-                        var rowInfo = row[j].info;
-                        if (rowInfo) {
-                            colSumInfo[j] = colSumInfo[j].concat(rowInfo);
+                        pos = colPos[j];
+                        if (pos !== COL_loggedIn && (pos < COL_timeStart || pos >= COL_timeEnd)) { //todo if pos === 1 && timeColsVisible use calls instead
+                            Array.prototype.push.apply(colSumInfo[j], ri[i]);
                         }
                     }
 
                     totalAnswered += row.answered;
                     totalCallsCount += row.total;
+                    if (timeColVisible) {
+                        Array.prototype.push.apply(colSum.calls, row.calls);
+                    }
+                }
+
+                if (timeColVisible) {
+                    pos = colZZZ[COL_timeStart];
+                    if (pos !== -1 && row[pos] === Infinity) {
+                        row[pos] = 0;
+                    }
+                    pos = colZZZ[COL_talkMin];
+                    if (pos !== -1 && row[pos] === Infinity) {
+                        row[pos] = 0;
+                    }
+                    pos = colZZZ[COL_totalMin];
+                    if (pos !== -1 && row[pos] === Infinity) {
+                        row[pos] = 0;
+                    }
+
+                    if (row.total) {
+                        pos = colZZZ[COL_timeStart + 1];
+                        if (pos !== -1) {
+                            row[pos] /= row.total;
+                        }
+                        pos = colZZZ[COL_totalMin + 1];
+                        if (pos !== -1) {
+                            row[pos] /= row.total;
+                        }
+                    }
+
+                    if (row.answered) {
+                        pos = colZZZ[COL_talkMin + 1];
+                        if (pos !== -1) {
+                            row[pos] /= row.answered;
+                        }
+                    }
                 }
 
                 if (!options.period) {
                     row.totalTime = reportDuration;
-                }
-
-                if (visibleCols[COL_timeStart]) {
-                    pos = colPos.indexOf(COL_timeStart);
-                    if (row[pos] === Infinity) {
-                        row[pos] = 0;
-                    }
-                }
-
-                if (visibleCols[COL_talkMin]) {
-                    pos = colPos.indexOf(COL_talkMin);
-                    if (row[pos] === Infinity) {
-                        row[pos] = 0;
-                    }
-                }
-
-                if (visibleCols[COL_totalMin]) {
-                    pos = colPos.indexOf(COL_totalMin);
-                    if (row[pos] === Infinity) {
-                        row[pos] = 0;
-                    }
-                }
-
-                if (visibleCols[COL_timeStart + 1]) {
-                    pos = colPos.indexOf(COL_timeStart + 1);
-                    if (row.total) {
-                        row[pos] /= row.total;
-                    }
-                }
-
-                if (visibleCols[COL_talkMin + 1]) {
-                    pos = colPos.indexOf(COL_talkMin + 1);
-                    if (row.answered) {
-                        row[pos] /= row.answered;
-                    }
-                }
-
-                if (visibleCols[COL_totalMin + 1]) {
-                    pos = colPos.indexOf(COL_totalMin + 1);
-                    if (row.total) {
-                        row[pos] /= row.total;
-                    }
                 }
             }
 
@@ -2192,7 +2169,7 @@ function qstatistics_begin(EMBEDDED) {
                 formatStr += ' ' + (CONFIG.timeformat === '12' ? 'hh:mma' : 'HH:mm');
             }
 
-            if ((currentEndTime - START) / options.period > container.clientWidth - 70) {  /* hope here clientWidth won't be calculated twice */
+            if ((currentEndTime - START) / options.period > containerClientWidth - 70) {
                 alert('Too many rows to display. Please set bigger interval.');
                 options.period = 0;
                 if (!EMBEDDED) {
@@ -2397,15 +2374,15 @@ function qstatistics_begin(EMBEDDED) {
                     case 'queues':
                         ids = [];
                         for (var o = 0; o < visibleQueuesLength; o++) {
-                            ids = ids.concat(queues[visibleQueues[o]].agents);
+                            Array.prototype.push.apply(ids, queues[visibleQueues[o]].agents);
                         }
                         UTILS.unique(ids);
                         ids.sort();
                         break;
                     case 'queues_available':
                         ids = [];
-                        for (var o = 0; o < visibleQueuesLength; o++) {
-                            ids = ids.concat(queues[visibleQueues[o]].availableAgents);
+                        for (o = 0; o < visibleQueuesLength; o++) {
+                            Array.prototype.push.apply(ids, queues[visibleQueues[o]].availableAgents);
                         }
                         UTILS.unique(ids);
                         ids.sort();
@@ -2539,6 +2516,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
             menuButtons = document.getElementById('right-menu').children;
+            containerClientWidth = container.clientWidth;
         }
 
 
@@ -2548,6 +2526,8 @@ function qstatistics_begin(EMBEDDED) {
             clearTimeout(handler);
 
             handler = setTimeout(function () {
+                containerClientWidth = container.clientWidth;
+
                 if (options.type === 'table') {
                     TABLE.resizeHeader();
                 }
@@ -3403,7 +3383,7 @@ function qstatistics_begin(EMBEDDED) {
                     delta += Math.min(requestEnd, Date.now() / 1000) - maxRecordedTime;
                 }
 
-                if (!preloader && delta > 40) {
+                if (!preloader && delta > 300) {
                     showPreloader();
                 }
 
@@ -3560,7 +3540,7 @@ function qstatistics_begin(EMBEDDED) {
 
                 for (var i = 1; i < colPosLength; i++) {
                     var newI = colPos[i];
-                    str += '<th style="position: relative" id="' + (newI + 1) + 'col" draggable="true" ondragover="return false"' + getSorting(newI + 1) + '>' + COLUMNS[newI] + '</th>';
+                    str += '<th style="position: relative" id="' + newI + 'col" draggable="true" ondragover="return false"' + getSorting(newI) + '>' + COLUMNS[newI] + '</th>';
                 }
 
                 return str;
@@ -3709,9 +3689,7 @@ function qstatistics_begin(EMBEDDED) {
                             }
                         }
 
-                        j -= 1;
-
-                        if (j !== m - 1) {
+                        if (j !== m) {
                             openCallDetails(i, j);
                         }
                     }
