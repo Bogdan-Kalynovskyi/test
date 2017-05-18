@@ -193,7 +193,7 @@ slide {
 }
 
 slide:not(:first-child) {
-	height: 640px;
+	height: 650px;
 	overflow: hidden;
 	-webkit-user-select: none;
 	-moz-user-select: none;
@@ -203,10 +203,6 @@ slide:not(:first-child) {
 
 slide svg {
 	margin-top: 17px;
-}
-
-text {
-	cursor: text;
 }
 
 #left-overlay,
