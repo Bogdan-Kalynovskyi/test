@@ -29,13 +29,13 @@
 
 .chartitem {
     width: calc(50% - 14px);
-    height: 320px;
+    height: 360px;
 }
 
 .chartitem > .chart {
     border-top: 1px solid #EFEFEF;
     margin-top: 10px;
-    height: 270px;
+    height: 310px;
     font-size: 80%;
 }
 
