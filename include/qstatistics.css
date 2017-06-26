@@ -9,20 +9,19 @@
 
 #left-content {
 	margin: 0;
-	height: 0;  /* to remove initial bad-style-picture flickering */
+	height: 0;  /* to remove initial HTML flickering */
 }
 
-#left-content:before {
-	content: 'No data yet';
-	color: #ccc;
-	font-size: 38px;
-	text-transform: capitalize;
-	z-index: -1;
-	display: block;
-	position: absolute;
-	top: 50%;
-    margin: -20px auto 0;
-}
+/*#left-content:before {*/
+	/*content: 'No Data Yet';*/
+	/*color: #ccc;*/
+	/*font-size: 38px;*/
+	/*z-index: -1;*/
+	/*display: block;*/
+	/*position: absolute;*/
+	/*top: 50%;*/
+    /*margin: -20px auto 0;*/
+/*}*/
 
 #left-content h2 {
 	text-align: left;
@@ -46,7 +45,6 @@
 
 #options-heading {
 	height: 40px;
-	font-family: Verdana, Arial, Helvetica, sans-serif;
 	text-align: center;
 	font-size: 8px;
 	color: #fff;
@@ -57,6 +55,16 @@
 	-ms-user-select: none;
 	user-select: none;
 	box-shadow: 0 1px 8px 0 rgba(0,0,0,0.6);
+}
+
+#close-arrow {
+	position: relative;
+	float: left;
+}
+
+#panel-title {
+	padding-top: 10px;
+	width: calc(100% - 45px);
 }
 
 #panel-items {
@@ -72,16 +80,6 @@ button:active,
 input[type="submit"]:active {
 	box-shadow: 0 -1px 0 rgb(0, 50, 81);
 	transform: translate3d(0, 1px, 0);
-}
-
-#close-arrow {
-	position: relative;
-	float: left;
-}
-
-#panel-title {
-	padding-top: 10px;
-	width: calc(100% - 45px);
 }
 
 .universal {
@@ -269,7 +267,7 @@ slide svg {
 
 #piechart-chooser {
 	position: absolute;
-	top: 6px;
+	top: 2px;
     text-align: center;
     width: calc(100% - 44px);
     z-index: 1000;
@@ -347,6 +345,9 @@ slide svg {
 #go-piechart:after {
 	background-image: url('/local/qstatistics/include/img/pie.png');
 }
+#go-reasons:after {
+	background-image: url('/local/bohdan/include/img/clock.png');
+}
 #go-csv:after {
 	background-image: url('/local/qstatistics/include/img/csv.png');
 }
@@ -371,6 +372,9 @@ slide svg {
 }
 #go-piechart:hover:before {
 	content: 'Pie chart';
+}
+#go-reasons:hover:before {
+	content: 'Agents availability';
 }
 #go-csv:hover:before {
 	content: 'Download as CSV';
@@ -462,10 +466,22 @@ modal .foot td {
 	float: right;
 }
 
+
+timeline {
+	display:block;
+	min-height: 260px;
+	margin-right: 5px;
+}
+
+timeline + table {
+	padding-right: 2px;
+}
+
 defs + g {
     visibility: hidden;
 }
 
-.piechart defs + g {
+.piechart defs + g,
+timeline defs + g {
     visibility: visible;
 }
