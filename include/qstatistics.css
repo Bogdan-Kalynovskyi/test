@@ -374,7 +374,7 @@ slide svg {
 	content: 'Pie chart';
 }
 #go-reasons:hover:before {
-	content: 'Agents availability';
+	content: 'Agent availability';
 }
 #go-csv:hover:before {
 	content: 'Download as CSV';

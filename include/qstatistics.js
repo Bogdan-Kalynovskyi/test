@@ -359,58 +359,80 @@ function qstatistics_begin(EMBEDDED) {
 
             this.render = function (container) {
                 var googleData = [],
-                    header = ['ext', 'name', 'unavailable', 'break', 'lunch'],
+                    googleColors = [],
+                    colorsMap = {
+                        break: 'red',
+                        lunch: 'blue',
+                        unavailable: 'orange'
+                    },
                     tableData = [],
-                    isAnything = false;
+                    st = new Date((START - TIMEZONE_DIFF) * 1000),
+                    en = new Date((END - TIMEZONE_DIFF) * 1000);
 
                 for (var a in usedAgents) {
                     var agent = agents[usedAgents[a]],
-                        agentName = agent.name,
+                        agentName = phoneTitleDisplay(agent),
                         reasons = agent.E.unavailReasons(START, END),
-                        userData = {
-                            ext: agent.dnumber,
-                            name: agentName
+                        reasonSum = {
+                            break: 0,
+                            lunch: 0,
+                            unavailable: 0
                         },
-                        tableDataRow = new Array(header.length);
-                    tableDataRow.fill(0);
+                        tableDataRow = [agentName];
+
+                    if (a == 0) {
+                        googleData.push([agentName, '', st, st]);
+                        if (googleColors.indexOf('#f5f5f5') === -1) {
+                            googleColors.push('#f5f5f5');
+                        }
+                    }
 
                     for (var i = 0; i < reasons.length; i++) {
                         var reason = reasons[i];
 
-                        googleData.push([agentName, reason.status, new Date(reason.start * 1000), new Date(reason.end * 1000)]);
-                        isAnything = true;
-
-                        if (!userData[reason.status]) {
-                            userData[reason.status] = reason.end - reason.start;
+                        googleData.push([agentName, reason.status, new Date((reason.start - TIMEZONE_DIFF) * 1000), new Date((reason.end - TIMEZONE_DIFF) * 1000)]);
+                        if (googleColors.indexOf(colorsMap[reason.status]) === -1) {
+                            googleColors.push(colorsMap[reason.status]);
                         }
-                        else {
-                            userData[reason.status] += reason.end - reason.start;
+                        reasonSum[reason.status] += reason.end - reason.start;
+                    }
+
+                    if (!reasons.length) {
+                        googleData.push([agentName, '', st, st]);
+                        if (googleColors.indexOf('#f5f5f5') === -1) {
+                            googleColors.push('#f5f5f5');
                         }
                     }
 
-                    for (i in userData) {
-                        tableDataRow[header.indexOf(i)] = userData[i];
+                    for (i in reasonSum) {
+                        reasonSum.unavailable += reasonSum.break + reasonSum.lunch;
+                        tableDataRow.push(END - START - reasonSum.unavailable, reasonSum.break, reasonSum.lunch, reasonSum.unavailable);
                     }
 
                     tableData.push(tableDataRow);
                 }
 
-                SORTABLE.render(container, header, tableData, function() {
-                    if (isAnything) {
-                        var chart = new google.visualization.Timeline(container.children[0]);
-                        var dataTable = new google.visualization.DataTable();
-                        dataTable.addColumn({type: 'string', id: 'Name'});
-                        dataTable.addColumn({type: 'string', id: 'Status'});
-                        dataTable.addColumn({type: 'date', id: 'Start'});
-                        dataTable.addColumn({type: 'date', id: 'End'}); // todo adjust timezone
-                        dataTable.addRows(googleData);
-                        chart.draw(dataTable);
+                if (agents.length) {
+                    googleData.push([agentName, '', en, en]);
+                }
 
-                        that.chart = chart;
-                    }
-                    else {
-                        container.children[0].innerHTML = '<h2 style="color: gray; text-align: center"> No Unavailability Events </h2>'
-                    }
+                SORTABLE.render(container, tableData, function() {
+                    var chart = new google.visualization.Timeline(container.children[0]);
+                    var dataTable = new google.visualization.DataTable();
+                    dataTable.addColumn({type: 'string', id: 'Name'});
+                    dataTable.addColumn({type: 'string', id: 'Status'});
+                    dataTable.addColumn({type: 'date', id: 'Start'});
+                    dataTable.addColumn({type: 'date', id: 'End'}); // todo adjust timezone
+                    dataTable.addRows(googleData);
+                    chart.draw(dataTable, {
+                        colors: googleColors
+                    });
+
+                    var gTagChildren = container.getElementsByTagName('svg')[0].children[4].children;
+                    gTagChildren[0].style.display = 'none';
+                    gTagChildren[gTagChildren.length - 1].style.display = 'none';
+
+                    that.chart = chart;
                 });
             }
         }
@@ -937,7 +959,7 @@ function qstatistics_begin(EMBEDDED) {
                         startTime = options.period > 0 && dbRow.intervals[0][0];
 
                     // for time - based reports
-                    if (SAME_TZ && options.period > 0) {
+                    if (!TIMEZONE_DIFF && options.period > 0) {
                         row[0] = new Date(startTime * 1000);
                     }
                     else {
@@ -1008,7 +1030,7 @@ function qstatistics_begin(EMBEDDED) {
                 }
 
                 // google charts display time on x axis better than I do, because they know font and the scale
-                if (SAME_TZ && options.period > 0) {
+                if (!TIMEZONE_DIFF && options.period > 0) {
                     chartOptions[type].hAxis = {
                         format: googleTimeDateFormat,
                         viewWindow: {
@@ -4036,13 +4058,13 @@ function qstatistics_begin(EMBEDDED) {
 
                     SERVER.addToBeginning = false;
                 }
-                
+
                 // Handle the change of day at midnight. If the start or end day is not a specific date then the report
                 // period should change every day.
                 if ((EMBEDDED || options.startday !== '1' || options.endday !== '1') && moment().startOf('day').unix() !== lastToday.unix()) {
                     that.startNewPolling();
                     return false;
-                } 
+                }
                 else if (END <= maxRecordedTime) {
                     stopPolling = true;
                 }
@@ -4350,7 +4372,7 @@ function qstatistics_begin(EMBEDDED) {
                 sortCol = 0,
                 sortOrder = 1;
 
-            this.render = function (container, header, data, after) {
+            this.render = function (container, data, after) {
                 var hl = header.length;
 
                 data.sort(function (a, b) {
@@ -4363,11 +4385,12 @@ function qstatistics_begin(EMBEDDED) {
                     return 0;
                 });
 
-                var str = '<timeline></timeline><table cellpadding="0" cellspacing="0"><thead><tr class="head" style="text-transform: capitalize; cursor: pointer"><th>' + header.join('</th><th>') + '</th></tr></thead><tbody>';
+                var str = '<timeline></timeline><table cellpadding="0" cellspacing="0"><thead><tr class="head" style="cursor: pointer"><th>' + ['Name', 'Total Available', 'Total Break', 'Total Lunch', 'Total unavailable'].join('</th><th>') + '</th></tr></thead><tbody>';
                 for (var i = 0, n = data.length; i < n; i++) {
-                    str += '<tr><td>' + data[i].slice(0, 2).join('</td><td>');
-                    for (var j = 2; j < hl; j++) {
-                        str += '<td>' + UTILS.timeFormat(data[i][j], 4) + '</td>';
+                    var row = data[i];
+                    str += '<tr><td>' + row[0] + '</td>';
+                    for (var j = 1; j < 5; j++) {
+                        str += '<td>' + UTILS.timeFormat(row[j], 4) + '</td>';
                     }
                     str += '</tr>';
                 }
@@ -4391,7 +4414,7 @@ function qstatistics_begin(EMBEDDED) {
                                 sortOrder = 1;
                             }
 
-                            that.render(container, header, data, after);
+                            that.render(container, data, after);
                         }
                     })(i);
                 }
@@ -4783,7 +4806,7 @@ function qstatistics_begin(EMBEDDED) {
         CONFIG.timeformat = '24';
     }
     moment.tz.setDefault(CONFIG.timezone);
-    var SAME_TZ = (new Date()).getTimezoneOffset() === -moment().utcOffset();      // same timezone
+    var TIMEZONE_DIFF = (new Date()).getTimezoneOffset() + moment().utcOffset();      // same timezone
 
     var reportServers = [];
 
