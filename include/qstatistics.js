@@ -132,6 +132,15 @@ function qstatistics_begin(EMBEDDED) {
             colsCount = columnNames.length,  // == columnTitles????
 
             // todo define constants for all other columns (currently we have magic numbers)
+           // COL_inbound = 5,
+            COL_inboundA = 6,
+            COL_inboundB = 7,
+           // COL_internal = 8,
+            COL_internalA = 9,
+            COL_internalB = 10,
+           // COL_outbound = 11,
+            COL_outboundA = 12,
+            COL_outboundB = 13,
             COL_timeStart = 14,
             COL_talkMin = 18,
             COL_totalMin = 22,
@@ -314,13 +323,6 @@ function qstatistics_begin(EMBEDDED) {
                     end = undefined;
                 }
 
-
-                // when first event is logoff, and it is inside bounds, then virtually add login event before it
-                if (event && event.isLogin && event.time >= periodStart) {
-                    start = periodStart;
-                    status = 'unavailable';
-                }
-
                 while (event && event.time < periodEnd) {
                     if (!event.isLogin) {
                         if (start && !end) {                            // because there can go 2 logouts one after another
@@ -328,7 +330,12 @@ function qstatistics_begin(EMBEDDED) {
                             recordEvent();
                         }
                         start = event.time;
-                        status = event.status;
+                        if (CONFIG.agentstatus === '0' || CONFIG.agentstatus === undefined) {
+                            status = event.isLogin ? 'available' : 'unavailable';
+                        }
+                        else {
+                            status = event.status;
+                        }
                         end = undefined;                                // there can be several subsequent logins and logouts
                     }
                     else if (start) {
@@ -380,13 +387,6 @@ function qstatistics_begin(EMBEDDED) {
                         },
                         tableDataRow = [agentName];
 
-                    if (a == 0) {
-                        googleData.push([agentName, '', st, st]);
-                        if (googleColors.indexOf('#f5f5f5') === -1) {
-                            googleColors.push('#f5f5f5');
-                        }
-                    }
-
                     for (var i = 0; i < reasons.length; i++) {
                         var reason = reasons[i];
 
@@ -398,42 +398,43 @@ function qstatistics_begin(EMBEDDED) {
                     }
 
                     if (!reasons.length) {
-                        googleData.push([agentName, '', st, st]);
-                        if (googleColors.indexOf('#f5f5f5') === -1) {
-                            googleColors.push('#f5f5f5');
+                        googleData.push([agentName, '', en, en]);
+                        if (googleColors.indexOf('#d3d3d3') === -1) {
+                            googleColors.push('#d3d3d3');
                         }
                     }
 
                     for (i in reasonSum) {
                         reasonSum.unavailable += reasonSum.break + reasonSum.lunch;
-                        tableDataRow.push(END - START - reasonSum.unavailable, reasonSum.break, reasonSum.lunch, reasonSum.unavailable);
+                        tableDataRow.push(now_END - START - reasonSum.unavailable, reasonSum.break, reasonSum.lunch, reasonSum.unavailable);
                     }
 
                     tableData.push(tableDataRow);
                 }
 
-                if (agents.length) {
-                    googleData.push([agentName, '', en, en]);
-                }
+                if (a !== undefined) {                // non empty agents
+                    SORTABLE.render(container, tableData, function () {
+                        var chart = new google.visualization.Timeline(container.children[0]);
+                        var dataTable = new google.visualization.DataTable();
+                        dataTable.addColumn({type: 'string', id: 'Name'});
+                        dataTable.addColumn({type: 'string', id: 'Status'});
+                        dataTable.addColumn({type: 'date', id: 'Start'});
+                        dataTable.addColumn({type: 'date', id: 'End'}); // todo adjust timezone
+                        dataTable.addRows(googleData);
+                        chart.draw(dataTable, {
+                            colors: googleColors,
+                            hAxis: {
+                                minValue: st,
+                                maxValue: en
+                            }
+                        });
 
-                SORTABLE.render(container, tableData, function() {
-                    var chart = new google.visualization.Timeline(container.children[0]);
-                    var dataTable = new google.visualization.DataTable();
-                    dataTable.addColumn({type: 'string', id: 'Name'});
-                    dataTable.addColumn({type: 'string', id: 'Status'});
-                    dataTable.addColumn({type: 'date', id: 'Start'});
-                    dataTable.addColumn({type: 'date', id: 'End'}); // todo adjust timezone
-                    dataTable.addRows(googleData);
-                    chart.draw(dataTable, {
-                        colors: googleColors
+                        that.chart = chart;
                     });
-
-                    var gTagChildren = container.getElementsByTagName('svg')[0].children[4].children;
-                    gTagChildren[0].style.display = 'none';
-                    gTagChildren[gTagChildren.length - 1].style.display = 'none';
-
-                    that.chart = chart;
-                });
+                }
+                else {
+                    container.innerHTML = '<h1 style="color: gray; text-align: center; margin-top: 2em"> No Agents </h1>'
+                }
             }
         }
 
@@ -1872,7 +1873,18 @@ function qstatistics_begin(EMBEDDED) {
                                 }
                             }
                             else {
-                                var divide = tblRow.total;
+                                if (i1 === COL_inboundA || i1 === COL_inboundB) {
+                                    divide = tblRow.inbound;
+                                }
+                                else if (i1 === COL_outboundA || i1 === COL_outboundB) {
+                                    divide = tblRow.outbound;
+                                }
+                                else if (i1 === COL_internalA || i1 === COL_internalB) {
+                                    divide = tblRow.internal;
+                                }
+                                else {
+                                    var divide = tblRow.total;
+                                }
                                 perc = divide ? Math.round(100 * tblRow[j0] / divide) : '';
                             }
 
@@ -2104,6 +2116,9 @@ function qstatistics_begin(EMBEDDED) {
                 row.calls = [];
             }
             row.total = 0;
+            row.inbound = 0;
+            row.outbound = 0;
+            row.internal = 0;
             row.hasLIT = false;
 
             return row;
@@ -2113,6 +2128,9 @@ function qstatistics_begin(EMBEDDED) {
         function newShallowRow(call) {
             var row = new Array(colPosLength);
             row.call = call;
+            row.inbound = 0;
+            row.outbound = 0;
+            row.internal = 0;
             return row;
         }
 
@@ -2167,9 +2185,18 @@ function qstatistics_begin(EMBEDDED) {
 
                 // shallow only
                 rowToAdd.total++;
+                if (row.inbound) {
+                    rowToAdd.inbound++;
+                }
+                if (row.outbound) {
+                    rowToAdd.outbound++;
+                }
+                if (row.internal) {
+                    rowToAdd.internal++;
+                }
                 for (var i = 1; i < colPosLength; i++) {
                     if (row[i]) {
-                        rowToAdd[i]++;
+                        rowToAdd[i]++;                  // shallow only
                         mri[i].push(row.call);
                     }
                 }
@@ -2252,6 +2279,7 @@ function qstatistics_begin(EMBEDDED) {
             isInbound = stype === external || stype === local;
             if (isInbound) {
                 addInfo(row, call, 5, repeatCount);
+                row.inbound += repeatCount;
             }
             // inbound answered
             if (isInbound && answered) {
@@ -2265,6 +2293,7 @@ function qstatistics_begin(EMBEDDED) {
             isInternal = stype !== external && stype !== local && dtype !== external && dtype !== local;
             if (isInternal) {
                 addInfo(row, call, 8, repeatCount);
+                row.internal += repeatCount;
             }
             // internal answered
             if (isInternal && answered) {
@@ -2278,6 +2307,7 @@ function qstatistics_begin(EMBEDDED) {
             isOutbound = dtype === external || dtype === local;
             if (isOutbound) {
                 addInfo(row, call, 11, repeatCount);
+                row.outbound += repeatCount;
             }
             // outbound answered
             if (isOutbound && answered) {
@@ -2509,14 +2539,17 @@ function qstatistics_begin(EMBEDDED) {
                     for (var i = COL_timeStart; i < COL_timeEnd; i++) {
                         if (visibleCols[i]) {
                             pos = colPos[i];
-                            colSum[pos] = map[i];
+                            totalRow[pos] = map[i];
                         }
                     }
                 }
 
-                colSum.total = totalCallsCount;
-                colSum.totalTime = reportDuration;
-                table.push(colSum);
+                totalRow.total = totalCallsCount;
+                totalRow.inbound = totalInboundCount;
+                totalRow.outbound = totalOutboundCount;
+                totalRow.internal = totalInternalCount;
+                totalRow.totalTime = reportDuration;
+                table.push(totalRow);
             }
 
 
@@ -2532,18 +2565,21 @@ function qstatistics_begin(EMBEDDED) {
                 sumTotal = 0,
                 totalAnswered = 0,
                 totalCallsCount = 0,
+                totalInboundCount = 0,
+                totalOutboundCount = 0,
+                totalInternalCount = 0,
                 showTotal = options.totalrow,
                 period0 = options.period === 0;
 
             if (showTotal) {
-                var colSum = new Array(colPosLength);
-                colSum.info = [];
-                colSum.intervals = [[START, now_END]];
+                var totalRow = new Array(colPosLength);
+                totalRow.info = [];
+                totalRow.intervals = [[START, now_END]];
 
                 for (var j = 1; j < colPosLength; j++) {
-                    colSum[j] = 0;
+                    totalRow[j] = 0;
                 }
-                colSum[0] = 'Total';
+                totalRow[0] = 'Total';
             }
 
             for (var i = 0, tblLength = table.length; i < tblLength; i++) {
@@ -2555,11 +2591,14 @@ function qstatistics_begin(EMBEDDED) {
 
                 if (showTotal) {
                     for (j = 1; j < colPosLength; j++) {
-                        colSum[j] += row[j];
+                        totalRow[j] += row[j];
                     }
 
-                    colSum.hasLIT |= row.hasLIT;
+                    totalRow.hasLIT |= row.hasLIT;
                     totalCallsCount += row.total;
+                    totalInboundCount += row.inbound;
+                    totalOutboundCount += row.outbound;
+                    totalInternalCount += row.internal;
                 }
 
                 if (period0) {
@@ -3053,6 +3092,8 @@ function qstatistics_begin(EMBEDDED) {
 
             menuButtons = document.getElementById('right-menu').children;
             containerClientWidth = container.clientWidth;
+            var img = new Image();
+            img.src = '/local/qstatistics/include/img/ajax.gif';
         }
 
 
@@ -3136,7 +3177,7 @@ function qstatistics_begin(EMBEDDED) {
             if (menuButtons) {
                 for (var i = 0, n = menuButtons.length; i < n; i++) {
                     if (i === n - 1) {
-                        var disabled = options.type === 'table';  // don't show PNG if type === 'table'
+                        var disabled = (options.type === 'table' || options.type === 'reasons');  // don't show PNG if type === 'table'
                     }
                     else {
                         disabled = false;
@@ -3873,7 +3914,7 @@ function qstatistics_begin(EMBEDDED) {
                     alert('The start time cannot be in the future.');
                     // todo, this case should be made more friendly
                     stopPolling = true;
-                    SERVER.hidePreloader();
+                    hidePreloader();
                     throw 'start > now';
                 }
 
@@ -3936,21 +3977,24 @@ function qstatistics_begin(EMBEDDED) {
                 }
 
                 if (!xhr && !stopPolling && !document.hidden && requestEnd >= requestStart/* && requestStart < Date.now() / 1000*/) {
-                    var request = '?_username=' + encodedUsername + ';_password=' + encodedPassword + ';start=' + requestStart + ';end=' + requestEnd + ';recursive=' + options.recursive + ';id=' + (options.id || 0) + ';refresh=' + (CONFIG.refresh);
+                    var request = '?_username=' + encodedUsername + ';_password=' + encodedPassword + ';start=' + requestStart + ';end=' + requestEnd + (isFirstRequest ? ';first=1' : '') + ';recursive=' + options.recursive + ';id=' + (options.id || 0) + ';refresh=' + (CONFIG.refresh);
                     xhr = UTILS.get(request,
                         function (r) {
                             xhr = null;
+                            hidePreloader();
                             if (response(r)) {
                                 success && success();
                                 polling && polling();
                             }
                         }, function () {    // on error, poll again
                             xhr = null;
+                            hidePreloader();
                             error && error();
                             polling && polling();
                         });
                 }
                 else {
+                    hidePreloader();
                     error && error();
                 }
             };
@@ -4009,6 +4053,9 @@ function qstatistics_begin(EMBEDDED) {
                     if (!isFirstRequest) {
                         createReport();
                     }
+                    else {
+                        showPreloader();
+                    }
                 }
                 else if (!preloader) {                                  // clearly, otherwise display a spinner
                     showPreloader();
@@ -4020,8 +4067,6 @@ function qstatistics_begin(EMBEDDED) {
 
 
             function response(response) {
-                that.hidePreloader();
-
                 var json = JSON.parse(response);
 
                 // break polling loop on error
@@ -4085,12 +4130,12 @@ function qstatistics_begin(EMBEDDED) {
             }
 
 
-            this.hidePreloader = function () {
+            function hidePreloader() {
                 if (preloader) {
                     container.removeChild(preloader);
                     preloader = false;
                 }
-            };
+            }
 
 
             if (!EMBEDDED) {
@@ -4484,7 +4529,7 @@ function qstatistics_begin(EMBEDDED) {
                 }
                 upToDate[nextSlideIndex] = true;
 
-                goPng.disabled = nextType === 'table';
+                goPng.disabled = (nextType === 'table' || nextType === 'reasons');
                 pieSourceChooser.style.display = nextType === 'piechart' ? '' : 'none';
                 byId('go-' + nextType).className = 'active';
                 toggleLROverlay(nextType);
@@ -4716,8 +4761,6 @@ function qstatistics_begin(EMBEDDED) {
             if (CONFIG && CONFIG.agentstatus === '0') {
                 result.breaktime = 0;
                 result.lunchtime = 0;
-                byId('breaktime').parentNode.parentNode.style.display = 'none';
-                byId('lunchtime').parentNode.parentNode.style.display = 'none';
             }
             return result;
         };
