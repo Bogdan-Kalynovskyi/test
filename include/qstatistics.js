@@ -330,11 +330,10 @@ function qstatistics_begin(EMBEDDED) {
                             recordEvent();
                         }
                         start = event.time;
-                        if (CONFIG.agentstatus === '0' || CONFIG.agentstatus === undefined) {
-                            status = event.isLogin ? 'available' : 'unavailable';
-                        }
-                        else {
+                        if (CONFIG.agentstatus === '1') {
                             status = event.status;
+                        } else {
+                            status = event.isLogin ? 'available' : 'unavailable';
                         }
                         end = undefined;                                // there can be several subsequent logins and logouts
                     }
@@ -351,8 +350,8 @@ function qstatistics_begin(EMBEDDED) {
                     event = this.events[i];
                 }
 
-                if (start && start < periodEnd && !end) {               // unfinished pair in bounds, agent is still logged in
-                    end = Math.min(Date.now() / 1000, periodEnd);
+                if (start && !end) {                                // unfinished pair in bounds
+                    end = Math.min(now_END, periodEnd);
                     recordEvent();
                 }
 
@@ -362,7 +361,37 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function Reasons() {
-            var that = this;
+            var that = this,
+                as = CONFIG.agentstatus === '1';
+
+            function collectEvents(events, agentName) {
+                var info = as ? [null, [], [], [], []] : [null, [], []];
+
+                for (var i = 0, n = events.length; i < n; i++) {
+                    var ev = events[i];
+                    ev.name = agentName;
+
+                    if (ev.status === 'available') {
+                        info[1].push(ev);
+                    }
+                    else {
+                        if (as) {
+                            if (ev.status === 'break') {
+                                info[2].push(ev);
+                            }
+                            else if (ev.status === 'lunch') {
+                                info[3].push(ev);
+                            }
+                            info[4].push(ev);
+                        }
+                        else {
+                            info[2].push(ev);
+                        }
+                    }
+                }
+                return info;
+            }
+
 
             this.render = function (container) {
                 var googleData = [],
@@ -376,6 +405,11 @@ function qstatistics_begin(EMBEDDED) {
                     st = new Date((START - TIMEZONE_DIFF) * 1000),
                     en = new Date((END - TIMEZONE_DIFF) * 1000);
 
+                if (options.totalrow) {
+                    var totalRow = ['Total', 0, 0, 0, 0],
+                    tri = totalRow.info = [null, [], [], [], []];
+                }
+
                 for (var a in usedAgents) {
                     var agent = agents[usedAgents[a]],
                         agentName = phoneTitleDisplay(agent),
@@ -385,7 +419,7 @@ function qstatistics_begin(EMBEDDED) {
                             lunch: 0,
                             unavailable: 0
                         },
-                        tableDataRow = [agentName];
+                        tableDataRow;
 
                     for (var i = 0; i < reasons.length; i++) {
                         var reason = reasons[i];
@@ -404,12 +438,27 @@ function qstatistics_begin(EMBEDDED) {
                         }
                     }
 
-                    for (i in reasonSum) {
-                        reasonSum.unavailable += reasonSum.break + reasonSum.lunch;
-                        tableDataRow.push(now_END - START - reasonSum.unavailable, reasonSum.break, reasonSum.lunch, reasonSum.unavailable);
+                    reasonSum.unavailable += reasonSum.break + reasonSum.lunch;
+                    if (as) {
+                        tableDataRow = [agentName, now_END - START - reasonSum.unavailable, reasonSum.break, reasonSum.lunch, reasonSum.unavailable];
+                    }
+                    else {
+                        tableDataRow = [agentName, now_END - START - reasonSum.unavailable, reasonSum.unavailable];
+                    }
+                    tableDataRow.info = collectEvents(agent.events, agentName);
+
+                    if (totalRow) {
+                        for (var j = 1, m = tableDataRow.length; j < m; j++) {
+                            totalRow[j] += tableDataRow[j];
+                            tri[j].push.apply(tri[j], tableDataRow.info[j]);
+                        }
                     }
 
                     tableData.push(tableDataRow);
+                }
+
+                if (totalRow) {
+                    tableData.push(totalRow);
                 }
 
                 if (a !== undefined) {                // non empty agents
@@ -1087,7 +1136,7 @@ function qstatistics_begin(EMBEDDED) {
 
                     START += delta;
                     END = rightTime + delta;
-                    now_END = Math.min(Date.now() / 1000 + 1, END);
+                    now_END = Math.min(now + 1, END);
 
                     changeChartRange();
                 }
@@ -2040,22 +2089,22 @@ function qstatistics_begin(EMBEDDED) {
         }
 
 
-        function phoneTitleDisplay(arrEl) {
+        function phoneTitleDisplay(call) {
             switch (options.phonetitle) {
                 case 'name':
-                    return arrEl.name;
+                    return call.name;
                 case 'description':
-                    return arrEl.description || arrEl.name;
+                    return call.description || call.name;
                 case 'internal':
-                    return arrEl.callerid_internal;
+                    return call.callerid_internal;
                 case 'name_description':
-                    return arrEl.name + ' ' + (arrEl.description || arrEl.name);
+                    return call.name + ' ' + (call.description || call.name);
                 case 'internal_description':
-                    return arrEl.callerid_internal + ' ' + (arrEl.description || arrEl.name);
+                    return call.callerid_internal + ' ' + (call.description || call.name);
                 case 'description_name':
-                    return (arrEl.description || arrEl.name) + ' ' + arrEl.name;
+                    return (call.description || call.name) + ' ' + call.name;
                 case 'description_internal':
-                    return (arrEl.description || arrEl.name) + ' ' + arrEl.callerid_internal;
+                    return (call.description || call.name) + ' ' + call.callerid_internal;
             }
         }
 
@@ -3588,16 +3637,13 @@ function qstatistics_begin(EMBEDDED) {
                 }
                 new Popup(row, j);
             }
-            else if (!isAgentStatusCol(orig)) {
-                new Popup(row, j);
-            }
             else {
-                new Popup(row, j, true);
+                new Popup(row, j, isAgentStatusCol(orig));
             }
         }
 
 
-        function Popup(tblRow, col, isLoggedInTime) {
+        function Popup(tblRow, col, isLoggedInTime, isAvailabilityReport) {
             var overlay,
                 modal,
                 theadTh,
@@ -3718,22 +3764,46 @@ function qstatistics_begin(EMBEDDED) {
                 filenameCsv = 'Available time.csv';
                 headlineCsv = 'Agent,Time,Event\r\n';
                 theadHtml = '<th>Agent</th><th>Time</th><th>Event</th>';
-                var intervals = tblRow.intervals || [[START, now_END]];
 
-                for (var j = 0, m = intervals.length; j < m; j++) {
+                if (isAvailabilityReport) {
+                    for (var ii = 0, nn = info.length; ii < nn; ii++) {
+                        var ev = info[ii],
+                            time = ev.time;
+                        if (time >= START && time < END) {
+                            row = [ev.name, time, capitalise(ev.status)];
+                            callsTbl.push(row);
+                        }
+                    }
+                }
 
-                    var interval = intervals[j];
-                    for (i = 0, n = info.length; i < n; i++) {
-                        var el = info[i].E.events;
-                        for (var ii = 0, nn = el.length; ii < nn; ii++) {
-                            var time = el[ii].time;
-                            if (time >= interval[0] && time < interval[1]) {
-                                row = [info[i].name, time, capitalise(el[ii].status)];
-                                callsTbl.push(row);
+                else {
+                    var intervals = tblRow.intervals || [[START, now_END]];
+                    for (var j = 0, m = intervals.length; j < m; j++) {
+                        var interval = intervals[j];
+
+                        for (i = 0, n = info.length; i < n; i++) {
+                            var call = info[i],
+                                name = phoneTitleDisplay(call),
+                                events = call.E.events;
+
+                            for (var ii = 0, nn = events.length; ii < nn; ii++) {
+                                var ev = events[ii];
+                                    time = ev.time;
+                                if (time >= interval[0] && time < interval[1]) {
+                                    if (col === COL_breakTime && ev.status !== 'break') {
+                                        continue;
+                                    }
+                                    if (col === COL_lunchTime && ev.status !== 'lunch') {
+                                        continue;
+                                    }
+                                    row = [name, time, capitalise(ev.status)];
+                                    callsTbl.push(row);
+                                }
                             }
                         }
                     }
                 }
+
                 callsTbl.sort(function (a, b) {
                     return a[1] - b[1];
                 });
@@ -3977,7 +4047,16 @@ function qstatistics_begin(EMBEDDED) {
                 }
 
                 if (!xhr && !stopPolling && !document.hidden && requestEnd >= requestStart/* && requestStart < Date.now() / 1000*/) {
-                    var request = '?_username=' + encodedUsername + ';_password=' + encodedPassword + ';start=' + requestStart + ';end=' + requestEnd + (isFirstRequest ? ';first=1' : '') + ';recursive=' + options.recursive + ';id=' + (options.id || 0) + ';refresh=' + (CONFIG.refresh);
+                    var request =
+                        '?_username=' + encodedUsername +
+                        ';_password=' + encodedPassword +
+                        ';start=' + requestStart +
+                        ';end=' + requestEnd + (isFirstRequest ? ';first=1' : '') +
+                        ';recursive=' + options.recursive +
+                        ';id=' + (options.id || 0) +
+                        ';refresh=' + (CONFIG.refresh) +
+                        ';qstatistics=' + (options.abandon !== '0' || options.noagent !== '0' || options.timeout !== '0' || options.keypress !== '0' || options.agent !== '0' || options.caller !== '0' || options.transfer !== '0' || options.logintime !== '0' || options.breaktime !== '0' || options.lunchtime !== '0' ? 1 : 0);
+
                     xhr = UTILS.get(request,
                         function (r) {
                             xhr = null;
@@ -4099,6 +4178,9 @@ function qstatistics_begin(EMBEDDED) {
                     }
 
                     isFirstRequest = false;
+                    setTimeout(function () {
+                        console.log('DONE');
+                    }, 20);
                     toggleButtons();
 
                     SERVER.addToBeginning = false;
@@ -4418,8 +4500,47 @@ function qstatistics_begin(EMBEDDED) {
                 sortOrder = 1;
 
             this.render = function (container, data, after) {
-                var hl = header.length;
 
+                function assignBodyEvents() {
+                    var tbody = container.children[1].children[1],
+                        mouseMoves = 0;
+
+                    tbody.addEventListener('mousedown', function () {
+                        mouseMoves = 0;
+                    });
+
+                    tbody.addEventListener('mousemove', function () {
+                        mouseMoves++;
+                    });
+
+                    tbody.addEventListener('mouseup', function (evt) {
+                        if (mouseMoves < 3) {
+                            var target = evt.target;
+                            var row = target.parentNode,
+                                bc = tbody.children;
+                            for (var i = 0, n = bc.length; i < n; i++) {
+                                if (row === bc[i]) {
+                                    var rc = row.children;
+                                    for (var j = 1, m = rc.length; j < m; j++) {
+                                        if (target === rc[j]) {
+                                            break;
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+
+                            if (j !== m) {
+                                Popup(data[i], j, true, true); // todo ststus as index
+                            }
+                        }
+                    });
+                }
+
+
+                if (options.totalrow) {
+                    var totalRow = data.pop();
+                }
                 data.sort(function (a, b) {
                     if (a[sortingCol] < b[sortingCol]) {
                         return -sortOrder;
@@ -4429,12 +4550,19 @@ function qstatistics_begin(EMBEDDED) {
                     }
                     return 0;
                 });
+                if (options.totalrow) {
+                    data.push(totalRow);
+                }
 
-                var str = '<timeline></timeline><table cellpadding="0" cellspacing="0"><thead><tr class="head" style="cursor: pointer"><th>' + ['Name', 'Total Available', 'Total Break', 'Total Lunch', 'Total unavailable'].join('</th><th>') + '</th></tr></thead><tbody>';
+
+                var columns = (CONFIG.agentstatus === '1') ? ['Name', 'Total Available', 'Total Break', 'Total Lunch', 'Total unavailable'] : ['Name', 'Total Available', 'Total unavailable'],
+                    cl = columns.length,
+                    str = '<timeline></timeline><table cellpadding="0" cellspacing="0"><thead><tr class="head" style="cursor: pointer"><th>' + columns.join('</th><th>') + '</th></tr></thead><tbody>';
+
                 for (var i = 0, n = data.length; i < n; i++) {
                     var row = data[i];
                     str += '<tr><td>' + row[0] + '</td>';
-                    for (var j = 1; j < 5; j++) {
+                    for (var j = 1; j < cl; j++) {
                         str += '<td>' + UTILS.timeFormat(row[j], 4) + '</td>';
                     }
                     str += '</tr>';
@@ -4447,6 +4575,8 @@ function qstatistics_begin(EMBEDDED) {
                 headerChildren[Math.abs(sortCol)].className = (sortOrder > 0) ? 'asc' : 'desc';
 
                 after();
+
+                assignBodyEvents();
 
                 for (i = 0, n = headerChildren.length; i < n; i++) {
                     headerChildren[i].onclick = (function (i) {
