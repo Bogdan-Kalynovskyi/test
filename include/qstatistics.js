@@ -163,9 +163,12 @@ function qstatistics_begin(EMBEDDED) {
             KEY_holdtime = 11,
             KEY_talktime = 12,
             KEY_totaltime = 13,
-            KEY_queuestatus = 14,
-            KEY_cost = 15,
-            KEY_symbol = 16;
+            KEY_queuestatus = 14;
+
+        var STATUS_avail = 0,
+            STATUS_break = 1,
+            STATUS_lunch = 2,
+            STATUS_unavail = 3;
 
 
         options.type = options.type || 'table';
@@ -202,7 +205,9 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function QAgentEvents() {
-            this.events = [];            // is always kept sorted
+            this.events = [];
+
+            var as = CONFIG.agentstatus === '1';            // is always kept sorted
 
 
             // Sort array of objects by .time
@@ -216,15 +221,29 @@ function qstatistics_begin(EMBEDDED) {
                 var isChanged = false;
 
                 for (var i = 0, n = arr.length; i < n; i++) {
-                    var el = arr[i],
+                    var ev = arr[i],
                         event = {
-                        time: +el.time,
-                        status: el.status,
-                        isLogin: el.event === 'agentlogin'
+                        time: +ev.time,
+                        status: STATUS_avail
                     };
 
+                    if (as) {
+                        if (ev.status === 'break') {
+                            event.status = STATUS_break;
+                        }
+                        else if (ev.status === 'lunch') {
+                            event.status = STATUS_lunch;
+                        }
+                        else if (ev.status === 'unavailable') {
+                            event.status = STATUS_unavail;
+                        }
+                    }
+                    else if (ev.status !== 'available') {
+                        event.status = STATUS_unavail;
+                    }
+
                     for (var j = this.events.length - 1; j >= 0; j--) {
-                        if (this.events[j].time === event.time && this.events[j].isLogin === event.isLogin) {
+                        if (this.events[j].time === event.time && this.events[j].status === event.status) {
                             event = null;
                             break;
                         }
@@ -244,70 +263,16 @@ function qstatistics_begin(EMBEDDED) {
             };
 
 
-            // Calculates Available time in period between periodStart and periodEnd.
-            // Tricky thing is to group events into login-logout pairs.
-            // this.loggedTime = function (periodStart, periodEnd) {
-            //     var start,              // start and end of logged in period,
-            //         end,                // is composed out of a pair of events.
-            //         i = 0,
-            //         total = 0,
-            //         event = this.events[0];
-            //
-            //     function clear() {
-            //         start = undefined;
-            //         end = undefined;
-            //     }
-            //
-            //
-            //     if (event && event.time === 0) {
-            //         debugger;
-            //     }
-            //
-            //     // when first event is logoff, and it is inside bounds, then virtually add login event before it
-            //     if (event && !event.isLogin && event.time >= periodStart) {
-            //         start = periodStart;
-            //     }
-            //
-            //     while (event && event.time < periodEnd) {
-            //         if (event.isLogin) {
-            //             if (!start) {
-            //                 start = event.time;
-            //             }
-            //             end = undefined;  // be careful, there can be several subsequent logins and logouts
-            //         }
-            //         else {
-            //             end = event.time;
-            //         }
-            //
-            //         if (end <= periodStart) {                           // completely out of bounds
-            //             clear();
-            //         }
-            //         else if (start && end) {                            // gathered a pair, which is at least partially in bounds
-            //             total += Math.min(periodEnd, end) - Math.max(periodStart, start);
-            //             clear();
-            //         }
-            //
-            //         i++;
-            //         event = this.events[i];
-            //     }
-            //
-            //     if (start && start < periodEnd && !end) {               // unfinished pair in bounds, agent is still logged in
-            //         total += Math.min(Date.now() / 1000, periodEnd) - Math.max(periodStart, start);
-            //     }
-            //
-            //     return total;
-            // };
-
-
-            this.unavailReasons = function (periodStart, periodEnd) {
+            this.reasons = function (periodStart, periodEnd) {
                 var start,              // start and end of logged in period,
                     end,                // is composed out of a pair of events.
-                    i = 0,
-                    event = this.events[0],
+                    i = 1,
                     status,
+                    event = this.events[0],
                     reasons = [];
 
-                function recordEvent() {
+
+                function try2RecordEvent() {
                     if (end > periodStart) {
                         start = Math.max(periodStart, start);
                         reasons.push({
@@ -318,41 +283,25 @@ function qstatistics_begin(EMBEDDED) {
                     }
                 }
 
-                function clear() {
-                    start = undefined;
-                    end = undefined;
-                }
 
-                while (event && event.time < periodEnd) {
-                    if (!event.isLogin) {
-                        if (start && !end) {                            // because there can go 2 logouts one after another
-                            end = event.time;
-                            recordEvent();
-                        }
-                        start = event.time;
-                        if (CONFIG.agentstatus === '1') {
-                            status = event.status;
-                        } else {
-                            status = event.isLogin ? 'available' : 'unavailable';
-                        }
-                        end = undefined;                                // there can be several subsequent logins and logouts
-                    }
-                    else if (start) {
+                if (event) {
+                    start = event.time;
+                    status = event.status;
+                    event = this.events[1];
+
+                    while (event && event.time < periodEnd) {
                         end = event.time;
+                        try2RecordEvent();
+
+                        status = event.status;
+                        start = end;
+
+                        i++;
+                        event = this.events[i];
                     }
 
-                    if (start && end) {                                 // gathered a pair, which is at least partially in bounds
-                        recordEvent();
-                        clear();
-                    }
-
-                    i++;
-                    event = this.events[i];
-                }
-
-                if (start && !end) {                                // unfinished pair in bounds
                     end = Math.min(now_END, periodEnd);
-                    recordEvent();
+                    try2RecordEvent();
                 }
 
                 return reasons;
@@ -365,27 +314,30 @@ function qstatistics_begin(EMBEDDED) {
                 as = CONFIG.agentstatus === '1';
 
             function collectEvents(events, agentName) {
-                var info = as ? [null, [], [], [], []] : [null, [], []];
+                var info = as ? [[], [], [], [], []] : [[], [], []];
 
                 for (var i = 0, n = events.length; i < n; i++) {
                     var ev = events[i];
-                    ev.name = agentName;
+                    if (ev.time >= START && ev.time < END) {
+                        ev.name = agentName;
 
-                    if (ev.status === 'available') {
-                        info[1].push(ev);
-                    }
-                    else {
-                        if (as) {
-                            if (ev.status === 'break') {
-                                info[2].push(ev);
-                            }
-                            else if (ev.status === 'lunch') {
-                                info[3].push(ev);
-                            }
-                            info[4].push(ev);
+                        info[0].push(ev);
+                        if (ev.status === STATUS_avail) {
+                            info[1].push(ev);
                         }
                         else {
-                            info[2].push(ev);
+                            if (as) {
+                                if (ev.status === STATUS_break) {
+                                    info[2].push(ev);
+                                }
+                                else if (ev.status === STATUS_lunch) {
+                                    info[3].push(ev);
+                                }
+                                info[4].push(ev);
+                            }
+                            else {
+                                info[2].push(ev);
+                            }
                         }
                     }
                 }
@@ -396,7 +348,14 @@ function qstatistics_begin(EMBEDDED) {
             this.render = function (container) {
                 var googleData = [],
                     googleColors = [],
+                    statusMap = {
+                        0: 'available',
+                        1: 'break',
+                        2: 'lunch',
+                        3: 'unavailable'
+                    },
                     colorsMap = {
+                        available: 'green',
                         break: 'red',
                         lunch: 'blue',
                         unavailable: 'orange'
@@ -407,26 +366,23 @@ function qstatistics_begin(EMBEDDED) {
 
                 if (options.totalrow) {
                     var totalRow = ['Total', 0, 0, 0, 0],
-                    tri = totalRow.info = [null, [], [], [], []];
+                    tri = totalRow.info = [[], [], [], [], []];
                 }
 
                 for (var a in usedAgents) {
                     var agent = agents[usedAgents[a]],
                         agentName = phoneTitleDisplay(agent),
-                        reasons = agent.E.unavailReasons(START, END),
-                        reasonSum = {
-                            break: 0,
-                            lunch: 0,
-                            unavailable: 0
-                        },
+                        reasons = agent.E.reasons(START, END),
+                        reasonSum = [0, 0, 0, 0],
                         tableDataRow;
 
                     for (var i = 0; i < reasons.length; i++) {
-                        var reason = reasons[i];
+                        var reason = reasons[i],
+                            status = statusMap[reason.status];
 
-                        googleData.push([agentName, reason.status, new Date((reason.start - TIMEZONE_DIFF) * 1000), new Date((reason.end - TIMEZONE_DIFF) * 1000)]);
-                        if (googleColors.indexOf(colorsMap[reason.status]) === -1) {
-                            googleColors.push(colorsMap[reason.status]);
+                        googleData.push([agentName, status, new Date((reason.start - TIMEZONE_DIFF) * 1000), new Date((reason.end - TIMEZONE_DIFF) * 1000)]);
+                        if (googleColors.indexOf(colorsMap[status]) === -1) {
+                            googleColors.push(colorsMap[status]);
                         }
                         reasonSum[reason.status] += reason.end - reason.start;
                     }
@@ -438,18 +394,20 @@ function qstatistics_begin(EMBEDDED) {
                         }
                     }
 
-                    reasonSum.unavailable += reasonSum.break + reasonSum.lunch;
+                    reasonSum[3] += reasonSum[1] + reasonSum[2];
                     if (as) {
-                        tableDataRow = [agentName, now_END - START - reasonSum.unavailable, reasonSum.break, reasonSum.lunch, reasonSum.unavailable];
+                        tableDataRow = [agentName, now_END - START - reasonSum[3], reasonSum[1], reasonSum[2], reasonSum[3]];
                     }
                     else {
-                        tableDataRow = [agentName, now_END - START - reasonSum.unavailable, reasonSum.unavailable];
+                        tableDataRow = [agentName, now_END - START - reasonSum[3], reasonSum[3]];
                     }
-                    tableDataRow.info = collectEvents(agent.events, agentName);
+                    tableDataRow.info = collectEvents(agent.E.events, agentName);
 
                     if (totalRow) {
-                        for (var j = 1, m = tableDataRow.length; j < m; j++) {
-                            totalRow[j] += tableDataRow[j];
+                        for (var j = 0, m = tableDataRow.length; j < m; j++) {
+                            if (j) {
+                                totalRow[j] += tableDataRow[j];
+                            }
                             tri[j].push.apply(tri[j], tableDataRow.info[j]);
                         }
                     }
@@ -3040,7 +2998,7 @@ function qstatistics_begin(EMBEDDED) {
                         }
 
                         if (dest === 'agents' && agentStatusColVisible) {
-                            var reasons = el.E.unavailReasons(periodStart || START, periodEnd || now_END),
+                            var reasons = el.E.reasons(periodStart || START, periodEnd || now_END),
                                 availTime = 0,
                                 breakTime = 0,
                                 lunchTime = 0,
@@ -3049,13 +3007,13 @@ function qstatistics_begin(EMBEDDED) {
                             for (var y = 0, yyy = reasons.length; y < yyy; y++) {
                                 var reason = reasons[y];
                                 switch (reason.status) {
-                                    case 'break':
+                                    case STATUS_break:
                                         breakTime += reason.end - reason.start;
                                         break;
-                                    case 'lunch':
+                                    case STATUS_lunch:
                                         lunchTime += reason.end - reason.start;
                                         break;
-                                    case 'unavailable':
+                                    case STATUS_unavail:
                                         unavailTime += reason.end - reason.start;
                                         break;
                                 }
@@ -3492,8 +3450,6 @@ function qstatistics_begin(EMBEDDED) {
                 }
                 originalTitle = options.name;
 
-                document.title = 'Call statistics :: ' + UTILS.escapeHtml(options.name);
-
                 var oldId = options.id;
                 UTILS.post(formEl.getAttribute('action'), UTILS.serialize(options, true), function (response) {
                     var id = response.getElementsByTagName('return')[0].getAttribute('id');
@@ -3501,6 +3457,8 @@ function qstatistics_begin(EMBEDDED) {
                     if (id !== oldId) {
                         window.history.pushState('', options.name, '//' + location.host + location.pathname + '?id=' + id);
                     }
+
+                    document.title = 'Call statistics :: ' + UTILS.escapeHtml(options.name);
                     onFormClean();
                     copyButtonClicked = false;
                 });
@@ -3649,8 +3607,14 @@ function qstatistics_begin(EMBEDDED) {
                 theadTh,
                 footTd,
                 row,
+                statusMap = {
+                    0: 'Available',
+                    1: 'Break',
+                    2: 'Lunch',
+                    3: 'Unavailable'
+                },
                 callsTbl = [],
-                theadHtml = '<th>Status<br/>Direction</th><th>Calling number<br/>Called number</th><th>Start<br/>End</th><th>Billable time<br/>Cost</th>',
+                theadHtml = '<th>Status<br>Direction</th><th>Calling number<br>Called number</th><th>Start<br>End</th><th>Total time<br>Billable time</th>',
                 tbodyHtml = '',
                 filenameCsv,
                 headlineCsv,
@@ -3687,7 +3651,7 @@ function qstatistics_begin(EMBEDDED) {
             if (!isLoggedInTime) {
                 if (info.length) {
                     filenameCsv = columnTitles[colOrig[col]] + '.csv';
-                    headlineCsv = 'Status,Direction,Calling type,Calling number,Called type,Called number,Start,End,Billable time,Cost,Call ID\r\n';
+                    headlineCsv = 'Status,Direction,Calling type,Calling number,Called type,Called number,Start,End,Total time,Billable time,Call ID\r\n';
 
                     var secondTable = [], row1;
 
@@ -3721,17 +3685,20 @@ function qstatistics_begin(EMBEDDED) {
                             calledNumber = capitalise(ctype);
                         }
 
+                        var v1 = moment.unix(call[KEY_start]).format(formatStr),
+                            v2 = moment.unix(call[KEY_end]).format(formatStr),
+                            v3 = UTILS.timeFormat(+call[KEY_totaltime], 2),
+                            v4 = UTILS.timeFormat(+call[KEY_talktime], 2);
+
                         row = [
                             call[KEY_answered] ? 'Answered' : 'Not answered',
                             destination,
-                            stype,
                             callingNumber,
-                            ctype,
                             calledNumber,
-                            moment.unix(call[KEY_start]).format(formatStr),
-                            moment.unix(call[KEY_end]).format(formatStr),
-                            UTILS.timeFormat(+call[KEY_talktime], 2),
-                            call[KEY_symbol] + call[KEY_cost],
+                            v1,
+                            v2,
+                            v3,
+                            v4,
                             call[KEY_callid]
                         ];
                         row1 = [
@@ -3741,17 +3708,17 @@ function qstatistics_begin(EMBEDDED) {
                             call[KEY_snumber],
                             ctype,
                             call[KEY_cnumber],
-                            moment.unix(call[KEY_start]).format(formatStr),
-                            moment.unix(call[KEY_end]).format(formatStr),
-                            UTILS.timeFormat(+call[KEY_talktime], 2),
-                            call[KEY_symbol] + call[KEY_cost],
+                            v1,
+                            v2,
+                            v3,
+                            v4,
                             call[KEY_callid]
                         ];
                         tbodyHtml += '<tr><td>' +
-                            row[0] + '</br>' + row[1] + '</td><td>' +
-                            row[3] + '</br>' + row[5] + '</td><td>' +
-                            row[6] + '</br>' + row[7] + '</td><td>' +
-                            row[8] + '</br>' + row[9] + '</td></tr>';
+                            row[0] + '<br>' + row[1] + '</td><td>' +
+                            row[2] + '<br>' + row[3] + '</td><td>' +
+                            row[4] + '<br>' + row[5] + '</td><td>' +
+                            row[6] + '<br>' + row[7] + '</td></tr>';
                         callsTbl.push(row);
                         secondTable.push(row1);
                     }
@@ -3770,7 +3737,7 @@ function qstatistics_begin(EMBEDDED) {
                         var ev = info[ii],
                             time = ev.time;
                         if (time >= START && time < END) {
-                            row = [ev.name, time, capitalise(ev.status)];
+                            row = [ev.name, time, statusMap[ev.status]];
                             callsTbl.push(row);
                         }
                     }
@@ -3790,13 +3757,13 @@ function qstatistics_begin(EMBEDDED) {
                                 var ev = events[ii];
                                     time = ev.time;
                                 if (time >= interval[0] && time < interval[1]) {
-                                    if (col === COL_breakTime && ev.status !== 'break') {
+                                    if (col === COL_breakTime && ev.status !== STATUS_break) {
                                         continue;
                                     }
-                                    if (col === COL_lunchTime && ev.status !== 'lunch') {
+                                    if (col === COL_lunchTime && ev.status !== STATUS_lunch) {
                                         continue;
                                     }
-                                    row = [name, time, capitalise(ev.status)];
+                                    row = [name, time, statusMap[ev.status]];
                                     callsTbl.push(row);
                                 }
                             }
@@ -4162,6 +4129,10 @@ function qstatistics_begin(EMBEDDED) {
                     var updateEnd = +json.updated,          // if updated does not go beyond END, polling will never stop
                         anythingChanged = addRecordsToDatabase(json);
 
+                    if (updateEnd > now_END) {
+                        now_END = updateEnd;
+                    }
+
                     minRecordedTime = Math.min(minRecordedTime, requestStart);
                     maxRecordedTime = Math.max(maxRecordedTime, Math.min(requestEnd, updateEnd));
 
@@ -4177,10 +4148,12 @@ function qstatistics_begin(EMBEDDED) {
                         createReport(isFirstRequest);
                     }
 
+                    if (isFirstRequest) {
+                        setTimeout(function () {
+                            console.log('DONE');
+                        }, 80);
+                    }
                     isFirstRequest = false;
-                    setTimeout(function () {
-                        console.log('DONE');
-                    }, 20);
                     toggleButtons();
 
                     SERVER.addToBeginning = false;
@@ -4521,7 +4494,7 @@ function qstatistics_begin(EMBEDDED) {
                             for (var i = 0, n = bc.length; i < n; i++) {
                                 if (row === bc[i]) {
                                     var rc = row.children;
-                                    for (var j = 1, m = rc.length; j < m; j++) {
+                                    for (var j = 0, m = rc.length; j < m; j++) {
                                         if (target === rc[j]) {
                                             break;
                                         }
@@ -4555,9 +4528,9 @@ function qstatistics_begin(EMBEDDED) {
                 }
 
 
-                var columns = (CONFIG.agentstatus === '1') ? ['Name', 'Total Available', 'Total Break', 'Total Lunch', 'Total unavailable'] : ['Name', 'Total Available', 'Total unavailable'],
+                var columns = (CONFIG.agentstatus === '1') ? ['Name', 'Available', 'Break', 'Lunch', 'Unavailable'] : ['Name', 'Available', 'Unavailable'],
                     cl = columns.length,
-                    str = '<timeline></timeline><table cellpadding="0" cellspacing="0"><thead><tr class="head" style="cursor: pointer"><th>' + columns.join('</th><th>') + '</th></tr></thead><tbody>';
+                    str = '<timeline></timeline><table cellpadding="0" cellspacing="0" style="cursor: pointer"><thead><tr class="head"><th>' + columns.join('</th><th>') + '</th></tr></thead><tbody>';
 
                 for (var i = 0, n = data.length; i < n; i++) {
                     var row = data[i];
@@ -4889,8 +4862,8 @@ function qstatistics_begin(EMBEDDED) {
             }
 
             if (CONFIG && CONFIG.agentstatus === '0') {
-                result.breaktime = 0;
-                result.lunchtime = 0;
+                result.breaktime = '0';
+                result.lunchtime = '0';
             }
             return result;
         };
