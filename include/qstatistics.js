@@ -5,7 +5,6 @@
 /*global qstatistics_begin*/
 function qstatistics_begin(EMBEDDED) {
 
-
     function Report(options, container, formEl) {
         var report = this,
             visibleCols = [],
@@ -30,6 +29,7 @@ function qstatistics_begin(EMBEDDED) {
             destRowsVisible,
             isQstatistics = getQstatistics(),
             updatesHaveNoEvents,
+            reportRendered,
 
             START,
             END,
@@ -210,17 +210,19 @@ function qstatistics_begin(EMBEDDED) {
         }
 
 
+        function notifyReportRendered() {
+            if (!reportRendered) {
+                reportRendered = true;
+                window.callPhantom && window.callPhantom();
+            }
+        }
+
+
 
         function QAgentEvents() {
             this.events = [];
 
             var as = CONFIG.extraevents === 1;            // is always kept sorted
-
-
-            // Sort array of objects by .time
-            function byTime(a, b) {
-                return a.time - b.time;
-            }
 
 
             // Takes htmlNodesCollection and adds them to array. Checks for duplicates. Sorts. Returns whether array was changed
@@ -260,10 +262,6 @@ function qstatistics_begin(EMBEDDED) {
                         this.events.push(event);
                         isChanged = true;
                     }
-                }
-
-                if (isChanged) {
-                    this.events.sort(byTime); // todo no sort
                 }
 
                 return isChanged;
@@ -316,6 +314,7 @@ function qstatistics_begin(EMBEDDED) {
         }
 
 
+
         function Reasons() {
             var that = this,
                 as = CONFIG.extraevents === 1;
@@ -353,101 +352,134 @@ function qstatistics_begin(EMBEDDED) {
 
 
             this.render = function (container) {
-                var googleData = [],
-                    googleColors = [],
-                    statusMap = {
-                        0: 'Available',
-                        1: 'Break',
-                        2: 'Lunch',
-                        3: 'Unavailable'
-                    },
-                    colorsMap = {
-                        Available: 'green',
-                        Break: 'red',
-                        Lunch: 'blue',
-                        Unavailable: 'orange'
-                    },
-                    tableData = [],
-                    st = new Date((START - TIMEZONE_DIFF) * 1000),
-                    en = new Date((END - TIMEZONE_DIFF) * 1000);
-
-                if (options.totalrow) {
-                    var totalRow = ['Total', 0, 0, 0, 0],
-                    tri = totalRow.info = [[], [], [], [], []];
-                }
-
-                for (var a in usedAgents) {
-                    var agent = agents[usedAgents[a]],
-                        agentName = phoneTitleDisplay(agent),
-                        reasons = agent.E.reasons(START, END),
-                        reasonSum = [0, 0, 0, 0],
-                        tableDataRow;
-
-                    for (var i = 0; i < reasons.length; i++) {
-                        var reason = reasons[i],
-                            status = statusMap[reason.status];
-
-                        googleData.push([agentName, status, new Date((reason.start - TIMEZONE_DIFF) * 1000), new Date((reason.end - TIMEZONE_DIFF) * 1000)]);
-                        if (googleColors.indexOf(colorsMap[status]) === -1) {
-                            googleColors.push(colorsMap[status]);
-                        }
-                        reasonSum[reason.status] += reason.end - reason.start;
-                    }
-
-                    if (!reasons.length) {
-                        googleData.push([agentName, '', en, en]);
-                        if (googleColors.indexOf('#d3d3d3') === -1) {
-                            googleColors.push('#d3d3d3');
-                        }
-                    }
-
-                    reasonSum[3] += reasonSum[1] + reasonSum[2];
-                    if (as) {
-                        tableDataRow = [agentName, now_END - START - reasonSum[3], reasonSum[1], reasonSum[2], reasonSum[3]];
-                    }
-                    else {
-                        tableDataRow = [agentName, now_END - START - reasonSum[3], reasonSum[3]];
-                    }
-                    tableDataRow.info = collectEvents(agent.E.events, agentName);
-
-                    if (totalRow) {
-                        for (var j = 0, m = tableDataRow.length; j < m; j++) {
-                            if (j) {
-                                totalRow[j] += tableDataRow[j];
-                            }
-                            tri[j].push.apply(tri[j], tableDataRow.info[j]);
-                        }
-                    }
-
-                    tableData.push(tableDataRow);
-                }
-
-                if (totalRow) {
-                    tableData.push(totalRow);
-                }
-
-                if (a !== undefined) {                // non empty agents
-                    SORTABLE.render(container, tableData, function () {
-                        var chart = new google.visualization.Timeline(container.children[0]);
-                        var dataTable = new google.visualization.DataTable();
-                        dataTable.addColumn({type: 'string', id: 'Name'});
-                        dataTable.addColumn({type: 'string', id: 'Status'});
-                        dataTable.addColumn({type: 'date', id: 'Start'});
-                        dataTable.addColumn({type: 'date', id: 'End'}); // todo adjust timezone
-                        dataTable.addRows(googleData);
-                        chart.draw(dataTable, {
-                            colors: googleColors,
-                            hAxis: {
-                                minValue: st,
-                                maxValue: en
-                            }
-                        });
-
-                        that.chart = chart;
-                    });
+                if (!window.google || !google.charts) {
+                    setTimeout(function () {
+                        that.render(container);
+                    }, 100);
                 }
                 else {
-                    container.innerHTML = '<h1 style="color: gray; text-align: center; margin-top: 2em"> No Events </h1>'
+                    var savedScrollX = window.pageXOffset,
+                        savedScrollY = window.pageYOffset,
+                        rowsCount = 0,
+                        googleData = [],
+                        googleColors = [],
+                        statusMap = {
+                            0: 'Available',
+                            1: 'Break',
+                            2: 'Lunch',
+                            3: 'Unavailable'
+                        },
+                        colorsMap = {
+                            Available: 'green',
+                            Break: 'red',
+                            Lunch: 'blue',
+                            Unavailable: 'orange'
+                        },
+                        tableData = [],
+                        st = new Date((START - TIMEZONE_DIFF) * 1000),
+                        en = new Date((END - TIMEZONE_DIFF) * 1000);
+
+                    if (options.totalrow) {
+                        var totalRow = ['Total', 0, 0, 0, 0],
+                            tri = totalRow.info = [[], [], [], [], []];
+                    }
+
+                    for (var a in usedAgents) {
+                        var agent = agents[usedAgents[a]],
+                            agentName = phoneTitleDisplay(agent),
+                            reasons = agent.E.reasons(START, END),
+                            reasonSum = [0, 0, 0, 0],
+                            tableDataRow;
+                        rowsCount++;
+
+                        for (var i = 0; i < reasons.length; i++) {
+                            var reason = reasons[i],
+                                status = statusMap[reason.status];
+
+                            googleData.push([agentName, status, new Date((reason.start - TIMEZONE_DIFF) * 1000), new Date((reason.end - TIMEZONE_DIFF) * 1000)]);
+                            if (googleColors.indexOf(colorsMap[status]) === -1) {
+                                googleColors.push(colorsMap[status]);
+                            }
+                            reasonSum[reason.status] += reason.end - reason.start;
+                        }
+
+                        if (!reasons.length) {
+                            googleData.push([agentName, '', en, en]);
+                            if (googleColors.indexOf('#d3d3d3') === -1) {
+                                googleColors.push('#d3d3d3');
+                            }
+                        }
+
+                        reasonSum[3] += reasonSum[1] + reasonSum[2];
+                        if (as) {
+                            tableDataRow = [agentName, now_END - START - reasonSum[3], reasonSum[1], reasonSum[2], reasonSum[3]];
+                        }
+                        else {
+                            tableDataRow = [agentName, now_END - START - reasonSum[3], reasonSum[3]];
+                        }
+                        tableDataRow.info = collectEvents(agent.E.events, agentName);
+
+                        if (totalRow) {
+                            for (var j = 0, m = tableDataRow.length; j < m; j++) {
+                                if (j) {
+                                    totalRow[j] += tableDataRow[j];
+                                }
+                                tri[j].push.apply(tri[j], tableDataRow.info[j]);
+                            }
+                        }
+
+                        tableData.push(tableDataRow);
+                    }
+
+                    if (totalRow) {
+                        tableData.push(totalRow);
+                    }
+
+                    if (a !== undefined) {                // non empty agents
+                        SORTABLE.render(container, tableData, function () {
+                            var chart = new google.visualization.Timeline(container.children[0]),
+                                dataTable = new google.visualization.DataTable(),
+                                sansSerif = "Helvetica, Arial, sans-serif";
+
+                            dataTable.addColumn({type: 'string', id: 'Name'});
+                            dataTable.addColumn({type: 'string', id: 'Status'});
+                            dataTable.addColumn({type: 'date', id: 'Start'});
+                            dataTable.addColumn({type: 'date', id: 'End'}); // todo adjust timezone
+                            dataTable.addRows(googleData);
+
+                            google.visualization.events.addListener(chart, 'ready', function () {
+                                var gElemChildren = container.children[0].children[0].children[0].children[0].children[0].childNodes[2].childNodes;
+                                for (var i = 0; i < gElemChildren.length; i++) {
+                                    gElemChildren[i].setAttribute('font-family', sansSerif);
+                                }
+
+                                container.style.height = rowsCount * 65 + 154 + 'px';
+                                window.scrollTo(savedScrollX, savedScrollY);
+
+                                notifyReportRendered();
+                            });
+
+                            console.log('chart render start');
+                            chart.draw(dataTable, {
+                                colors: googleColors,
+                                hAxis: {
+                                    minValue: st,
+                                    maxValue: en
+                                },
+                                timeline: {
+                                    rowLabelStyle: { fontName: sansSerif },
+                                    barLabelStyle: { fontName: sansSerif }
+                                },
+                                fontName: sansSerif,
+                                height: rowsCount * 41 + 54
+                            });
+                        });
+                    }
+                    else {
+                        container.innerHTML = '<h3 style="color: gray; text-align: center; margin-top: 3em">Report has no agents</h3>';
+
+                        notifyReportRendered();
+                    }
                 }
             }
         }
@@ -486,19 +518,20 @@ function qstatistics_begin(EMBEDDED) {
                     maxLines: 3
                 },
                 series = [],
+                sansSerif = "Helvetica, Arial, sans-serif",
                 chartOptions = {
                     linechart: {
                         sliceVisibilityThreshold: 0,
                         chartArea: chartArea,
                         legend: legend,
-                        fontName: "Arial, sans-serif",
+                        fontName: sansSerif,
                         backgroundColor: "transparent"
                     },
                     barchart: {
                         sliceVisibilityThreshold: 0,
                         chartArea: chartArea,
                         legend: legend,
-                        fontName: "Arial, sans-serif",
+                        fontName: sansSerif,
                         backgroundColor: "transparent",
                         bar: {groupWidth: "90%"}
                     },
@@ -507,14 +540,14 @@ function qstatistics_begin(EMBEDDED) {
                         sliceVisibilityThreshold: 0,
                         chartArea: chartArea,
                         legend: legend,
-                        fontName: "Arial, sans-serif",
+                        fontName: sansSerif,
                         backgroundColor: "transparent",
                         bar: {groupWidth: "90%"}
                     },
                     piechart: {
                         is3D: true,
                         sliceVisibilityThreshold: 0,
-                        fontName: "Arial, sans-serif",
+                        fontName: sansSerif,
                         backgroundColor: "transparent"
                     }
                 };
@@ -1329,6 +1362,7 @@ function qstatistics_begin(EMBEDDED) {
                 if (!pauseRedraw) {
                     setChartArea();
                     dataTable = getDataTable();
+                    console.log('chart render start');
                     charts[type].draw(dataTable, chartOptions[type]);
                 }
             }
@@ -1338,6 +1372,7 @@ function qstatistics_begin(EMBEDDED) {
                 if (!pauseRedraw) {
                     setChartArea();
                     dataTable = getPieDataTable();
+                    console.log('chart render start');
                     charts.piechart.draw(dataTable, chartOptions.piechart);
                 }
             }
@@ -1347,14 +1382,17 @@ function qstatistics_begin(EMBEDDED) {
                 currentTab = _currentTab;       // those 2 can be taken globally as well
                 type = _type;
 
-                if (!window.google || !google.visualization) {
+                if (!window.google || !google.charts) {
                     setTimeout(function () {
                         that.render(_currentTab, _type, deep);
                     }, 100);
                 }
-                else if (table) {
+                else {
+                    if (!reportRendered) {
+                        console.log('wait for google charts');
+                    }
                     google.charts.setOnLoadCallback(function () {
-                        var created = false;
+                        var currentChart = null;
 
                         if (!charts[_type]) {
                             switch (_type) {
@@ -1369,7 +1407,7 @@ function qstatistics_begin(EMBEDDED) {
                                     charts[_type] = new google.visualization.PieChart(_currentTab);
                                     break;
                             }
-                            created = charts[_type];
+                            currentChart = charts[_type];
                         }
                         chartTime.init();
                         colorizeChart(_type);
@@ -1384,15 +1422,18 @@ function qstatistics_begin(EMBEDDED) {
                             renderChart();
                         }
 
+
+                        google.visualization.events.addListener(currentChart, 'ready', notifyReportRendered);
+
                         if (!EMBEDDED) {
                             equalHeight();
                         }
 
-                        if (created) {
-                            google.visualization.events.addListener(created, 'ready', patchSVG);
+                        if (currentChart) {
+                            google.visualization.events.addListener(currentChart, 'ready', patchSVG);
 
-                            google.visualization.events.addListener(created, 'select', function () {
-                                var selection = created.getSelection();
+                            google.visualization.events.addListener(currentChart, 'select', function () {
+                                var selection = currentChart.getSelection();
                                 selection = selection[0];
 
                                 if (selection && selection.row !== null) {
@@ -1428,6 +1469,7 @@ function qstatistics_begin(EMBEDDED) {
                 var type = options.type;
                 if (charts[type]) {
                     setChartArea();
+                    console.log('chart render start');
                     charts[type].draw(dataTable, chartOptions[type]);
                 }
             };
@@ -1456,7 +1498,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
                 var fileName = (options.name.replace(/[^\w\s]/g, '_') || 'noname') + '.png',
-                    source = options.type === 'reasons' ? REASONS.chart : charts[options.type],
+                    source = charts[options.type],
                     b64data = source.getImageURI();
 
                 if (navigator.msSaveBlob) { // IE 10+
@@ -1616,7 +1658,8 @@ function qstatistics_begin(EMBEDDED) {
                 // todo: now I simply overwrite queues. Todo detect queue changes
                 var agent = newAgents[i],
                     oldAgent = agents[agent.id],
-                    oldAgentEvents = null;
+                    oldAgentEvents = null,
+                    oldAgentEventsLength;
 
                 if (!oldAgent) {
                     if (options.agents !== 'none') {
@@ -1626,14 +1669,19 @@ function qstatistics_begin(EMBEDDED) {
                 }
                 else {
                     oldAgentEvents = oldAgent.E;
+                    oldAgentEventsLength = oldAgentEvents.events.length;
                 }
 
                 agent.E = oldAgentEvents || new QAgentEvents();
                 agents[agent.id] = agent;
                 agent.marked = true;
 
-                agent.E.add(agent.events);
-                if (!dbChanged && agentStatusColVisible && agent.E.events.length && !(options.period === 0 && options.agents === 'none')) {
+                if (agent.E.add(agent.events) && oldAgentEventsLength && SERVER.addToBeginning) {
+                    agent.E.events.sort(function(a, b) {
+                        return a.time - b.time;
+                    });
+                }
+                if ((agentStatusColVisible && agent.E.events.length || options.type === 'reasons') && options.agents !== 'none') {
                     dbChanged = true;
                 }
             }
@@ -1806,7 +1854,7 @@ function qstatistics_begin(EMBEDDED) {
                     return memorizedIncludeIds[elementId];
                 }
                 else {
-                    var options = byId(elementId).options,
+                    var options = byId(elementId).options,  // todo cache
                         ids = [];
                     for (var i = 0, n = options.length; i < n; i++) {
                         if (EMBEDDED) {
@@ -2033,7 +2081,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function queuesDisplay() {
-            var selected = byId('queuesinclude_selected'),
+            var selected = byId('queuesinclude_selected'),  //todo cache
                 unselected = byId('queuesinclude_unselected'),
                 strUnselected = '',
                 strSelected = '';
@@ -2689,7 +2737,7 @@ function qstatistics_begin(EMBEDDED) {
                             if (splitsCount > 2000) {
                                 alert('This report will contain ' + Math.floor(splitsCount) + ' rows, which is too much. \nPlease select longer period in "Report type" drop-down.');
                                 options.period = oldOptionsPeriod;
-                                byId('period').value = oldOptionsPeriod;
+                                byId('period').value = oldOptionsPeriod; // todo cache
                                 return true;
                             }
                             break;
@@ -3106,7 +3154,7 @@ function qstatistics_begin(EMBEDDED) {
 
             toggleLROverlay = function (nextType) {
                 var showMoveLeftRight = (options.period <= 0 || nextType === 'table' || nextType === 'reasons' || nextType === 'piechart') ? 'none' : '';
-                byId('left-overlay').style.display = showMoveLeftRight;
+                byId('left-overlay').style.display = showMoveLeftRight;  // todo cache!!!!!
                 byId('right-overlay').style.display = showMoveLeftRight;
             };
 
@@ -3143,6 +3191,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function createReport(doResize) {
+            console.log('calculate report');
             table = [];
             maxStateTime = 0;
             now_END = Math.min(Date.now() / 1000 + 1, END);
@@ -3881,7 +3930,7 @@ function qstatistics_begin(EMBEDDED) {
                 stopPolling = false,
                 timeoutHandle,
                 isFirstRequest,
-                errorsShown = 0,
+                errorsShown = false,
                 startNewPollingOnEveryRequest = false;
 
 
@@ -4047,15 +4096,16 @@ function qstatistics_begin(EMBEDDED) {
                         ';refresh=' + CONFIG.refresh +
                         ';queueevents=' + (isQstatistics ? 1 : 0);
 
+                    console.log('/update request sent');
                     xhr = UTILS.get(request,
                         function (r) {
                             xhr = null;
                             hidePreloader();
-                            if (response(r)) {
+                            if (response(r)) {  // on server error, stop polling
                                 success && success();
                                 polling && polling();
                             }
-                        }, function () {    // on error, poll again
+                        }, function () {        // on network error, poll again
                             xhr = null;
                             hidePreloader();
                             error && error();
@@ -4128,6 +4178,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
             function response(response) {
+                console.log('response got');
                 var json = JSON.parse(response);
 
                 // break polling loop on error
@@ -4135,10 +4186,11 @@ function qstatistics_begin(EMBEDDED) {
                     if (!errorsShown) {
                         errorsShown = '';
                         for (var j in json.errors) {
-                            errorsShown += '\n' + json.errors[j].message + '\n';
+                            errorsShown += '\n' + json.errors[j].message + '\n\n';
                         }
                         alert(errorsShown);
                     }
+                    return false;
                 }
                 else {
                     var updateEnd = +json.updated,          // if updated does not go beyond END, polling will never stop
@@ -4167,11 +4219,6 @@ function qstatistics_begin(EMBEDDED) {
                         createReport(isFirstRequest);
                     }
 
-                    if (isFirstRequest) {
-                        setTimeout(function () {
-                            console.log('DONE');
-                        }, 80);
-                    }
                     isFirstRequest = false;
                     toggleButtons();
 
@@ -4246,11 +4293,10 @@ function qstatistics_begin(EMBEDDED) {
                     data = getTableWithPercentage();
 
                 currentTab = slide;
-                if (data) {
-                    for (var i = 0, n = data.length; i < n; i++) {
-                        str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
-                    }
+                for (var i = 0, n = data.length; i < n; i++) {
+                    str += '<tr><td>' + data[i].join('</td><td>') + '</td></tr>';
                 }
+
                 slide.innerHTML = '<table cellpadding="0" cellspacing="0" style="margin-bottom: 1px"><thead><tr class="head">' + createHeader() + '</tr></thead><tbody>' + str + '</tbody></table>';
 
                 htmlTable = slide.children[0];
@@ -4268,6 +4314,8 @@ function qstatistics_begin(EMBEDDED) {
                     equalHeight();
                     FORM.preventScroll();
                 }
+
+                notifyReportRendered();
             };
 
 
@@ -4488,8 +4536,8 @@ function qstatistics_begin(EMBEDDED) {
 
         function SorTable() {
             var that = this,
-                sortCol = 0,
-                sortOrder = 1;
+                sortCol,
+                sortOrder;
 
             this.render = function (container, data, drawChart) {
 
@@ -4530,20 +4578,22 @@ function qstatistics_begin(EMBEDDED) {
                 }
 
 
-                if (options.totalrow) {
-                    var totalRow = data.pop();
-                }
-                data.sort(function (a, b) {
-                    if (a[sortingCol] < b[sortingCol]) {
-                        return -sortOrder;
+                if (sortOrder) {
+                    if (options.totalrow) {
+                        var totalRow = data.pop();
                     }
-                    if (a[sortingCol] > b[sortingCol]) {
-                        return sortOrder;
+                    data.sort(function (a, b) {
+                        if (a[sortingCol] < b[sortingCol]) {
+                            return -sortOrder;
+                        }
+                        if (a[sortingCol] > b[sortingCol]) {
+                            return sortOrder;
+                        }
+                        return 0;
+                    });
+                    if (options.totalrow) {
+                        data.push(totalRow);
                     }
-                    return 0;
-                });
-                if (options.totalrow) {
-                    data.push(totalRow);
                 }
 
 
@@ -4564,8 +4614,13 @@ function qstatistics_begin(EMBEDDED) {
                 container.innerHTML = str;
 
                 var headerChildren = container.getElementsByClassName('head')[0].children;
-                headerChildren[Math.abs(sortCol)].className = (sortOrder > 0) ? 'asc' : 'desc';
+                if (sortOrder) {
+                    headerChildren[Math.abs(sortCol)].className = (sortOrder > 0) ? 'asc' : 'desc';
+                }
 
+                if (!reportRendered) {
+                    console.log('wait for google charts');
+                }
                 google.charts.setOnLoadCallback(drawChart);
 
                 assignBodyEvents();
@@ -4643,7 +4698,7 @@ function qstatistics_begin(EMBEDDED) {
                     oldSlideIndex = nextSlideIndex;
                     oldType = nextType;
                     CHART.resetZoom();
-                    return;  // TODO TRICKY  //  CHART.resetZoom() will call goTo in the end
+                    return;  // TODO TRICKY  // CHART.resetZoom() will call createReport which will call goTo again
                 }
 
                 if (!upToDate[nextSlideIndex]) {
@@ -4983,6 +5038,7 @@ function qstatistics_begin(EMBEDDED) {
 
     // INIT
     // singletons are UPPER case
+    console.log('init');
 
     var UTILS = new Utils();
     var CONFIG = UTILS.formToJson(document.settings);

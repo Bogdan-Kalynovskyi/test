@@ -12,17 +12,6 @@
 	height: 0;  /* to remove initial HTML flickering */
 }
 
-/*#left-content:before {*/
-	/*content: 'No Data Yet';*/
-	/*color: #ccc;*/
-	/*font-size: 38px;*/
-	/*z-index: -1;*/
-	/*display: block;*/
-	/*position: absolute;*/
-	/*top: 50%;*/
-    /*margin: -20px auto 0;*/
-/*}*/
-
 #left-content h2 {
 	text-align: left;
 	margin-right: 33px;
@@ -206,6 +195,9 @@ slide:not(:first-child) {
 
 slide svg {
 	margin-top: 17px;
+}
+slide timeline svg {
+	margin-top: 0;
 }
 
 #left-overlay,
@@ -470,8 +462,9 @@ modal .foot td {
 
 timeline {
 	display:block;
-	min-height: 260px;
+	margin-top: 5px;
 	margin-right: 5px;
+	margin-bottom: 32px;
 }
 
 timeline + table {
