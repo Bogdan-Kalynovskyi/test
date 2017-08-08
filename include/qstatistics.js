@@ -220,7 +220,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function QAgentEvents() {
-            this.events = [];
+            this.pairs = [];
 
             var as = CONFIG.extraevents === 1;            // is always kept sorted
 
@@ -251,15 +251,15 @@ function qstatistics_begin(EMBEDDED) {
                         event.status = STATUS_unavail;
                     }
 
-                    for (var j = this.events.length - 1; j >= 0; j--) {
-                        if (this.events[j].time === event.time && this.events[j].status === event.status) {
+                    for (var j = this.pairs.length - 1; j >= 0; j--) {
+                        if (this.pairs[j].time === event.time && this.pairs[j].status === event.status) {
                             event = null;
                             break;
                         }
                     }
 
                     if (event) {
-                        this.events.push(event);
+                        this.pairs.push(event);
                         isChanged = true;
                     }
                 }
@@ -273,16 +273,17 @@ function qstatistics_begin(EMBEDDED) {
                     end,                // is composed out of a pair of events.
                     i = 1,
                     status,
-                    event = this.events[0],
-                    reasons = [];
+                    event = this.pairs[0],
+                    reasons = [],
+                    diff = TIMEZONE_DIFF * 60;
 
 
                 function try2RecordEvent() {
                     if (end > periodStart) {
                         start = Math.max(periodStart, start);
                         reasons.push({
-                            start: start,
-                            end: end,
+                            start: start + diff,
+                            end: end + diff,
                             status: status
                         });
                     }
@@ -291,22 +292,24 @@ function qstatistics_begin(EMBEDDED) {
 
                 if (event) {
                     start = event.time;
-                    status = event.status;
-                    event = this.events[1];
-
-                    while (event && event.time < periodEnd) {
-                        end = event.time;
-                        try2RecordEvent();
-
+                    if (start < periodEnd) {
                         status = event.status;
-                        start = end;
+                        event = this.pairs[1];
 
-                        i++;
-                        event = this.events[i];
+                        while (event && event.time < periodEnd) {
+                            end = event.time;
+                            try2RecordEvent();
+
+                            status = event.status;
+                            start = end;
+
+                            i++;
+                            event = this.pairs[i];
+                        }
+
+                        end = Math.min(now_END, periodEnd);
+                        try2RecordEvent();
                     }
-
-                    end = Math.min(now_END, periodEnd);
-                    try2RecordEvent();
                 }
 
                 return reasons;
@@ -376,8 +379,8 @@ function qstatistics_begin(EMBEDDED) {
                             Unavailable: 'orange'
                         },
                         tableData = [],
-                        st = new Date((START - TIMEZONE_DIFF) * 1000),
-                        en = new Date((END - TIMEZONE_DIFF) * 1000);
+                        st = new Date((START + TIMEZONE_DIFF * 60) * 1000),
+                        en = new Date((END + TIMEZONE_DIFF * 60) * 1000);
 
                     if (options.totalrow) {
                         var totalRow = ['Total', 0, 0, 0, 0],
@@ -417,7 +420,7 @@ function qstatistics_begin(EMBEDDED) {
                         else {
                             tableDataRow = [agentName, now_END - START - reasonSum[3], reasonSum[3]];
                         }
-                        tableDataRow.info = collectEvents(agent.E.events, agentName);
+                        tableDataRow.info = collectEvents(agent.E.pairs, agentName);
 
                         if (totalRow) {
                             for (var j = 0, m = tableDataRow.length; j < m; j++) {
@@ -444,7 +447,7 @@ function qstatistics_begin(EMBEDDED) {
                             dataTable.addColumn({type: 'string', id: 'Name'});
                             dataTable.addColumn({type: 'string', id: 'Status'});
                             dataTable.addColumn({type: 'date', id: 'Start'});
-                            dataTable.addColumn({type: 'date', id: 'End'}); // todo adjust timezone
+                            dataTable.addColumn({type: 'date', id: 'End'});
                             dataTable.addRows(googleData);
 
                             google.visualization.events.addListener(chart, 'ready', function () {
@@ -453,7 +456,7 @@ function qstatistics_begin(EMBEDDED) {
                                     gElemChildren[i].setAttribute('font-family', sansSerif);
                                 }
 
-                                container.style.height = rowsCount * 65 + 154 + 'px';
+                                container.style.height = container.children[0].clientHeight + container.children[1].clientHeight + 54 + 'px';
                                 window.scrollTo(savedScrollX, savedScrollY);
 
                                 notifyReportRendered();
@@ -471,7 +474,7 @@ function qstatistics_begin(EMBEDDED) {
                                     barLabelStyle: { fontName: sansSerif }
                                 },
                                 fontName: sansSerif,
-                                height: rowsCount * 41 + 54
+                                height: rowsCount * 41 + 70
                             });
                         });
                     }
@@ -1423,7 +1426,7 @@ function qstatistics_begin(EMBEDDED) {
                         }
 
 
-                        google.visualization.events.addListener(currentChart, 'ready', notifyReportRendered);
+                        setTimeout(notifyReportRendered, 100);
 
                         if (!EMBEDDED) {
                             equalHeight();
@@ -1669,7 +1672,7 @@ function qstatistics_begin(EMBEDDED) {
                 }
                 else {
                     oldAgentEvents = oldAgent.E;
-                    oldAgentEventsLength = oldAgentEvents.events.length;
+                    oldAgentEventsLength = oldAgentEvents.pairs.length;
                 }
 
                 agent.E = oldAgentEvents || new QAgentEvents();
@@ -1677,11 +1680,11 @@ function qstatistics_begin(EMBEDDED) {
                 agent.marked = true;
 
                 if (agent.E.add(agent.events) && oldAgentEventsLength && SERVER.addToBeginning) {
-                    agent.E.events.sort(function(a, b) {
+                    agent.E.pairs.sort(function(a, b) {
                         return a.time - b.time;
                     });
                 }
-                if ((agentStatusColVisible && agent.E.events.length || options.type === 'reasons') && options.agents !== 'none') {
+                if ((agentStatusColVisible && agent.E.pairs.length || options.type === 'reasons') && options.agents !== 'none') {
                     dbChanged = true;
                 }
             }
@@ -3119,7 +3122,9 @@ function qstatistics_begin(EMBEDDED) {
                 rightPanel = byId('right-panel'),
                 rightMenuHeight = 280 + 40,
                 leftMenuHeight = byId('nav_bar').clientHeight,
-                isExpanded = false;
+                isExpanded = false,
+                los = byId('left-overlay').style,
+                ros = byId('right-overlay').style;
 
 
             equalHeight = function () {
@@ -3154,8 +3159,8 @@ function qstatistics_begin(EMBEDDED) {
 
             toggleLROverlay = function (nextType) {
                 var showMoveLeftRight = (options.period <= 0 || nextType === 'table' || nextType === 'reasons' || nextType === 'piechart') ? 'none' : '';
-                byId('left-overlay').style.display = showMoveLeftRight;  // todo cache!!!!!
-                byId('right-overlay').style.display = showMoveLeftRight;
+                los.display = showMoveLeftRight;
+                ros.display = showMoveLeftRight;
             };
 
 
@@ -3191,7 +3196,6 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function createReport(doResize) {
-            console.log('calculate report');
             table = [];
             maxStateTime = 0;
             now_END = Math.min(Date.now() / 1000 + 1, END);
@@ -3270,7 +3274,7 @@ function qstatistics_begin(EMBEDDED) {
                 saveButton = submitButtons[1],
                 copyButton = submitButtons[2],
                 copyButtonClicked,
-                dirty = !options.id,
+                dirty = false,
                 typeChanged;
 
 
@@ -3823,7 +3827,7 @@ function qstatistics_begin(EMBEDDED) {
                         for (i = 0, n = info.length; i < n; i++) {
                             var call = info[i],
                                 name = phoneTitleDisplay(call),
-                                events = call.E.events;
+                                events = call.E.pairs;
 
                             for (var ii = 0, nn = events.length; ii < nn; ii++) {
                                 var ev = events[ii];
@@ -3923,13 +3927,14 @@ function qstatistics_begin(EMBEDDED) {
                 encodedUsername = encodeURIComponent(CONFIG.username),
                 encodedPassword = encodeURIComponent(CONFIG.password),
                 xhr,
+                anythingChanged,
                 preloader,
                 lastToday,
                 requestStart,
                 requestEnd,
                 stopPolling = false,
                 timeoutHandle,
-                isFirstRequest,
+                isFirstReport,
                 errorsShown = false,
                 startNewPollingOnEveryRequest = false;
 
@@ -4074,47 +4079,84 @@ function qstatistics_begin(EMBEDDED) {
             }
 
 
-            this.tryNewRequest = function (success, error) {
-                clearTimeout(timeoutHandle);  // stop polling isn't harmful?
+            this.tryNewRequest = function (onComplete) {
+                var requestsToSend = Math.ceil((requestEnd - requestStart) / DAY),
+                    requestsReceived = 0,
+                    isEarliestRequest = !this.addToBeginning || requestsToSend === 1;
 
-                if (!EMBEDDED) {
-                    var polling = function() {
-                        timeoutHandle = setTimeout(function () {
-                            that.tryNewRequest();
-                        }, CONFIG.refresh);
+                clearTimeout(timeoutHandle);
+                anythingChanged = false;
+
+
+                function recursiveSplit() {
+                    if (that.addToBeginning) {
+                        end -= DAY;
+                        splitRequest(Math.max(requestStart, end - DAY), end);
+                        if (requestStart > end - DAY) {
+                            isEarliestRequest = true;
+                        }
+                    }
+                    else {
+                        start += DAY;
+                        splitRequest(start, Math.min(requestEnd, start + DAY));
                     }
                 }
 
-                if (!xhr && !stopPolling && !document.hidden && requestEnd >= requestStart/* && requestStart < Date.now() / 1000*/) {
+
+                function nonEmbeddedPoll() {
+                    timeoutHandle = setTimeout(function () {
+                        that.tryNewRequest();
+                    }, CONFIG.refresh);
+                }
+
+                function splitRequest(start, end) {
                     var request =
                         '?_username=' + encodedUsername +
                         ';_password=' + encodedPassword +
-                        ';start=' + requestStart +
-                        ';end=' + requestEnd + (isFirstRequest ? ';first=1' : '') +
+                        ';start=' + start +
+                        ';end=' + end +
+                        (isEarliestRequest && (isFirstReport || that.addToBeginning) ? ';first=1' : '') +
                         ';recursive=' + options.recursive +
                         ';id=' + (options.id || 0) +
                         ';refresh=' + CONFIG.refresh +
                         ';queueevents=' + (isQstatistics ? 1 : 0);
 
-                    console.log('/update request sent');
-                    xhr = UTILS.get(request,
-                        function (r) {
-                            xhr = null;
-                            hidePreloader();
-                            if (response(r)) {  // on server error, stop polling
-                                success && success();
-                                polling && polling();
+                    xhr = UTILS.get(request, function (r) {
+                        requestsReceived++;
+                        if (response(r, requestsToSend === requestsReceived)) {
+                            if (requestsToSend === requestsReceived) {
+                                xhr = null;
+                                that.addToBeginning = false;
+                                hidePreloader();
+                                if (EMBEDDED) {
+                                    onComplete();
+                                }
+                                else {
+                                    nonEmbeddedPoll();
+                                }
                             }
-                        }, function () {        // on network error, poll again
-                            xhr = null;
-                            hidePreloader();
-                            error && error();
-                            polling && polling();
-                        });
+                            else {
+                                recursiveSplit();
+                            }
+                        }
+                    });
+                }
+
+
+                if (!xhr && !stopPolling && !document.hidden && requestEnd >= requestStart/* && requestStart < Date.now() / 1000*/) {
+                    var start = requestStart,
+                        end = requestEnd;
+
+                    if (that.addToBeginning) {
+                        splitRequest(Math.max(requestStart, end - DAY), end);
+                    }
+                    else {
+                        splitRequest(start, Math.min(requestEnd, start + DAY));
+                    }
                 }
                 else {
                     hidePreloader();
-                    error && error();
+                    onComplete && onComplete();
                 }
             };
 
@@ -4139,7 +4181,7 @@ function qstatistics_begin(EMBEDDED) {
 
                 errorsShown = false;
                 stopPolling = false;
-                isFirstRequest = true;
+                isFirstReport = true;
                 this.addToBeginning = false;
 
                 var now = Date.now() / 1000;
@@ -4153,7 +4195,7 @@ function qstatistics_begin(EMBEDDED) {
                 // query only what is missing (but only from the beginning)
                 else if (START < minRecordedTime && END >= minRecordedTime && (END <= maxRecordedTime || (now - maxRecordedTime < 3 * CONFIG.refresh) && now <= END)) {
                     requestStart = START;
-                    requestEnd = minRecordedTime + 1;
+                    requestEnd = minRecordedTime;
                     this.addToBeginning = true;
                 }
                 // query only what is missing (but only from the end)
@@ -4177,8 +4219,7 @@ function qstatistics_begin(EMBEDDED) {
             };
 
 
-            function response(response) {
-                console.log('response got');
+            function response(response, complete) {
                 var json = JSON.parse(response);
 
                 // break polling loop on error
@@ -4193,8 +4234,9 @@ function qstatistics_begin(EMBEDDED) {
                     return false;
                 }
                 else {
-                    var updateEnd = +json.updated,          // if updated does not go beyond END, polling will never stop
-                        anythingChanged = addRecordsToDatabase(json);
+                    var updateEnd = +json.updated;           // if updated does not go beyond END, polling will never stop
+
+                    anythingChanged = addRecordsToDatabase(json) || anythingChanged;
 
                     if (updateEnd > now_END) {
                         now_END = updateEnd;
@@ -4204,35 +4246,34 @@ function qstatistics_begin(EMBEDDED) {
                         updatesHaveNoEvents = true;
                     }
 
-                    minRecordedTime = Math.min(minRecordedTime, requestStart);
-                    maxRecordedTime = Math.max(maxRecordedTime, Math.min(requestEnd, updateEnd));
+                    if (complete) {
+                        minRecordedTime = Math.min(minRecordedTime, requestStart);
+                        maxRecordedTime = Math.max(maxRecordedTime, Math.min(requestEnd, updateEnd));
 
-                    if (startNewPollingOnEveryRequest) {
-                        getRangeFromDropdown();
+                        if (isFirstReport || anythingChanged) {
+                            createReport(isFirstReport);
+                        }
+
+                        requestStart = maxRecordedTime;
+                        requestEnd = END;
+
+                        isFirstReport = false;
+                        toggleButtons();
+
+
+                        if (startNewPollingOnEveryRequest) {
+                            getRangeFromDropdown();
+                        }
+                        // Handle the change of day at midnight. If the start or end day is not a specific date then the report
+                        // period should change every day.
+                        else if ((EMBEDDED || options.startday !== 1 || options.endday !== 1) && moment().startOf('day').unix() !== lastToday.unix()) {
+                            that.startNewPolling();
+                            return false;
+                        }
+                        else if (END <= maxRecordedTime) {
+                            stopPolling = true;
+                        }
                     }
-
-                    // unlikely all other places where we work with time periods!
-                    requestStart = maxRecordedTime;
-                    requestEnd = END;
-
-                    if (isFirstRequest || anythingChanged) {
-                        createReport(isFirstRequest);
-                    }
-
-                    isFirstRequest = false;
-                    toggleButtons();
-
-                    SERVER.addToBeginning = false;
-                }
-
-                // Handle the change of day at midnight. If the start or end day is not a specific date then the report
-                // period should change every day.
-                if ((EMBEDDED || options.startday !== 1 || options.endday !== 1) && moment().startOf('day').unix() !== lastToday.unix()) {
-                    that.startNewPolling();
-                    return false;
-                }
-                else if (END <= maxRecordedTime) {
-                    stopPolling = true;
                 }
 
                 return true;
@@ -4653,7 +4694,7 @@ function qstatistics_begin(EMBEDDED) {
                 str = '';
 
             for (var i in types) {
-                str += '<slide style="z-index: ' + (+i === oldSlideIndex ? 1 : 0) + '"></slide>';
+                str += '<slide style="z-index: ' + (+i === oldSlideIndex ? 1 : 0) + '; opacity: ' + (+i === oldSlideIndex ? 1 : 0) + '"></slide>';
             }
 
             container.innerHTML = str +
@@ -4676,12 +4717,16 @@ function qstatistics_begin(EMBEDDED) {
 
                 if (nextSlideIndex !== oldSlideIndex) {
                     oldSlide.style.opacity = 0;
+                    setTimeout(function () {
+                        oldSlide.style.visibility = 'hidden';
+                    }, 300);
+                    nextSlide.style.visibility = 'visible';
                     nextSlide.style.zIndex = ++zIndex;
                     nextSlide.style.opacity = 1;
                     byId('go-' + oldType).className = '';
                     FORM.enableSaveButton();
                 }
-                byId('go-' + nextType).className = 'active';
+                byId('go-' + nextType).className = 'active';//
 
                 options.type = nextType;
                 this.tabs[nextType] = nextSlide;
@@ -4803,7 +4848,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
     function Utils() {
-        var DAY = 86400;
+        var that = this;
 
 
         this.unique = function (unordered) {
@@ -4881,7 +4926,7 @@ function qstatistics_begin(EMBEDDED) {
         };
 
 
-        this.get = function (uri, success, failure) {
+        this.get = function (uri, success) {
             var xhr = new XMLHttpRequest();
             xhr.open('GET', '/local/qstatistics/update/' + uri);
             xhr.onload = function () {
@@ -4889,11 +4934,14 @@ function qstatistics_begin(EMBEDDED) {
                 if (xhr.status === 200) {
                     success(xhr.responseText);
                 }
-                else {
-                    failure();
+                else if (xhr.status !== 500) { // todo
+                    debugger;
+                    xhr.onerror();
                 }
             };
-            xhr.onerror = failure;
+            xhr.onerror = function () {
+                setTimeout(that.get.bind(that, uri, success));
+            };
             xhr.send();
 
             return xhr;
@@ -5092,7 +5140,7 @@ function qstatistics_begin(EMBEDDED) {
         function poll() {
             requestsEnded = 0;
 
-            function promiseAll () {
+            function pollOnAllComplete () {
                 requestsEnded++;
                 if (EMBEDDED.length === requestsEnded) {
                     timeoutHandle = setTimeout(poll, CONFIG.refresh);
@@ -5103,10 +5151,10 @@ function qstatistics_begin(EMBEDDED) {
             for (var i = 0; i < reportServers.length; i++) {
                 var offset = EMBEDDED && (+EMBEDDED[i].offset) || 0;
                 if (offset) {
-                    offsetTimeouts[i] = setTimeout(reportServers[i].tryNewRequest.bind(reportServers[i], promiseAll, promiseAll), offset);
+                    offsetTimeouts[i] = setTimeout(reportServers[i].tryNewRequest.bind(reportServers[i], pollOnAllComplete), offset);
                 }
                 else {
-                    reportServers[i].tryNewRequest(promiseAll, promiseAll);
+                    reportServers[i].tryNewRequest(pollOnAllComplete);
                 }
             }
         }
