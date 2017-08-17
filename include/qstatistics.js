@@ -4,6 +4,14 @@
 /*global moment.tz*/
 /*global qstatistics_begin*/
 function qstatistics_begin(EMBEDDED) {
+    var _counter,
+        _deltaTime = Date.now();
+    function debugLog(msg) {
+        console.log((new Date()) + '      ' + (Date.now() - _deltaTime) + ' ms.         ' + msg);
+        _deltaTime = Date.now();
+    }
+    console.log((new Date()) + '                              init');
+
 
     function Report(options, container, formEl) {
         var report = this,
@@ -20,7 +28,7 @@ function qstatistics_begin(EMBEDDED) {
             breakPos,
             lunchPos,
             colPosLength,
-            table,
+            table = [],
             sortingCol = 0,
             sortingOrder = 1,
             timeColVisible,
@@ -43,8 +51,8 @@ function qstatistics_begin(EMBEDDED) {
             phonesChanged,
 
             usedAgents,
-            startSearchFromIndex,
-            maxStateTime,
+            startSearchFromIndex = 0,
+            maxStateTime = 0,
 
             menuButtons,
             containerClientWidth,
@@ -222,7 +230,7 @@ function qstatistics_begin(EMBEDDED) {
             if (!reportRendered) {
                 reportRendered = true;
                 window.callPhantom && window.callPhantom();
-                console.log('DONE');
+                debugLog('DONE');
             }
         }
 
@@ -370,7 +378,7 @@ function qstatistics_begin(EMBEDDED) {
                     }, 100);
                 }
                 else {
-                    console.log('start timeline render');
+                    debugLog('TimeLine render start');
                     var savedScrollX = window.pageXOffset,
                         savedScrollY = window.pageYOffset,
                         rowsCount = 0,
@@ -472,7 +480,7 @@ function qstatistics_begin(EMBEDDED) {
                                 notifyReportRendered();
                             });
 
-                            console.log('chart render start');
+                            debugLog('Chart render start');
                             chart.draw(dataTable, {
                                 colors: googleColors,
                                 hAxis: {
@@ -1369,7 +1377,7 @@ function qstatistics_begin(EMBEDDED) {
                 if (!pauseRedraw) {
                     setChartArea();
                     dataTable = getDataTable();
-                    console.log('chart render start');
+                    debugLog('Chart render start');
                     charts[type].draw(dataTable, chartOptions[type]);
                 }
             }
@@ -1379,7 +1387,7 @@ function qstatistics_begin(EMBEDDED) {
                 if (!pauseRedraw) {
                     setChartArea();
                     dataTable = getPieDataTable();
-                    console.log('chart render start');
+                    debugLog('Chart render start');
                     charts.piechart.draw(dataTable, chartOptions.piechart);
                 }
             }
@@ -1395,8 +1403,8 @@ function qstatistics_begin(EMBEDDED) {
                     }, 100);
                 }
                 else {
-                    if (!reportRendered) {
-                        console.log('wait for google charts');
+                    if (!reportRendered && !google.visualization) {
+                        debugLog('Start waiting until google charts load');
                     }
                     google.charts.setOnLoadCallback(function () {
                         var currentChart = null;
@@ -1476,7 +1484,7 @@ function qstatistics_begin(EMBEDDED) {
                 var type = options.type;
                 if (charts[type]) {
                     setChartArea();
-                    console.log('chart render start');
+                    debugLog('Chart render start');
                     charts[type].draw(dataTable, chartOptions[type]);
                 }
             };
@@ -1600,6 +1608,8 @@ function qstatistics_begin(EMBEDDED) {
             totalInboundCount = 0;
             totalOutboundCount = 0;
             totalInternalCount = 0;
+
+            _counter = 0;       // when new calculation starts, count from zero
         }
 
 
@@ -1789,7 +1799,7 @@ function qstatistics_begin(EMBEDDED) {
             }
 
             // TODO: update view only if visually displayed info has changed
-            console.log(newCalls.length + ' cdrs received');
+            debugLog('Finished parsing JSON,  ' + newCalls.length + ' calls parsed');// + newAgents.length 'loaded');
             return dbChanged;
         }
 
@@ -2350,7 +2360,6 @@ function qstatistics_begin(EMBEDDED) {
         // check for usages to understand better
 
 
-        var _counter = 0;
         function putCallToTable(call, multiRow, addToThisRowOnly, cameFromPhoneFilter) {
             var stype = call[KEY_stype],
                 dtype = call[KEY_dtype],
@@ -2365,7 +2374,7 @@ function qstatistics_begin(EMBEDDED) {
 
             _counter++;
             if (_counter % 100000 === 99999) {
-                console.log('added another 100k calls to statistics');
+                debugLog('Added another 100k calls to statistics');
             }
 
             if (!addToThisRowOnly) {
@@ -2517,8 +2526,7 @@ function qstatistics_begin(EMBEDDED) {
         function reduceTable() {
 
             function calcTimeCols(row, calls) {
-                var pos,
-                    callsCount = row.total,
+                var callsCount = row.total,
                     minhold_row,
                     avghold_row,
                     maxhold_row,
@@ -2764,6 +2772,10 @@ function qstatistics_begin(EMBEDDED) {
                 totalRow[0] = 'Total';
             }
 
+            if (timeColVisible) {
+                debugLog('Min/Max/Avg time columns calculation start');
+            }
+
             for (var i = 0, tblLength = table.length; i < tblLength; i++) {
                 var row = table[i];
                 if (timeColVisible) {
@@ -2786,6 +2798,11 @@ function qstatistics_begin(EMBEDDED) {
                 if (period0) {
                     row.totalTime = reportDuration;
                 }
+            }
+
+
+            if (timeColVisible) {
+                debugLog('Major calculation stage ended, starting to summarise');
             }
 
             if (showTotal) {
@@ -3327,7 +3344,6 @@ function qstatistics_begin(EMBEDDED) {
 
         function createReport(doResize, appendData) {
             if (usesCache) {
-                console.log('calculate report start');
                 if (appendData && appendData.length === 0) {
                     appendData = false;
                 }
@@ -3357,6 +3373,9 @@ function qstatistics_begin(EMBEDDED) {
                     }
                 }
 
+                if (timeColVisible) {
+                    debugLog('Major calculation stage ended, starting to summarise');
+                }
                 reduceTable();
                 sortTable();
 
@@ -4265,7 +4284,7 @@ function qstatistics_begin(EMBEDDED) {
                         ';refresh=' + CONFIG.refresh +
                         ';queueevents=' + (isQstatistics ? 1 : 0);
 
-                    console.log('/update request sent');
+                    debugLog('/update request sent       ' + request);
                     xhr = UTILS.get(request, function (r) {
                         requestsReceived++;
                         if (response(r, requestsToSend === requestsReceived)) {
@@ -4360,7 +4379,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
             function response(response, complete) {
-                console.log('response got');
+                debugLog('Response loading finished, ' + Math.floor(response.length / 1024000) + ' Mb loaded');
                 var json = JSON.parse(response);
 
                 // break polling loop on error
@@ -4474,7 +4493,7 @@ function qstatistics_begin(EMBEDDED) {
                 if (blockRefresh) {
                     return;
                 } // todo deep vs shallow re-render
-                console.log('start table render');
+                debugLog('Table render start');
 
                 var str = '',
                     data = getTableWithPercentage();
@@ -4805,8 +4824,8 @@ function qstatistics_begin(EMBEDDED) {
                     headerChildren[Math.abs(sortCol)].className = (sortOrder > 0) ? 'asc' : 'desc';
                 }
 
-                if (!reportRendered) {
-                    console.log('wait for google charts');
+                if (!reportRendered && !google.visualization) {
+                    debugLog('Start waiting until google charts load');
                 }
                 google.charts.setOnLoadCallback(drawChart);
 
@@ -5034,13 +5053,13 @@ function qstatistics_begin(EMBEDDED) {
 
         this.timeFormat = function (period, minPeriod) {
             period = Math.round(period);
-            var time = Math.floor(period / DAY),
+            var time = Math.floor(period / 86400),
                 str = '';
 
             if (time || minPeriod === 4) {
                 str = this.pad(time) + ':';
             }
-            time = Math.floor((period % DAY) / 3600);
+            time = Math.floor((period % 86400) / 3600);
             if (time || str || minPeriod === 3) {
                 str += this.pad(time) + ':';
             }
@@ -5056,10 +5075,10 @@ function qstatistics_begin(EMBEDDED) {
 
         this.googleTimeFormat = function (period, length) {
             if (length === 4) {
-                return [Math.floor(period / DAY), Math.floor((period % DAY) / 3600), Math.floor((period % 3600) / 60), Math.floor(period % 60)];
+                return [Math.floor(period / 86400), Math.floor((period % 86400) / 3600), Math.floor((period % 3600) / 60), Math.floor(period % 60)];
             }
             else {
-                return [Math.floor((period % DAY) / 3600), Math.floor((period % 3600) / 60), Math.floor(period % 60)];
+                return [Math.floor((period % 86400) / 3600), Math.floor((period % 3600) / 60), Math.floor(period % 60)];
             }
         };
 
@@ -5088,7 +5107,7 @@ function qstatistics_begin(EMBEDDED) {
             xhr.addEventListener('progress' ,function () {
                 if (!progress) {
                     progress = true;
-                    console.log('Server started transmission');
+                    debugLog('Server started data transmission (TTFB)');
                 }
             });
             xhr.open('GET', '/local/qstatistics/update/' + uri);
@@ -5249,7 +5268,6 @@ function qstatistics_begin(EMBEDDED) {
 
     // INIT
     // singletons are UPPER case
-    console.log('init');
 
     var UTILS = new Utils();
     var CONFIG = UTILS.formToJson(document.settings);
