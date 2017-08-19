@@ -7,8 +7,9 @@ function qstatistics_begin(EMBEDDED) {
     var _counter,
         _deltaTime = Date.now();
     function debugLog(msg) {
-        console.log((new Date()) + '      ' + (Date.now() - _deltaTime) + ' ms.         ' + msg);
-        _deltaTime = Date.now();
+        var time = new Date();
+        console.log(time + '          ' + (time.getTime() - _deltaTime).toLocaleString() + ' ms          ' + msg);
+        _deltaTime = time.getTime();
     }
     console.log((new Date()) + '                              init');
 
@@ -378,7 +379,7 @@ function qstatistics_begin(EMBEDDED) {
                     }, 100);
                 }
                 else {
-                    debugLog('TimeLine render start');
+                    debugLog('Table rendering start');
                     var savedScrollX = window.pageXOffset,
                         savedScrollY = window.pageYOffset,
                         rowsCount = 0,
@@ -480,7 +481,7 @@ function qstatistics_begin(EMBEDDED) {
                                 notifyReportRendered();
                             });
 
-                            debugLog('Chart render start');
+                            debugLog('TimeLine rendering start');
                             chart.draw(dataTable, {
                                 colors: googleColors,
                                 hAxis: {
@@ -1377,7 +1378,7 @@ function qstatistics_begin(EMBEDDED) {
                 if (!pauseRedraw) {
                     setChartArea();
                     dataTable = getDataTable();
-                    debugLog('Chart render start');
+                    debugLog('Chart rendering start');
                     charts[type].draw(dataTable, chartOptions[type]);
                 }
             }
@@ -1387,7 +1388,7 @@ function qstatistics_begin(EMBEDDED) {
                 if (!pauseRedraw) {
                     setChartArea();
                     dataTable = getPieDataTable();
-                    debugLog('Chart render start');
+                    debugLog('Chart rendering start');
                     charts.piechart.draw(dataTable, chartOptions.piechart);
                 }
             }
@@ -1484,7 +1485,7 @@ function qstatistics_begin(EMBEDDED) {
                 var type = options.type;
                 if (charts[type]) {
                     setChartArea();
-                    debugLog('Chart render start');
+                    debugLog('Chart rendering start');
                     charts[type].draw(dataTable, chartOptions[type]);
                 }
             };
@@ -1630,7 +1631,10 @@ function qstatistics_begin(EMBEDDED) {
 
 
             if (newCalls.length) {
-                if (previousCallsLength > 200000) {
+                if (!usesCache) {
+
+                }
+                else if (previousCallsLength > 200000) {
                     calls = null;
                     usesCache = false;
                 }
@@ -1799,7 +1803,7 @@ function qstatistics_begin(EMBEDDED) {
             }
 
             // TODO: update view only if visually displayed info has changed
-            debugLog('Finished parsing JSON,  ' + newCalls.length + ' calls parsed');// + newAgents.length 'loaded');
+            debugLog(' Finished parsing JSON,  ' + newCalls.length + ' calls got.   Start calculating...');// + newAgents.length 'loaded');
             return dbChanged;
         }
 
@@ -2260,7 +2264,10 @@ function qstatistics_begin(EMBEDDED) {
             }
             row.total = 0;
             if (isAppendMode && queueStatusColVisible) {
-                row.talk = 0;
+                row.sumHold = 0;
+                row.sumTalk = 0;
+                row.sumTotal = 0;
+                row.talkCount = 0;
             }
             row.inbound = 0;
             row.outbound = 0;
@@ -2559,33 +2566,27 @@ function qstatistics_begin(EMBEDDED) {
 
                 if (!isAppendMode) {
                     minhold_row = Infinity;
-                    avghold_row = 0;
                     maxhold_row = 0;
                     sumhold_row = 0;
                     mintalk_row = Infinity;
-                    avgtalk_row = 0;
                     maxtalk_row = 0;
                     sumtalk_row = 0;
                     mintotal_row = Infinity;
-                    avgtotal_row = 0;
                     maxtotal_row = 0;
                     sumtotal_row = 0;
                     talkCount = 0;
                 }
                 else {
                     minhold_row = row[minHoldPos];
-                    avghold_row = row[avgHoldPos];
                     maxhold_row = row[maxHoldPos];
-                    sumhold_row = row[sumHoldPos];
+                    sumhold_row = row.sumHold;
                     mintalk_row = row[minTalkPos];
-                    avgtalk_row = row[avgTalkPos];
                     maxtalk_row = row[maxTalkPos];
-                    sumtalk_row = row[sumTalkPos];
+                    sumtalk_row = row.sumTalk;
                     mintotal_row = row[minTotalPos];
-                    avgtotal_row = row[avgTotalPos];
                     maxtotal_row = row[maxTotalPos];
-                    sumtotal_row = row[sumTotalPos];
-                    talkCount = row.talk;
+                    sumtotal_row = row.sumTotal;
+                    talkCount = row.talkCount;
                 }
 
                 for (var i = 0; i < callsCount; i++) {
@@ -2677,7 +2678,10 @@ function qstatistics_begin(EMBEDDED) {
                 }
 
                 if (isAppendMode) {
-                    row.talk += talkCount_callsOnly;
+                    row.sumHold += sumhold_callsOnly;
+                    row.sumTalk += sumtalk_callsOnly;
+                    row.sumTotal += sumtotal_callsOnly;
+                    row.talkCount += talkCount_callsOnly;
                 }
 
                 if (showTotal) {
@@ -3342,11 +3346,8 @@ function qstatistics_begin(EMBEDDED) {
 
 
 
-        function createReport(doResize, appendData) {
+        function createReport(doResize, appendData, noRender) {
             if (usesCache) {
-                if (appendData && appendData.length === 0) {
-                    appendData = false;
-                }
                 isAppendMode = appendData;
                 if (!isAppendMode) {
                     table = [];
@@ -3357,7 +3358,7 @@ function qstatistics_begin(EMBEDDED) {
                 now_END = Math.min(Date.now() / 1000 + 1, END);
 
                 if (options.period === 0) {
-                    var slicedCalls = appendData || getCallsFromTimePeriod(START, END);
+                    var slicedCalls = isAppendMode ? appendData : getCallsFromTimePeriod(START, END);
                     byDestType(slicedCalls);
                     byQueueAgentPhone(slicedCalls);
                 }
@@ -3373,33 +3374,35 @@ function qstatistics_begin(EMBEDDED) {
                     }
                 }
 
-                if (timeColVisible) {
+                if (!timeColVisible) {
                     debugLog('Major calculation stage ended, starting to summarise');
                 }
                 reduceTable();
                 sortTable();
 
-                if (postId) {
-                    report.downloadCSV();     // download CSV AND do something else
-                }
-
-                if (options.type === 'csv') {
-                    report.downloadCSV();
-                }
-                else if (EMBEDDED) {
-                    if (options.type === 'table') {
-                        container.style.overflow = 'auto';
-                        TABLE.render(container, doResize);
+                if (!noRender) {
+                    if (postId) {
+                        report.downloadCSV();     // download CSV AND do something else
                     }
-                    else if (options.type === 'reasons') {
-                        REASONS.render(container);
+
+                    if (options.type === 'csv') {
+                        report.downloadCSV();
+                    }
+                    else if (EMBEDDED) {
+                        if (options.type === 'table') {
+                            container.style.overflow = 'auto';
+                            TABLE.render(container, doResize);
+                        }
+                        else if (options.type === 'reasons') {
+                            REASONS.render(container);
+                        }
+                        else {
+                            CHART.render(container, options.type);
+                        }
                     }
                     else {
-                        CHART.render(container, options.type);
+                        VIEW.update();
                     }
-                }
-                else {
-                    VIEW.update();
                 }
             }
             // if cache was cleared
@@ -3410,7 +3413,7 @@ function qstatistics_begin(EMBEDDED) {
         }
 
 
-        function toggleButtons() {
+        function enableRightMenu() {
             if (menuButtons) {
                 for (var i = 0, n = menuButtons.length; i < n; i++) {
                     if (i === n - 1) {
@@ -3875,7 +3878,9 @@ function qstatistics_begin(EMBEDDED) {
                 document.removeEventListener('keyup', escListen);
                 window.removeEventListener('resize', scroll);
                 setTimeout(function () {
-                    document.body.removeChild(overlay);
+                    if (overlay.parentNode) {
+                        document.body.removeChild(overlay);
+                    }
                 }, 190);
             }
 
@@ -4096,7 +4101,7 @@ function qstatistics_begin(EMBEDDED) {
                 requestStart,
                 requestEnd,
                 stopPolling = false,
-                timeoutHandle,
+                pollTimeoutHandle,
                 isFirstReport,
                 errorsShown = false,
                 startNewPollingOnEveryRequest = false;
@@ -4242,13 +4247,12 @@ function qstatistics_begin(EMBEDDED) {
             }
 
 
-            this.tryNewRequest = function (onComplete) {
+            this.tryNewRequest = function () {
                 var requestsToSend = Math.ceil((requestEnd - requestStart) / DAY),
                     requestsReceived = 0,
                     isEarliestRequest = !this.addToBeginning || requestsToSend === 1;
 
-                clearTimeout(timeoutHandle);
-                isAnythingChanged = false;
+                clearTimeout(pollTimeoutHandle);
 
 
                 function recursiveSplit() {
@@ -4267,10 +4271,11 @@ function qstatistics_begin(EMBEDDED) {
 
 
                 function nonEmbeddedPoll() {
-                    timeoutHandle = setTimeout(function () {
+                    pollTimeoutHandle = setTimeout(function () {
                         that.tryNewRequest();
                     }, CONFIG.refresh);
                 }
+
 
                 function splitRequest(start, end) {
                     var request =
@@ -4293,7 +4298,7 @@ function qstatistics_begin(EMBEDDED) {
                                 that.addToBeginning = false;
                                 hidePreloader();
                                 if (EMBEDDED) {
-                                    onComplete();
+                                    embeddedPOLL.onComplete();
                                 }
                                 else {
                                     nonEmbeddedPoll();
@@ -4307,7 +4312,7 @@ function qstatistics_begin(EMBEDDED) {
                 }
 
 
-                if (!xhr && !stopPolling && !document.hidden && requestEnd >= requestStart) {
+                if (!xhr && !stopPolling && (requestsToSend > 1 || !document.hidden) && requestEnd >= requestStart) {
                     var start = requestStart,
                         end = requestEnd;
 
@@ -4319,14 +4324,16 @@ function qstatistics_begin(EMBEDDED) {
                     }
                 }
                 else {
+                    if (EMBEDDED) {
+                        embeddedPOLL.onComplete();
+                    }
                     hidePreloader();
-                    onComplete && onComplete();
                 }
             };
 
 
             this.stopRequest = function () {
-                clearTimeout(timeoutHandle);
+                clearTimeout(pollTimeoutHandle);
                 if (xhr) {
                     xhr.abort();
                     xhr = null;
@@ -4379,7 +4386,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
             function response(response, complete) {
-                debugLog('Response loading finished, ' + Math.floor(response.length / 1024000) + ' Mb loaded');
+                debugLog('Response loading finished, ' + (response.length / 1048576).toFixed(2) + ' Mb loaded.   Starting to parse...');
                 var json = JSON.parse(response);
 
                 // break polling loop on error
@@ -4396,7 +4403,7 @@ function qstatistics_begin(EMBEDDED) {
                 else {
                     var updateEnd = +json.updated;           // if updated does not go beyond END, polling will never stop
 
-                    isAnythingChanged = addRecordsToDatabase(json) || isAnythingChanged;
+                    var isAnythingChanged = addRecordsToDatabase(json);
 
                     // var timeDiff = Math.abs(updateEnd - now_END);
                     // if (timeDiff > 3) {
@@ -4411,20 +4418,18 @@ function qstatistics_begin(EMBEDDED) {
                         updatesHaveNoEvents = true;
                     }
 
+                    minRecordedTime = Math.min(minRecordedTime, requestStart);
+                    maxRecordedTime = Math.max(maxRecordedTime, Math.min(requestEnd, updateEnd));
+
+                    if (isFirstReport || isAnythingChanged) {
+                        createReport(isFirstReport, !isFirstReport && json.cdrs_values, !complete);
+                    }
+
                     if (complete) {
-                        minRecordedTime = Math.min(minRecordedTime, requestStart);
-                        maxRecordedTime = Math.max(maxRecordedTime, Math.min(requestEnd, updateEnd));
-
-                        if (isFirstReport || isAnythingChanged) {
-                            createReport(isFirstReport, isFirstReport && json.cdrs_values);
-                        }
-
                         requestStart = maxRecordedTime;
                         requestEnd = END;
 
-                        isFirstReport = false;
-                        toggleButtons();
-
+                        enableRightMenu();
 
                         if (startNewPollingOnEveryRequest) {
                             getRangeFromDropdown();
@@ -4439,6 +4444,8 @@ function qstatistics_begin(EMBEDDED) {
                             stopPolling = true;
                         }
                     }
+
+                    isFirstReport = false;
                 }
 
                 return true;
@@ -4460,7 +4467,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
             function hidePreloader() {
-                if (preloader && container) {
+                if (preloader && preloader.parentNode) {
                     container.removeChild(preloader);
                     preloader = false;
                 }
@@ -4470,7 +4477,7 @@ function qstatistics_begin(EMBEDDED) {
             if (!EMBEDDED) {
                 document.addEventListener('visibilitychange', function () {
                     if (document.hidden) {
-                        clearTimeout(timeoutHandle);
+                        clearTimeout(pollTimeoutHandle);
                     }
                     else {
                         that.tryNewRequest();
@@ -4478,6 +4485,8 @@ function qstatistics_begin(EMBEDDED) {
                 });
             }
         }
+
+
 
 
         function Table() {
@@ -4493,7 +4502,7 @@ function qstatistics_begin(EMBEDDED) {
                 if (blockRefresh) {
                     return;
                 } // todo deep vs shallow re-render
-                debugLog('Table render start');
+                debugLog('Table rendering start');
 
                 var str = '',
                     data = getTableWithPercentage();
@@ -5021,6 +5030,55 @@ function qstatistics_begin(EMBEDDED) {
 
 
 
+    function EmbeddedPoll() {
+        var offsetTimeouts = [],
+            offsetsEnded = 0,
+            globalPollTimeout;
+
+
+        function launchOffsetRequests() {
+            if (!document.hidden) {
+                offsetsEnded = 0;
+
+                for (var i = 0; i < reportServers.length; i++) {
+                    var offset = +EMBEDDED[i].offset;
+                    if (offset) {
+                        offsetTimeouts[i] = setTimeout(reportServers[i].tryNewRequest.bind(reportServers[i]), offset);
+                    }
+                    else {
+                        reportServers[i].tryNewRequest();
+                    }
+                }
+            }
+        }
+
+
+        this.onComplete = function() {
+            offsetsEnded++;
+            if (EMBEDDED.length === offsetsEnded) {
+                globalPollTimeout = setTimeout(launchOffsetRequests, CONFIG.refresh);
+            }
+        };
+
+
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) {
+                clearTimeout(globalPollTimeout);
+                if (offsetsEnded === EMBEDDED.length) {
+                    offsetsEnded = 0;
+                    for (i = 0; i < reportServers.length; i++) {
+                        reportServers[i].tryNewRequest();
+                    }
+                }
+            }
+        });
+    }
+
+
+
+
+
+
     function Utils() {
         var that = this;
 
@@ -5283,6 +5341,9 @@ function qstatistics_begin(EMBEDDED) {
     var reportServers = [];
 
     if (EMBEDDED) {
+        var postId = EMBEDDED[0].postid,
+            embeddedPOLL = new EmbeddedPoll();
+
         for (var i = 0; i < EMBEDDED.length; i++) {
             var em = EMBEDDED[i];
             em.report.time = em.time;
@@ -5305,63 +5366,5 @@ function qstatistics_begin(EMBEDDED) {
         formEl = formEl[formEl.length - 1];
 
         new Report(UTILS.formToJson(formEl), byId('left-content'), formEl);
-    }
-
-
-
-
-
-// TODO move the below to separate class
-// Here goes the POLLING code!
-
-    if (EMBEDDED) {
-        var offsetTimeouts = [],
-            requestsEnded,
-            postId = EMBEDDED[0].postid;
-
-
-        function poll() {
-            requestsEnded = 0;
-
-            function pollOnAllComplete () {
-                requestsEnded++;
-                if (EMBEDDED.length === requestsEnded) {
-                    timeoutHandle = setTimeout(poll, CONFIG.refresh);
-                }
-            }
-
-
-            for (var i = 0; i < reportServers.length; i++) {
-                var offset = EMBEDDED && (+EMBEDDED[i].offset) || 0;
-                if (offset) {
-                    offsetTimeouts[i] = setTimeout(reportServers[i].tryNewRequest.bind(reportServers[i], pollOnAllComplete), offset);
-                }
-                else {
-                    reportServers[i].tryNewRequest(pollOnAllComplete);
-                }
-            }
-        }
-
-        if (!document.hidden) {
-            var timeoutHandle = setTimeout(poll, CONFIG.refresh);
-        }
-
-
-        document.addEventListener('visibilitychange', function () {
-            if (document.hidden) {
-                for (var i = 0; i < reportServers.length; i++) {
-                    clearTimeout(offsetTimeouts[i]); // clear individual timeout with offset
-                }
-                clearTimeout(timeoutHandle);   // clear global polling cycle
-            }
-            else {
-                for (i = 0; i < reportServers.length; i++) {
-                    reportServers[i].tryNewRequest();
-                }
-                timeoutHandle = setTimeout(poll, CONFIG.refresh);
-            }
-        });
-
-        //window.addEventListener('beforeunload', poll);
     }
 }
