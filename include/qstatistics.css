@@ -46,6 +46,10 @@
 	box-shadow: 0 1px 8px 0 rgba(0,0,0,0.6);
 }
 
+.panel-open-icon {
+	text-align: right;
+}
+
 #close-arrow {
 	position: relative;
 	float: left;
@@ -202,6 +206,7 @@ slide timeline svg {
 
 #left-overlay,
 #right-overlay {
+	display: none;
 	position: absolute;
 	top: 296px;
 	font-size: 37px;

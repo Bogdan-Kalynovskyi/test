@@ -18,34 +18,42 @@ function qstatistics_begin(EMBEDDED) {
         var report = this,
             visibleCols = [],
             visibleRows = [],
-            now_END,
             colsOrder = [],
-            colOrig,
-            rowOrig,
-            colPos,
-            colPos1,
-            cPos1EqualsM1,
-            availPos,
-            breakPos,
-            lunchPos,
-            colPosLength,
+            getColAbs,
+            getRowAbs,
+            getColShuf,
+            colShuf1,
+            colShuf1EqualsM1,
+            availColShuf,
+            breakColShuf,
+            lunchColShuf,
+            unavailableColShuf,
+            colShufLength,
             table = [],
-            sortingCol = 0,
+            sortingColAbs = 0,
             sortingOrder = 1,
             timeColVisible,
             queueStatusColVisible,
-            agentStatusColVisible,
-            destRowsVisible,
-            isQstatistics = getQstatistics(),
+            availabilityColVisible,
+            destinationRowsVisible,
+
+            isPopupEnabled = !options.nopopups,
+            populateCallsList,
             updatesHaveNoEvents,
-            reportRendered,
 
-            START,
-            END,
+            reportStart,
+            appendStart,
+            reportEnd,
+            reportEnd_byNow,
 
-            usesCache,
-            isAppendMode,
-            callsChanged,
+            isReportRendered,
+            isReportCacheValid,
+            isReportEmpty,
+            reportNeedsCalculation,
+            reportNeedsRender,
+
+            appendCalls,
+            callsChanged, // todo optimization not finished
             eventsChanged,
             queuesChanged,
             agentsChanged,
@@ -63,7 +71,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
         // CONSTANTS
-        var DAY = 86400,
+        var secondsInDay = 86400,
 
             columnNames = [
                 '',
@@ -101,7 +109,8 @@ function qstatistics_begin(EMBEDDED) {
                 'transfer',
                 'logintime',
                 'breaktime',
-                'lunchtime'
+                'lunchtime',
+                'unavailable'
             ],
             destinationNames = [
                 'allcalls',
@@ -144,8 +153,9 @@ function qstatistics_begin(EMBEDDED) {
                 'Caller completed',
                 'Transfer by agent',
                 'Available time',
-                'Break Time',
-                'Lunch time'
+                'Break time',
+                'Lunch time',
+                'Unvailable time'
             ],
 
             colsCount = columnNames.length,  // == columnTitles????
@@ -166,7 +176,8 @@ function qstatistics_begin(EMBEDDED) {
             COL_timeEnd = 26,
             COL_availTime = 33,
             COL_breakTime = 34,
-            COL_lunchTime = 35;
+            COL_lunchTime = 35,
+            COL_unavailable = 36;
 
         var KEY_id = 0,
             KEY_callid = 1,
@@ -206,30 +217,34 @@ function qstatistics_begin(EMBEDDED) {
         }
 
 
-        function isTimeCol(col) {
-            return col >= COL_timeStart && col < COL_timeEnd;
+        function isTimeColumnAbs(abs) {
+            return abs >= COL_timeStart && abs < COL_timeEnd;
         }
-        function isTimePos(pos) {
-            var orig = colOrig[pos];
-            return orig >= COL_timeStart && orig < COL_timeEnd;
-        }
-
-
-        function isAgentStatusCol(col) {
-            return col >= COL_availTime && col <= COL_lunchTime;
-        }
-        function isAgentStatusPos(pos) {
-            return pos === availPos || pos === breakPos || pos === lunchPos;
-        }
-
-        function getQstatistics() {
-            return options.abandon !== 0 || options.noagent !== 0 || options.timeout !== 0 || options.keypress !== 0 || options.agent !== 0 || options.caller !== 0 || options.transfer !== 0 || options.logintime !== 0 || options.breaktime !== 0 || options.lunchtime !== 0 || options.type === 'reasons';
+        // todo memorize?
+        function isTimeColumnShuf(shuf) {
+            var abs = getColAbs[shuf];
+            return abs >= COL_timeStart && abs < COL_timeEnd;
         }
 
 
-        function notifyReportRendered() {
-            if (!reportRendered) {
-                reportRendered = true;
+        function isAvailabilityColumnAbs(col) {
+            return col >= COL_availTime && col <= COL_unavailable;
+        }
+        function isAvailabilityColumnShuf(pos) {
+            return pos === availColShuf || pos === breakColShuf || pos === lunchColShuf || pos === unavailableColShuf;
+        }
+
+        function reportDisplaysQueueEvents() {
+            return options.abandon !== 0 || options.noagent !== 0 || options.timeout !== 0 || options.keypress !== 0 || options.agent !== 0 || options.caller !== 0 || options.transfer !== 0 || options.logintime !== 0 || options.breaktime !== 0 || options.lunchtime !== 0 || options.unavailable !== 0 || options.type === 'reasons';
+        }
+
+
+        function onReportRendered() {
+            if (!EMBEDDED) {
+                equalHeight();
+            }
+            if (!isReportRendered) {
+                isReportRendered = true;
                 window.callPhantom && window.callPhantom();
                 debugLog('DONE');
             }
@@ -325,7 +340,7 @@ function qstatistics_begin(EMBEDDED) {
                             event = this.pairs[i];
                         }
 
-                        end = Math.min(now_END, periodEnd);
+                        end = Math.min(reportEnd_byNow, periodEnd);
                         try2RecordEvent();
                     }
                 }
@@ -336,7 +351,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
 
-        function Reasons() {
+        function Availability() {
             var that = this,
                 as = CONFIG.extraevents === 1;
 
@@ -345,7 +360,7 @@ function qstatistics_begin(EMBEDDED) {
 
                 for (var i = 0, n = events.length; i < n; i++) {
                     var ev = events[i];
-                    if (ev.time >= START && ev.time < END) {
+                    if (ev.time >= reportStart && ev.time < reportEnd) {
                         ev.name = agentName;
 
                         info[0].push(ev);
@@ -398,8 +413,8 @@ function qstatistics_begin(EMBEDDED) {
                             Unavailable: 'orange'
                         },
                         tableData = [],
-                        st = new Date((START + TIMEZONE_DIFF * 60) * 1000),
-                        en = new Date((END + TIMEZONE_DIFF * 60) * 1000);
+                        st = new Date((reportStart + TIMEZONE_DIFF * 60) * 1000),
+                        en = new Date((reportEnd + TIMEZONE_DIFF * 60) * 1000);
 
                     if (options.totalrow) {
                         var totalRow = ['Total', 0, 0, 0, 0],
@@ -409,7 +424,7 @@ function qstatistics_begin(EMBEDDED) {
                     for (var a in usedAgents) {
                         var agent = agents[usedAgents[a]],
                             agentName = phoneTitleDisplay(agent),
-                            reasons = agent.E.reasons(START, END),
+                            reasons = agent.E.reasons(reportStart, reportEnd),
                             reasonSum = [0, 0, 0, 0],
                             tableDataRow;
                         rowsCount++;
@@ -434,10 +449,10 @@ function qstatistics_begin(EMBEDDED) {
 
                         reasonSum[3] += reasonSum[1] + reasonSum[2];
                         if (as) {
-                            tableDataRow = [agentName, now_END - START - reasonSum[3], reasonSum[1], reasonSum[2], reasonSum[3]];
+                            tableDataRow = [agentName, reportEnd_byNow - reportStart - reasonSum[3], reasonSum[1], reasonSum[2], reasonSum[3]];
                         }
                         else {
-                            tableDataRow = [agentName, now_END - START - reasonSum[3], reasonSum[3]];
+                            tableDataRow = [agentName, reportEnd_byNow - reportStart - reasonSum[3], reasonSum[3]];
                         }
                         tableDataRow.info = collectEvents(agent.E.pairs, agentName);
 
@@ -478,7 +493,7 @@ function qstatistics_begin(EMBEDDED) {
                                 container.style.height = container.children[0].clientHeight + container.children[1].clientHeight + 54 + 'px';
                                 window.scrollTo(savedScrollX, savedScrollY);
 
-                                notifyReportRendered();
+                                onReportRendered();
                             });
 
                             debugLog('TimeLine rendering start');
@@ -500,7 +515,7 @@ function qstatistics_begin(EMBEDDED) {
                     else {
                         container.innerHTML = '<h3 style="color: gray; text-align: center; margin-top: 3em">Report has no agents</h3>';
 
-                        notifyReportRendered();
+                        onReportRendered();
                     }
                 }
             }
@@ -618,7 +633,7 @@ function qstatistics_begin(EMBEDDED) {
                             }
                             if (i === n || i === -1) {     // no rows in table: quite possible situation
                                 this.by = 'column';
-                                this.id = colOrig[1];
+                                this.id = getColAbs[1];
                                 return;
                             }
                         }
@@ -641,8 +656,8 @@ function qstatistics_begin(EMBEDDED) {
                     else {
                         id = +id;
                         if (by === 'column') {
-                            if (colPos[id] === -1) {
-                                id = colOrig[1];
+                            if (getColShuf[id] === -1) {
+                                id = getColAbs[1];
                             }
                             this.id = id;
                         }
@@ -663,7 +678,7 @@ function qstatistics_begin(EMBEDDED) {
                         this.initFromValue(split[0], split[1]);
                     }
                     else {
-                        this.initFromValue('column', colOrig[1]);
+                        this.initFromValue('column', getColAbs[1]);
                     }
                 },
 
@@ -674,7 +689,7 @@ function qstatistics_begin(EMBEDDED) {
                                 byCol.value = this.hash || this.id;
                                 byRow.value = '';
                                 if (byCol.selectedIndex === -1) {
-                                    this.id = colOrig[0];
+                                    this.id = getColAbs[0];
                                     byCol.value = this.id;
                                 }
                             }
@@ -698,7 +713,7 @@ function qstatistics_begin(EMBEDDED) {
             var chartTime = {
                 init: function () {
                     this.format = CONFIG.timeformat === 12 ? 'hh:mma' : 'HH:mm';
-                    this.hoursOnly = options.period > 0 && options.period < DAY && now_END - START <= DAY;
+                    this.hoursOnly = options.period > 0 && options.period < secondsInDay && reportEnd_byNow - reportStart <= secondsInDay;
                 },
                 legend: function (dbRow) {
                     return this.hoursOnly ? moment.unix(dbRow.intervals[0][0]).format(this.format) : dbRow[0];
@@ -752,24 +767,24 @@ function qstatistics_begin(EMBEDDED) {
                     var colors = [];
 
                     if (pieSource.by === 'row') {
-                        var totalCallsColOnly = (colPosLength === 2 && visibleCols[1]);
-                        for (var i = 1; i < colPosLength; i++) {
-                            if (totalCallsColOnly || i !== colPos1) {      // don't include "Total calls" column, unless it is the only one
-                                colors.push({color: allColors[colOrig[i] - 1]});
+                        var totalCallsColOnly = (colShufLength === 2 && visibleCols[1]);
+                        for (var i = 1; i < colShufLength; i++) {
+                            if (totalCallsColOnly || i !== colShuf1) {      // don't include "Total calls" column, unless it is the only one
+                                colors.push({color: allColors[getColAbs[i] - 1]});
                             }
                         }
                         chartOptions.piechart.colors = colors;
                     }
                     else if (options.period === 0 && table.length <= allColors.length) {
-                        if (destRowsVisible) {
+                        if (destinationRowsVisible) {
                             i = options.allcalls ? 1 : 0;            // in Destination mode, don't show "All calls" in chart
 
                             if (i === table.length) {
                                 i = 0;
                             }
 
-                            for (; i < rowOrig.length; i++) {
-                                colors.push({color: allColors[rowOrig[i]]});
+                            for (; i < getRowAbs.length; i++) {
+                                colors.push({color: allColors[getRowAbs[i]]});
                             }
                             for (; i < table.length; i++) {
                                 colors.push({color: allColors[i]});
@@ -785,8 +800,8 @@ function qstatistics_begin(EMBEDDED) {
                     }
                 }
                 else {
-                    for (i = 1; i < colPosLength; i++) {
-                        series[i - 1] = {color: allColors[colOrig[i] - 1]};
+                    for (i = 1; i < colShufLength; i++) {
+                        series[i - 1] = {color: allColors[getColAbs[i] - 1]};
                     }
                     chartOptions[type].series = series;
                 }
@@ -849,8 +864,8 @@ function qstatistics_begin(EMBEDDED) {
                 // when table row is displayed as pie chart
                 if (pieChartRow !== undefined) {
                     row = table[pieChartRow];
-                    for (var i = 1; i < colPosLength; i++) {
-                        if (isAgentStatusPos(i)) {
+                    for (var i = 1; i < colShufLength; i++) {
+                        if (isAvailabilityColumnShuf(i)) {
                             maxTime = Math.max(maxTime, row[i]);
                         }
                         else {
@@ -860,18 +875,18 @@ function qstatistics_begin(EMBEDDED) {
                     loggedInTimeDivider = maxNumber ? (maxTime / maxNumber * 26) : maxStateTime;
                 }
                 // when logged in time column is displayed
-                else if (isAgentStatusCol(pieChartCol)) {
+                else if (isAvailabilityColumnAbs(pieChartCol)) {
                     loggedInTimeDivider = maxStateTime;      // average
                 }
                 // not a pie chart
-                else if (agentStatusColVisible) {
+                else if (availabilityColVisible) {
                     if (maxTotalNumber === undefined) {
                         maxTotalNumber = 0;
                         var tblLength = table.length;
                         for (i = 0; i < tblLength; i++) {
                             row = table[i];
-                            for (var j = 1; j < colPosLength; j++) {
-                                if (!isTimePos(j) && !isAgentStatusPos(j)) {
+                            for (var j = 1; j < colShufLength; j++) {
+                                if (!(isTimeColumnShuf(j) || isAvailabilityColumnShuf(j))) {
                                     maxTotalNumber = Math.max(maxTotalNumber, row[j]);
                                 }
                             }
@@ -880,8 +895,8 @@ function qstatistics_begin(EMBEDDED) {
                     loggedInTimeDivider = maxTotalNumber ? (maxStateTime / maxTotalNumber * 26) : maxStateTime;
                 }
 
-                if (loggedInTimeDivider > DAY) {
-                    loggedInTimeDivider = DAY;
+                if (loggedInTimeDivider > secondsInDay) {
+                    loggedInTimeDivider = secondsInDay;
                     timeUnit = ' (days)';
                 }
                 else if (loggedInTimeDivider > 3600) {
@@ -904,8 +919,8 @@ function qstatistics_begin(EMBEDDED) {
                 tableHeader = [options.period ? 'Time' : 'Destination'];
 
                 if (!pieChartCol) {
-                    for (i = 1; i < colPosLength; i++) {
-                        tableHeader.push(columnTitles[colOrig[i]] + (isAgentStatusPos(i) ? timeUnit : ''));
+                    for (i = 1; i < colShufLength; i++) {
+                        tableHeader.push(columnTitles[getColAbs[i]] + (isAvailabilityColumnShuf(i) ? timeUnit : ''));
                     }
                 }
             }
@@ -925,9 +940,9 @@ function qstatistics_begin(EMBEDDED) {
                 hiddenInPie = [];
 
                 if (pieSource.by === 'column') {
-                    if (colPosLength) {
+                    if (colShufLength) {
                         cacheTableHeader(undefined, id);
-                        var pos = colPos[id],
+                        var pos = getColShuf[id],
                             i = (options.period === 0 && +options.allcalls) ? 1 : 0,            // in Destination mode, don't show "All calls" in chart
                             lastRow = tblLength - (options.totalrow ? 1 : 0);                   // also, never show "Total" row in piechart
 
@@ -942,7 +957,7 @@ function qstatistics_begin(EMBEDDED) {
 
                         for (; i < lastRow; i++) {
                             dbRow = table[i];
-                            if (!isAgentStatusCol(id)) {
+                            if (!isAvailabilityColumnAbs(id)) {
                                 if (options.period === 0 || dbRow.total) {
                                     data.push([chartTime.legend(dbRow), dbRow[pos]]);
                                     hiddenInPie.push(i);
@@ -964,15 +979,15 @@ function qstatistics_begin(EMBEDDED) {
                 else {
                     if (table[id] && (options.period === 0 || table[id].total)) {
 
-                        var totalCallsColOnly = (colPosLength === 2 && visibleCols[1]);
+                        var totalCallsColOnly = (colShufLength === 2 && visibleCols[1]);
 
                         cacheTableHeader(id);
                         dbRow = table[id];
 
                         var headerLength = tableHeader.length;    // colPosLength?
                         for (i = 1; i < headerLength; i++) {
-                            if (totalCallsColOnly || i !== colPos1) {
-                                if (!isAgentStatusPos(i)) {
+                            if (totalCallsColOnly || i !== colShuf1) {
+                                if (!isAvailabilityColumnShuf(i)) {
                                     data.push([tableHeader[i], dbRow[i]]);
                                     hiddenInPie.push(i);
                                     sumOfVisibleCells += dbRow[i];
@@ -1036,19 +1051,19 @@ function qstatistics_begin(EMBEDDED) {
                         row[0] = chartTime.legend(dbRow);
                     }
 
-                    for (var i = 1; i < colPosLength; i++) {
-                        var i1 = colOrig[i],
+                    for (var i = 1; i < colShufLength; i++) {
+                        var i1 = getColAbs[i],
                             j1 = i,
-                            isTime = isTimeCol(i1);
+                            isTime = isTimeColumnAbs(i1);
 
                         if (isTime) {
                             row[j1] = UTILS.googleTimeFormat(row[j1]);
                         }
-                        else if (isAgentStatusCol(i1)) {
+                        else if (isAvailabilityColumnAbs(i1)) {
                             // If agent was logged in for the whole time, the "logged in" chart should look as a straight line. .. // doto doesnt work
                             // For time-period-based that.report type, row[0] is a Date object
-                            if (startTime && (!TABLE || sortingCol === 0) && j === lastRow - 1) {   // todo save sortingCol and reorder into options and db
-                                row[j1] *= options.period / (now_END - startTime);
+                            if (startTime && (!TABLE || sortingColAbs === 0) && j === lastRow - 1) {   // todo save sortingCol and reorder into options and db
+                                row[j1] *= options.period / (reportEnd_byNow - startTime);
                             }
                             // show time in the most suitable unit of measure
                             row[j1] = +(row[j1] / loggedInTimeDivider).toFixed(2);
@@ -1070,7 +1085,7 @@ function qstatistics_begin(EMBEDDED) {
                     // then reflect column types in chart options
                     if (j === 0) {
                         if (hasIntegerCols && hasDurationCols) {   // then display two axes, right is timeOfDay
-                            for (i = 1; i < colPosLength; i++) {
+                            for (i = 1; i < colShufLength; i++) {
                                 series[i - 1].targetAxisIndex = colAxisIndex[i - 1];
                             }
                             chartOptions[type].vAxes = {
@@ -1089,12 +1104,12 @@ function qstatistics_begin(EMBEDDED) {
                 }
 
 
-                if (options.period > 0 && options.period < DAY && now_END - START <= DAY) {
+                if (options.period > 0 && options.period < secondsInDay && reportEnd_byNow - reportStart <= secondsInDay) {
                     googleTimeDateFormat = CONFIG.timeformat === 12 ? 'hh:mmaa' : 'HH:mm';
                 }
                 else {
                     googleTimeDateFormat = dateFormat;
-                    if (options.period < DAY) {
+                    if (options.period < secondsInDay) {
                         googleTimeDateFormat += ' ' + (CONFIG.timeformat === 12 ? 'hh:mmaa' : 'HH:mm');
                     }
                 }
@@ -1104,8 +1119,8 @@ function qstatistics_begin(EMBEDDED) {
                     chartOptions[type].hAxis = {
                         format: googleTimeDateFormat,
                         viewWindow: {
-                            min: new Date(START * 1000),
-                            max: new Date(now_END * 1000)
+                            min: new Date(reportStart * 1000),
+                            max: new Date(reportEnd_byNow * 1000)
                         }
                     };
                 }
@@ -1128,9 +1143,9 @@ function qstatistics_begin(EMBEDDED) {
             function saveOptions() {
                 if (!oldOptions) {
                     oldOptions = {
-                        start: START,
-                        end: END,
-                        nowEnd: now_END,
+                        start: reportStart,
+                        end: reportEnd,
+                        nowEnd: reportEnd_byNow,
                         startday: options.startday,
                         endday: options.endday,
                         period: options.period
@@ -1142,17 +1157,17 @@ function qstatistics_begin(EMBEDDED) {
 
             function changeChartRange(startday, endday) {
                 FORM.showNewTime(startday, endday);
-                createReport();
+                onReportOptionsChange();
             }
 
 
             function move(direction, element) {
-                var delta = (now_END - START) * 0.1 * direction;
-                if (direction < 0 || now_END === END) {
+                var delta = (reportEnd_byNow - reportStart) * 0.1 * direction;
+                if (direction < 0 || reportEnd_byNow === reportEnd) {
                     saveOptions();
 
-                    START += delta;
-                    END = now_END + delta;
+                    reportStart += delta;
+                    reportEnd = reportEnd_byNow + delta;
 
                     changeChartRange();
                 }
@@ -1203,12 +1218,12 @@ function qstatistics_begin(EMBEDDED) {
                     }
                     saveOptions();
 
-                    var leftTime = START,
-                        rightTime = now_END;
+                    var leftTime = reportStart,
+                        rightTime = reportEnd_byNow;
 
-                    START += (rightTime - leftTime) * (minX - window.pageXOffset - rectSVG.left) / rectSVG.width;
-                    END = rightTime - (rightTime - leftTime) * (rectSVG.right + window.pageXOffset - maxX) / rectSVG.width;
-                    options.period = oldOptions.period * (now_END - START) / (oldOptions.nowEnd - oldOptions.start);
+                    reportStart += (rightTime - leftTime) * (minX - window.pageXOffset - rectSVG.left) / rectSVG.width;
+                    reportEnd = rightTime - (rightTime - leftTime) * (rectSVG.right + window.pageXOffset - maxX) / rectSVG.width;
+                    options.period = oldOptions.period * (reportEnd_byNow - reportStart) / (oldOptions.nowEnd - oldOptions.start);
 
                     changeChartRange();
 
@@ -1225,17 +1240,17 @@ function qstatistics_begin(EMBEDDED) {
                     if (svgr && evt.deltaY && (svgr === evt.target || UTILS.contains(svgr, evt.target))) {
                         saveOptions();
 
-                        var leftTime = START,
-                            rightTime = now_END,
+                        var leftTime = reportStart,
+                            rightTime = reportEnd_byNow,
                             rectSVG = svgr.getBoundingClientRect(),
                             center = evt.pageX + window.pageXOffset,
                             left = center - rectSVG.left,
                             right = rectSVG.right - center,
                             zoom = evt.deltaY > 0 ? -0.06 : 0.06;
 
-                        START += (rightTime - leftTime) * left / rectSVG.width * zoom;
-                        END = rightTime - (rightTime - leftTime) * right / rectSVG.width * zoom;
-                        options.period = oldOptions.period * (now_END - START) / (oldOptions.nowEnd - oldOptions.start);
+                        reportStart += (rightTime - leftTime) * left / rectSVG.width * zoom;
+                        reportEnd = rightTime - (rightTime - leftTime) * right / rectSVG.width * zoom;
+                        options.period = oldOptions.period * (reportEnd_byNow - reportStart) / (oldOptions.nowEnd - oldOptions.start);
 
                         changeChartRange();
                     }
@@ -1404,7 +1419,7 @@ function qstatistics_begin(EMBEDDED) {
                     }, 100);
                 }
                 else {
-                    if (!reportRendered && !google.visualization) {
+                    if (!google.visualization) {
                         debugLog('Start waiting until google charts load');
                     }
                     google.charts.setOnLoadCallback(function () {
@@ -1439,7 +1454,7 @@ function qstatistics_begin(EMBEDDED) {
                         }
 
 
-                        setTimeout(notifyReportRendered, 100);
+                        setTimeout(onReportRendered, 100);
 
                         if (!EMBEDDED) {
                             equalHeight();
@@ -1449,23 +1464,28 @@ function qstatistics_begin(EMBEDDED) {
                             google.visualization.events.addListener(currentChart, 'ready', patchSVG);
 
                             google.visualization.events.addListener(currentChart, 'select', function () {
-                                var selection = currentChart.getSelection();
+                                var selection = currentChart.getSelection(),
+                                    rowAbs,
+                                    colShuf;
                                 selection = selection[0];
 
                                 if (selection && selection.row !== null) {
                                     if (_type === 'piechart') {
                                         if (pieSource.by === 'column') {
-                                            var i = hiddenInPie[selection.row], j = colPos[pieSource.id];
+                                            rowAbs = hiddenInPie[selection.row];
+                                            colShuf = getColShuf[pieSource.id];
                                         }
                                         else {
-                                            var j = hiddenInPie[selection.row], i = pieSource.id;
+                                            rowAbs = pieSource.id;
+                                            colShuf = hiddenInPie[selection.row];
                                         }
                                     }
                                     else {
-                                        var i = selection.row, j = selection.column;
+                                        rowAbs = selection.row;
+                                        colShuf = selection.column;
                                     }
 
-                                    openCallDetails(i, j);
+                                    openCallDetails(rowAbs, colShuf);
 
                                     //google.visualization.setSelection([]);
                                 }
@@ -1533,9 +1553,9 @@ function qstatistics_begin(EMBEDDED) {
 
             this.resetZoom = function () {
                 if (oldOptions) {
-                    START = oldOptions.start;
-                    END = oldOptions.end;
-                    now_END = oldOptions.nowEnd;
+                    reportStart = oldOptions.start;
+                    reportEnd = oldOptions.end;
+                    reportEnd_byNow = oldOptions.nowEnd;
                     options.period = oldOptions.period;
                     resetZoomBtn.style.display = '';
 
@@ -1586,7 +1606,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function clearAllCalls() {
-            usesCache = true;
+            isReportCacheValid = true;
             calls = [];
             callIds = null;
             queues = {};
@@ -1597,6 +1617,8 @@ function qstatistics_begin(EMBEDDED) {
             maxRecordedTime = 0;
             maxTotalNumber = undefined;
             updatesHaveNoEvents = false;
+            isReportEmpty = true;
+            reportNeedsCalculation = false;
 
             maxHold = 0;
             maxTalk = 0;
@@ -1604,11 +1626,6 @@ function qstatistics_begin(EMBEDDED) {
             sumHold = 0;
             sumTalk = 0;
             sumTotal = 0;
-            totalAnswered = 0;
-            totalCallsCount = 0;
-            totalInboundCount = 0;
-            totalOutboundCount = 0;
-            totalInternalCount = 0;
 
             _counter = 0;       // when new calculation starts, count from zero
         }
@@ -1631,31 +1648,37 @@ function qstatistics_begin(EMBEDDED) {
 
 
             if (newCalls.length) {
-                if (!usesCache) {
+                if (!isReportCacheValid) {
 
                 }
-                else if (previousCallsLength > 200000) {
-                    calls = null;
-                    usesCache = false;
+                else if (previousCallsLength > 500000) {
+                    calls = [];
+                    callIds = {};
+                    isReportCacheValid = false;
+                    alert('500,000 have been loaded so far. To prevent memory overflow, the webpage has dropped the calls cache. This means that changing report options will most likely cause full data reload');
+                    debugLog('***** Reached the limit of 500k calls in cache. Dropping the cache! *****');
                 }
                 else if (previousCallsLength !== 0) {
-                    if (!callIds) {
-                        callIds = {};
-                        for (var i = 0, n = calls.length; i < n; i++) {
-                            var call = calls[i];
-                            callIds[call[KEY_id]] = call;       // todo pay attention, bottleneck here.
+                    // todo I'm not sure if .addToBeginning is handled correctly here...
+                    // if (chunksTotal === 1) {        // use for /update requests only
+                        if (!callIds) {
+                            callIds = {};
+                            for (var i = 0, n = calls.length; i < n; i++) {
+                                var call = calls[i];
+                                callIds[call[KEY_id]] = call;
+                            }
                         }
-                    }
-                    for (i = 0, n = newCalls.length; i < n; i++) {
-                        call = newCalls[i];
-                        var oldCall = callIds[call[KEY_id]];   // integer keys?
-                        if (oldCall) {
-                            calls[calls.indexOf(oldCall)] = call;
+                        for (i = 0, n = newCalls.length; i < n; i++) {
+                            call = newCalls[i];
+                            var oldCall = callIds[call[KEY_id]];   // integer keys?
+                            if (oldCall) {
+                                calls.splice(calls.indexOf(oldCall), 1);
+                            }
+                            callIds[call[KEY_id]] = call;
                         }
-                        callIds[call[KEY_id]] = call;       // todo pay attention, bottleneck here.
-                    }
+                    // }
 
-                    if (SERVER.addToBeginning) {
+                    if (SERVICE.addToBeginning) {
                         appendArrays(newCalls, calls);
                         calls = newCalls;
                     }
@@ -1673,7 +1696,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
 // QUEUES
-            for (i = 0, n = newQueues.length; i < n; i++) {
+            for (var i = 0, n = newQueues.length; i < n; i++) {
                 // todo: now I simply overwrite queues. Todo detect queue changes
                 var queue = newQueues[i];
                 if (!queues[queue.id]) {
@@ -1741,12 +1764,12 @@ function qstatistics_begin(EMBEDDED) {
                 agents[agent.id] = agent;
                 agent.marked = true;
 
-                if (agent.E.add(agent.events) && oldAgentEventsLength && SERVER.addToBeginning) {
+                if (agent.E.add(agent.events) && oldAgentEventsLength && SERVICE.addToBeginning) {
                     agent.E.pairs.sort(function(a, b) {
                         return a.time - b.time;
                     });
                 }
-                if ((agentStatusColVisible && agent.E.pairs.length || options.type === 'reasons') && options.agents !== 'none') {
+                if ((availabilityColVisible && agent.E.pairs.length || options.type === 'reasons') && options.agents !== 'none') {
                     eventsChanged = true;
                     dbChanged = true;
                 }
@@ -1809,12 +1832,13 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function getCallsFromTimePeriod(start, end) {       // todo search index from
-            var startIndex,
+            var array = appendCalls || calls,
+                startIndex,
                 endIndex,
                 callEnd;
 
-            for (var i = startSearchFromIndex, n = calls.length; i < n; i++) {
-                callEnd = +calls[i][KEY_end];            //TODO do binary search, but considering the fact that searched element is closer to beginning
+            for (var i = startSearchFromIndex, n = array.length; i < n; i++) {
+                callEnd = +array[i][KEY_end];            //TODO do binary search, but considering the fact that searched element is closer to beginning
                 if (startIndex === undefined) {
                     if (callEnd >= start) {
                         startIndex = i;
@@ -1833,7 +1857,7 @@ function qstatistics_begin(EMBEDDED) {
 
             if (startIndex !== undefined && endIndex !== undefined) {
                 startSearchFromIndex = endIndex + 1;
-                return calls.slice(startIndex, endIndex + 1);
+                return array.slice(startIndex, endIndex + 1);
             }
             else {
                 return [];
@@ -1857,11 +1881,18 @@ function qstatistics_begin(EMBEDDED) {
             var oldValue = visibleCols[pos];
             visibleCols[pos] = value;
             if (oldValue > 0 && value > 0) {
-                VIEW.update();
+                renderReport();
             }
             else {
-                getColumnPositions();
-                createReport(true);
+                if (oldValue > 0) {
+                    removeColumn(pos);
+                    getColumnPositions();
+                    renderReport();
+                }
+                else {
+                    getColumnPositions();
+                    onReportOptionsChange(true);
+                }
             }
         }
 
@@ -1869,52 +1900,64 @@ function qstatistics_begin(EMBEDDED) {
         function setVisibleRow(pos, value) {
             visibleRows[pos] = value;
             getRowPositions();
-            createReport();
+            onReportOptionsChange(true);
         }
 
 
         function getColumnPositions() {
-            colOrig = [0];
+            getColAbs = [0];
             timeColVisible = false;
             queueStatusColVisible = false;
-            colPos = new Array(COL_lunchTime + 1);
+            getColShuf = new Array(COL_unavailable + 1);
 
             for (var i = 1; i < colsCount; i++) {
                 var j = colsOrder[i];
                 if (visibleCols[j]) {
-                    if (isTimeCol(i)) {
+                    if (isTimeColumnAbs(i)) {
                         timeColVisible = true;
                     }
                     else if (i >= COL_timeEnd && i < COL_availTime) {
                         queueStatusColVisible = true;
                     }
-                    else if (isAgentStatusCol(i)) {
-                        agentStatusColVisible = true;
+                    else if (isAvailabilityColumnAbs(i)) {
+                        availabilityColVisible = true;
                     }
-                    colOrig.push(j);
+                    getColAbs.push(j);
                 }
-                colPos[i] = colOrig.indexOf(i);
+                getColShuf[i] = getColAbs.indexOf(i);
             }
-            colPosLength = colOrig.length;
+            colShufLength = getColAbs.length;
 
-            colPos1 = colPos[1];
-            cPos1EqualsM1 = colPos1 === -1;
-            availPos = colPos[COL_availTime];
-            breakPos = colPos[COL_breakTime];
-            lunchPos = colPos[COL_lunchTime];
+            colShuf1 = getColShuf[1];
+            colShuf1EqualsM1 = colShuf1 === -1;
+            populateCallsList = timeColVisible && colShuf1EqualsM1;
+            availColShuf = getColShuf[COL_availTime];
+            breakColShuf = getColShuf[COL_breakTime];
+            lunchColShuf = getColShuf[COL_lunchTime];
+            unavailableColShuf = getColShuf[COL_unavailable];
         }
 
 
         function getRowPositions() {
-            rowOrig = [];
+            getRowAbs = [];
             var rowIndex = 0;
             for (var i = 0, n = visibleRows.length; i < n; i++) {
                 if (visibleRows[i]) {
-                    rowOrig[i] = rowIndex++;
+                    getRowAbs[i] = rowIndex++;
                 }
             }
-            destRowsVisible = rowIndex;
+            destinationRowsVisible = rowIndex;
         }
+
+
+        function removeColumn(pos) {
+            var posInTable = getColShuf[pos];
+debugger;
+            for (var i = 0, tblLen = table.length; i < tblLen; i++) {
+                table[i].splice(posInTable, 1);
+            }
+        }
+
 
 //todo when all 4 rows are inactive
         // then stop many calculations because no sense
@@ -1989,60 +2032,59 @@ function qstatistics_begin(EMBEDDED) {
                 }
             }
 
-            for (var j = 1; j < colPosLength; j++) {
-                var i1 = colOrig[j],
-                    j0 = j,
-                    j1 = j0 + inserts,
-                    withPercentage = visibleCols[i1] === 2,
-                    isTime = timeColVisible && isTimeCol(i1),
-                    isAgentStatus = isAgentStatusCol(i1);
+            for (var colShuf = 1; colShuf < colShufLength; colShuf++) {
+                var colAbs = getColAbs[colShuf],
+                    pos = colShuf,
+                    pos1 = pos + inserts,
+                    withPercentage = visibleCols[colAbs] === 2,
+                    isTime = timeColVisible && isTimeColumnAbs(colAbs),
+                    isAvailability = isAvailabilityColumnAbs(colAbs);
 
-                if (withPercentage || isTime || isAgentStatus) {
+                if (withPercentage || isTime || isAvailability) {
                     for (i = 0; i < tblLength; i++) {
                         var row = result[i],
                             perc;
 
                         if (isTime) {
-                            row[j1] = UTILS.timeFormat(row[j1], 3);
+                            row[pos1] = UTILS.timeFormat(row[pos1], 3);
                         }
-                        else if (isAgentStatus) {
-                            row[j1] = (options.period || table[i].hasLIT) ? UTILS.timeFormat(row[j1], 4) : '';
+                        else if (isAvailability) {
+                            row[pos1] = (options.period || table[i].hasLIT) ? UTILS.timeFormat(row[pos1], 4) : '';
                         }
 
                         if (withPercentage) {
                             var tblRow = table[i];
-                            if (isAgentStatus) {
-                                if (tblRow[j0] || tblRow.hasLIT) {
-                                    perc = tblRow.totalTime ? Math.round(100 * tblRow[j0] / tblRow.totalTime) : 0;
+                            if (isAvailability) {
+                                if (tblRow[pos] || tblRow.hasLIT) {
+                                    perc = tblRow.totalTime ? Math.round(100 * tblRow[pos] / tblRow.totalTime) : 0;
                                 }
                                 else {
                                     perc = '';
                                 }
                             }
                             else {
-                                if (i1 === COL_inboundA || i1 === COL_inboundB) {
+                                if (colAbs === COL_inboundA || colAbs === COL_inboundB) {
                                     divide = tblRow.inbound;
                                 }
-                                else if (i1 === COL_outboundA || i1 === COL_outboundB) {
+                                else if (colAbs === COL_outboundA || colAbs === COL_outboundB) {
                                     divide = tblRow.outbound;
                                 }
-                                else if (i1 === COL_internalA || i1 === COL_internalB) {
+                                else if (colAbs === COL_internalA || colAbs === COL_internalB) {
                                     divide = tblRow.internal;
                                 }
                                 else {
                                     var divide = tblRow.total;
                                 }
-                                perc = divide ? Math.round(100 * tblRow[j0] / divide) : '';
+                                perc = divide ? Math.round(100 * tblRow[pos] / divide) : '';
                             }
 
                             if (csv) {
-                                row.splice(j1 + 1, 0, perc);
+                                row.splice(pos1 + 1, 0, perc);
                             }
                             else {
                                 if (perc !== '') {
-                                    perc += ' %';
+                                    row[pos1] += ' <small>(' + perc + ' %)</small>';
                                 }
-                                row[j1] += ' <small>(' + perc + ')</small>';
                             }
                         }
                     }
@@ -2074,12 +2116,12 @@ function qstatistics_begin(EMBEDDED) {
 
 
             if (TABLE) {
-                if (options.totalrow && (sortingOrder === -1 || sortingCol > 0)) {
+                if (options.totalrow && (sortingOrder === -1 || sortingColAbs > 0)) {
                     var totalRow = table.pop();
                 }
 
-                if (sortingCol > 0) {
-                    table.sort(byCol(colPos[sortingCol], sortingOrder));
+                if (sortingColAbs > 0) {
+                    table.sort(byCol(getColShuf[sortingColAbs], sortingOrder));
                 }
                 else if (sortingOrder === -1) {
                     table.reverse();
@@ -2109,11 +2151,11 @@ function qstatistics_begin(EMBEDDED) {
                 str = '';
                 row = [options.period ? 'Time' : 'Destination'];
 
-                for (var i = 1; i < colPosLength; i++) {
-                    var newI = colOrig[i];
-                    row.push(columnTitles[newI]);
-                    if (visibleCols[newI] === 2) {
-                        row.push(columnTitles[newI] + ' %');
+                for (var i = 1; i < colShufLength; i++) {
+                    var colAbs = getColAbs[i];
+                    row.push(columnTitles[colAbs]);
+                    if (visibleCols[colAbs] === 2) {
+                        row.push(columnTitles[colAbs] + ' %');
                     }
                 }
                 str += row.join(',') + '\r\n';
@@ -2249,21 +2291,26 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function newRow() {
-            var row = new Array(colPosLength);
-            row.info = new Array(colPosLength);
+            var row = new Array(colShufLength);
+            if (isPopupEnabled || !populateCallsList) {
+                row.info = new Array(colShufLength);
+            }
+            if (isPopupEnabled && availabilityColVisible) {
+                row.agents = [];
+            }
 
-            for (var i = 1; i < colPosLength; i++) {
+            for (var i = 1; i < colShufLength; i++) {
                 row[i] = 0;
-                if (!isTimePos(i)) {   // TODO bottleneck here
+                if (i === colShuf1 || (isPopupEnabled && !isTimeColumnShuf(i))) {   // TODO bottleneck here
                     row.info[i] = [];
                 }
             }
 
-            if (timeColVisible && cPos1EqualsM1) {
+            if (populateCallsList) {
                 row.calls = [];
             }
             row.total = 0;
-            if (isAppendMode && queueStatusColVisible) {
+            if (queueStatusColVisible) {
                 row.sumHold = 0;
                 row.sumTalk = 0;
                 row.sumTotal = 0;
@@ -2279,7 +2326,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function newShallowRow(call) {
-            var row = new Array(colPosLength);
+            var row = new Array(colShufLength);
             row.call = call;
             row.inbound = 0;
             row.outbound = 0;
@@ -2289,26 +2336,30 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function addCallToRow(row, call, i, repeatCount) {
-            var pos = colPos[i];
+            var pos = getColShuf[i];
             if (pos !== -1) {
-                if (row.call) {     // shallow
+                if (row.call) {                 // shallow
                     row[pos] = repeatCount;     // it should always be 1, btw
                 }
                 else {
 
                     if (repeatCount === 1) {
                         row[pos]++;
-                        row.info[pos].push(call);
+                        if (isPopupEnabled || pos === colShuf1) {
+                            row.info[pos].push(call);
+                        }
                     }
                     else {
                         row[pos] += repeatCount;
 
-                        var ri_i = row.info[pos],
-                            j = ri_i.length,
-                            end = j + repeatCount;
+                        if (isPopupEnabled || pos === colShuf1) {
+                            var ri_i = row.info[pos],
+                                j = ri_i.length,
+                                end = j + repeatCount;
 
-                        while (j < end) {
-                            ri_i[j++] = call;
+                            while (j < end) {
+                                ri_i[j++] = call;  // a bit faster than push n times
+                            }
                         }
                     }
 
@@ -2333,7 +2384,7 @@ function qstatistics_begin(EMBEDDED) {
 
         function addToTableVisibleRow(row, index) {
             if (visibleRows[index]) {
-                var rowToAdd = table[rowOrig[index]],
+                var rowToAdd = table[getRowAbs[index]],
                     mri = rowToAdd.info;
 
                 // shallow only
@@ -2347,14 +2398,19 @@ function qstatistics_begin(EMBEDDED) {
                 if (row.internal) {
                     rowToAdd.internal++;
                 }
-                for (var i = 1; i < colPosLength; i++) {
+                for (var i = 1; i < colShufLength; i++) {
                     if (row[i]) {
                         rowToAdd[i]++;                  // shallow only
-                        mri[i].push(row.call);
+                        if (isPopupEnabled || i === colShuf1) {
+                            mri[i].push(row.call);
+                        }
                     }
                 }
 
-                if (timeColVisible && cPos1EqualsM1) {
+                if (appendCalls) {
+                    rowToAdd.newCalls.push(row.call);
+                }
+                if (populateCallsList && (!appendCalls || isPopupEnabled)) {
                     rowToAdd.calls.push(row.call);
                 }
             }
@@ -2367,7 +2423,7 @@ function qstatistics_begin(EMBEDDED) {
         // check for usages to understand better
 
 
-        function putCallToTable(call, multiRow, addToThisRowOnly, cameFromPhoneFilter) {
+        function putCallToTable(call, rowToAdd, addToThisRowOnly, cameFromPhoneFilter) {
             var stype = call[KEY_stype],
                 dtype = call[KEY_dtype],
                 answered = call[KEY_answered],
@@ -2402,16 +2458,25 @@ function qstatistics_begin(EMBEDDED) {
             }
 
 
-            if (multiRow) {
-                row = multiRow;
+            if (rowToAdd) {
+                row = rowToAdd;
                 row.total += repeatCount;
 
-                if (timeColVisible && cPos1EqualsM1) {
-                    var j = row.calls.length,
+                if (appendCalls) {
+                    var j = row.newCalls.length,
                         end = j + repeatCount;
 
                     while (j < end) {
-                        row.calls[j++] = call;
+                        row.newCalls[j++] = call;  // a bit faster than push n times
+                    }
+                }
+
+                if (populateCallsList && (!appendCalls || isPopupEnabled)) {
+                    var j = row.total,
+                        end = j + repeatCount;
+
+                    while (j < end) {
+                        row.calls[j++] = call;  // a bit faster than push n times
                     }
                 }
             }
@@ -2483,7 +2548,7 @@ function qstatistics_begin(EMBEDDED) {
             }
 
 
-            if (!multiRow && !addToThisRowOnly) {  // this is 100% the case from byDestType
+            if (!rowToAdd && !addToThisRowOnly) {  // this is 100% the case from byDestType
                 //total
                 addToTableVisibleRow(row, 0);
                 // external callers
@@ -2531,9 +2596,23 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function reduceTable() {
+            if (timeColVisible) {
+                var minHoldPos = getColShuf[14],
+                    avgHoldPos = getColShuf[15],
+                    maxHoldPos = getColShuf[16],
+                    sumHoldPos = getColShuf[17],
+                    minTalkPos = getColShuf[18],
+                    avgTalkPos = getColShuf[19],
+                    maxTalkPos = getColShuf[20],
+                    sumTalkPos = getColShuf[21],
+                    minTotalPos = getColShuf[22],
+                    avgTotalPos = getColShuf[23],
+                    maxTotalPos = getColShuf[24],
+                    sumTotalPos = getColShuf[25];
+            }
 
             function calcTimeCols(row, calls) {
-                var callsCount = row.total,
+                var callsTotal = row.total,
                     minhold_row,
                     avghold_row,
                     maxhold_row,
@@ -2550,33 +2629,9 @@ function qstatistics_begin(EMBEDDED) {
                     talkCount_callsOnly = 0,
                     sumhold_callsOnly = 0,
                     sumtalk_callsOnly = 0,
-                    sumtotal_callsOnly = 0,
-                    minHoldPos = colPos[14],
-                    avgHoldPos = colPos[15],
-                    maxHoldPos = colPos[16],
-                    sumHoldPos = colPos[17],
-                    minTalkPos = colPos[18],
-                    avgTalkPos = colPos[19],
-                    maxTalkPos = colPos[20],
-                    sumTalkPos = colPos[21],
-                    minTotalPos = colPos[22],
-                    avgTotalPos = colPos[23],
-                    maxTotalPos = colPos[24],
-                    sumTotalPos = colPos[25];
+                    sumtotal_callsOnly = 0;
 
-                if (!isAppendMode) {
-                    minhold_row = Infinity;
-                    maxhold_row = 0;
-                    sumhold_row = 0;
-                    mintalk_row = Infinity;
-                    maxtalk_row = 0;
-                    sumtalk_row = 0;
-                    mintotal_row = Infinity;
-                    maxtotal_row = 0;
-                    sumtotal_row = 0;
-                    talkCount = 0;
-                }
-                else {
+                if (appendCalls) {
                     minhold_row = row[minHoldPos];
                     maxhold_row = row[maxHoldPos];
                     sumhold_row = row.sumHold;
@@ -2588,8 +2643,20 @@ function qstatistics_begin(EMBEDDED) {
                     sumtotal_row = row.sumTotal;
                     talkCount = row.talkCount;
                 }
+                else {
+                    minhold_row = Infinity;
+                    maxhold_row = 0;
+                    sumhold_row = 0;
+                    mintalk_row = Infinity;
+                    maxtalk_row = 0;
+                    sumtalk_row = 0;
+                    mintotal_row = Infinity;
+                    maxtotal_row = 0;
+                    sumtotal_row = 0;
+                    talkCount = 0;
+                }
 
-                for (var i = 0; i < callsCount; i++) {
+                for (var i = 0, callsLen = calls.length; i < callsLen; i++) {
                     var call = calls[i],
                         hold = +call[KEY_holdtime],
                         talk = +call[KEY_talktime],
@@ -2625,17 +2692,24 @@ function qstatistics_begin(EMBEDDED) {
                     }
                 }
 
-                if (callsCount) {
-                    avghold_row = sumhold_row / callsCount;
-                    avgtotal_row = sumtotal_row / callsCount;
+                if (callsTotal) {
+                    avghold_row = sumhold_row / callsTotal;
+                    avgtotal_row = sumtotal_row / callsTotal;
                     if (talkCount) {
                         avgtalk_row = sumtalk_row / talkCount;
+                    }
+                    else {
+                        mintalk_row = 0;
+                        avgtalk_row = 0;
                     }
                 }
                 else {
                     minhold_row = 0;
                     mintalk_row = 0;
                     mintotal_row = 0;
+                    avghold_row = 0;
+                    avgtalk_row = 0;
+                    avgtotal_row = 0;
                 }
 
                 if (minHoldPos !== -1) {
@@ -2677,12 +2751,10 @@ function qstatistics_begin(EMBEDDED) {
                     row[sumTotalPos] = sumtotal_row;
                 }
 
-                if (isAppendMode) {
-                    row.sumHold += sumhold_callsOnly;
-                    row.sumTalk += sumtalk_callsOnly;
-                    row.sumTotal += sumtotal_callsOnly;
-                    row.talkCount += talkCount_callsOnly;
-                }
+                row.sumHold += sumhold_callsOnly;
+                row.sumTalk += sumtalk_callsOnly;
+                row.sumTotal += sumtotal_callsOnly;
+                row.talkCount += talkCount_callsOnly;
 
                 if (showTotal) {
                     if (minHoldPos !== -1) {
@@ -2715,9 +2787,6 @@ function qstatistics_begin(EMBEDDED) {
 
 
             function calcTotalRow() {
-                if (isAppendMode) {
-                    table.pop();
-                }
                 if (totalCallsCount) {
                     if (minHold === Infinity) {
                         minHold = 0;
@@ -2746,7 +2815,7 @@ function qstatistics_begin(EMBEDDED) {
                     };
                     for (var i = COL_timeStart; i < COL_timeEnd; i++) {
                         if (visibleCols[i]) {
-                            pos = colPos[i];
+                            pos = getColShuf[i];
                             totalRow[pos] = map[i];
                         }
                     }
@@ -2761,16 +2830,31 @@ function qstatistics_begin(EMBEDDED) {
             }
 
 
-            var reportDuration = now_END - START,
+            var reportDuration = reportEnd_byNow - reportStart,
                 showTotal = options.totalrow,
                 period0 = options.period === 0;
 
-            if (showTotal) {
-                var totalRow = new Array(colPosLength);
-                totalRow.info = [];
-                totalRow.intervals = [[START, now_END]];
+            if (appendCalls && showTotal) {
+                table.pop();
+            }
 
-                for (var j = 1; j < colPosLength; j++) {
+            if (showTotal) {
+                totalAnswered = 0;
+                totalCallsCount = 0;
+                totalInboundCount = 0;
+                totalOutboundCount = 0;
+                totalInternalCount = 0;
+
+                var totalRow = new Array(colShufLength);
+                if (isPopupEnabled || !populateCallsList) {
+                    totalRow.info = [];
+                }
+                if (isPopupEnabled && availabilityColVisible) {
+                    totalRow.agents = [];
+                }
+                totalRow.intervals = [[reportStart, reportEnd_byNow]];
+
+                for (var j = 1; j < colShufLength; j++) {
                     totalRow[j] = 0;
                 }
                 totalRow[0] = 'Total';
@@ -2783,12 +2867,12 @@ function qstatistics_begin(EMBEDDED) {
             for (var i = 0, tblLength = table.length; i < tblLength; i++) {
                 var row = table[i];
                 if (timeColVisible) {
-                    var info = cPos1EqualsM1 ? row.calls : row.info[colPos1];
+                    var info = appendCalls ? row.newCalls : (colShuf1EqualsM1 ? row.calls : row.info[colShuf1]);
                     calcTimeCols(row, info);
                 }
 
                 if (showTotal) {
-                    for (j = 1; j < colPosLength; j++) {
+                    for (j = 1; j < colShufLength; j++) {
                         totalRow[j] += row[j];
                     }
 
@@ -2815,8 +2899,8 @@ function qstatistics_begin(EMBEDDED) {
         }
 
 
-        function byDestType(filteredCalls) {
-            if (destRowsVisible) {
+        function byDestination(filteredCalls) {
+            if (destinationRowsVisible) {
                 var destinations = [
                     'All calls',
                     'External callers',
@@ -2824,7 +2908,7 @@ function qstatistics_begin(EMBEDDED) {
                     'External destinations'
                 ];
 
-                if (!isAppendMode) {
+                if (!appendCalls) {
                     for (var i = 0, n = destinations.length; i < n; i++) {
                         if (visibleRows[i]) {
                             var row = newRow();
@@ -2865,7 +2949,7 @@ function qstatistics_begin(EMBEDDED) {
                     }
                 }
                 else {
-                    var splitsCount = (now_END - START) / options.period;
+                    var splitsCount = (reportEnd_byNow - reportStart) / options.period;
                     switch (options.type) {
                         case 'table':
                         case 'reasons':
@@ -2879,7 +2963,7 @@ function qstatistics_begin(EMBEDDED) {
                             break;
 
                         case 'barchart':
-                            if (splitsCount > (containerClientWidth - 70) / (colPosLength + 1) / 2) {
+                            if (splitsCount > (containerClientWidth - 70) / (colShufLength + 1) / 2) {
                                 alert('Bar chart cannot display so many items. \nPlease select longer period in "Report type" drop-down.');
                                 options.period = oldOptionsPeriod;
                                 byId('period').value = oldOptionsPeriod;
@@ -2900,9 +2984,9 @@ function qstatistics_begin(EMBEDDED) {
             }
 
 
-            var startTime = START,
-                endTime = START,
-                calls,
+            var startTime = appendCalls ? appendStart : reportStart,
+                endTime = startTime,
+                callsPart,
                 row,
                 rowIndex = 0,
                 formatStr = CONFIG.dateformat;
@@ -2911,40 +2995,59 @@ function qstatistics_begin(EMBEDDED) {
                 return;
             }
 
-            if (options.period < DAY) {
+            if (options.period < secondsInDay) {
                 formatStr += ' ' + (CONFIG.timeformat === 12 ? 'hh:mma' : 'HH:mm');
             }
 
-            while (startTime < now_END) {
-                if (!isAppendMode) {
+            while (startTime < reportEnd_byNow) {
+                var start = moment.unix(startTime);
+                if (!appendCalls) {
                     row = newRow();
-
-                    var start = moment.unix(startTime);
                     row[0] = start.format(formatStr);
                 }
                 else {
-                    row = table[rowIndex++];
+                    var maxLength = table.length - (options.totalrow ? 1 : 0);
+                    if (rowIndex < maxLength) {
+                        row = table[rowIndex];
+                    }
+                    else {
+                        row = newRow();
+                        row[0] = start.format(formatStr);
+                    }
                 }
 
-                if (options.period < DAY) {
+                if (options.period < secondsInDay) {
                     endTime += options.period;
                 }
                 else {
-                    endTime = start.add(options.period / DAY, 'days').unix();
+                    endTime = start.add(options.period / secondsInDay, 'days').unix();
                 }
-                endTime = Math.min(endTime, now_END);
-                row.intervals = [[startTime, endTime]];
+                endTime = Math.min(endTime, reportEnd_byNow);
+                if (!appendCalls || (endTime === reportEnd_byNow && reportEnd_byNow < reportEnd)) {
+                    row.intervals = [[startTime, endTime]];
+                }
 
-                calls = getCallsFromTimePeriod(startTime, endTime);
+                callsPart = getCallsFromTimePeriod(startTime, endTime);
 
-                if (destRowsVisible) {
-                    for (var i = 0, n = calls.length; i < n; i++) {
-                        putCallToTable(calls[i], row);
+                if (destinationRowsVisible) {
+                    for (var i = 0, n = callsPart.length; i < n; i++) {
+                        putCallToTable(callsPart[i], row);
                     }
                 }
-                byQueueAgentPhone(calls, row, startTime, endTime);
+                byQueueAgentPhone(callsPart, row, startTime, endTime);
                 row.totalTime = endTime - startTime;
-                if (!isAppendMode) {
+                if (appendCalls) {
+                    if (rowIndex === maxLength) {
+                        if (options.totalrow) {
+                            table.splice(maxLength, 0, row);
+                        }
+                        else {
+                            table.push(row);
+                        }
+                    }
+                    rowIndex++;
+                }
+                else {
                     table.push(row);
                 }
 
@@ -2954,13 +3057,13 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function byHours(period) {
-            var startTime = START,
-                endTime = START - START % period,       // normalized
+            var startTime = appendCalls ? appendStart : reportStart,
+                endTime = startTime - startTime % period,       // normalized
                 calls,
                 row,
                 reportIndex,
                 date = moment.unix(startTime),
-                totalHours = DAY / period,
+                totalHours = secondsInDay / period,
                 isHalfHours = period === 1800,
                 startHour = date.hour();
 
@@ -2968,7 +3071,7 @@ function qstatistics_begin(EMBEDDED) {
                 startHour = startHour * 2 + Math.floor(date.minute() / 30);
             }
 
-            if (!isAppendMode) {
+            if (!appendCalls) {
                 for (var i = 0; i < totalHours; i++) {
                     var hourString,
                         ampm = '';
@@ -3000,9 +3103,9 @@ function qstatistics_begin(EMBEDDED) {
                 }
             }
 
-            while (startTime < now_END) {
+            while (startTime < reportEnd_byNow) {
                 endTime += period;
-                endTime = Math.min(endTime, now_END);
+                endTime = Math.min(endTime, reportEnd_byNow);
 
                 date = moment.unix(startTime);
                 reportIndex = date.hour();
@@ -3018,7 +3121,7 @@ function qstatistics_begin(EMBEDDED) {
                 calls = getCallsFromTimePeriod(startTime, endTime);
                 row.intervals.push([startTime, endTime]);
 
-                if (destRowsVisible) {
+                if (destinationRowsVisible) {
                     var callsCount = calls.length;
                     for (i = 0; i < callsCount; i++) {
                         putCallToTable(calls[i], row);
@@ -3033,8 +3136,8 @@ function qstatistics_begin(EMBEDDED) {
 
 
         function byDaysOfWeek() {
-            var startTime = START,
-                end = moment.unix(START).endOf('day'),
+            var startTime = appendCalls ? appendStart : reportStart,
+                end = moment.unix(startTime).endOf('day'),
                 endTime,
                 calls,
                 row,
@@ -3051,7 +3154,7 @@ function qstatistics_begin(EMBEDDED) {
                     'Saturday'
                 ];
 
-            if (!isAppendMode) {
+            if (!appendCalls) {
                 for (var i = 0; i < 7; i++) {
                     row = newRow();
                     row.totalTime = 0;
@@ -3066,9 +3169,9 @@ function qstatistics_begin(EMBEDDED) {
                 }
             }
 
-            while (startTime < now_END) {
+            while (startTime < reportEnd_byNow) {
                 endTime = end.unix() + 1;
-                endTime = Math.min(endTime, now_END);
+                endTime = Math.min(endTime, reportEnd_byNow);
 
                 dayOfWeek = end.day();
                 reportIndex = dayOfWeek - startDayOfWeek;  // start from startDayOfWeek
@@ -3080,7 +3183,7 @@ function qstatistics_begin(EMBEDDED) {
                 calls = getCallsFromTimePeriod(startTime, endTime);
                 row.intervals.push([startTime, endTime]);
 
-                if (destRowsVisible) {
+                if (destinationRowsVisible) {
                     var callsCount = calls.length;
                     for (i = 0; i < callsCount; i++) {
                         putCallToTable(calls[i], row);
@@ -3104,7 +3207,7 @@ function qstatistics_begin(EMBEDDED) {
                     visibleQueuesLength,
                     ids,
                     arr,
-                    rowIndex = destRowsVisible,
+                    rowIndex = destinationRowsVisible,
                     destFilter = options[dest];
 
                 switch (dest) {
@@ -3163,7 +3266,7 @@ function qstatistics_begin(EMBEDDED) {
                 }
 
                 for (var j = 0, m = ids.length; j < m; j++) {
-                    if (isAppendMode) {
+                    if (!multiRow && appendCalls) {
                         multiRow = table[rowIndex++];
                     }
 
@@ -3212,8 +3315,8 @@ function qstatistics_begin(EMBEDDED) {
                             }
                         }
 
-                        if (dest === 'agents' && agentStatusColVisible) {
-                            var reasons = el.E.reasons(periodStart || START, periodEnd || now_END),
+                        if (dest === 'agents' && availabilityColVisible) {
+                            var reasons = el.E.reasons(periodStart || reportStart, periodEnd || reportEnd_byNow),
                                 availTime = 0,
                                 breakTime = 0,
                                 lunchTime = 0,
@@ -3233,25 +3336,29 @@ function qstatistics_begin(EMBEDDED) {
                                         break;
                                 }
                             }
-                            availTime = (periodEnd || now_END) - (periodStart || START) - breakTime - lunchTime - unavailTime;
+                            availTime = (periodEnd || reportEnd_byNow) - (periodStart || reportStart) - breakTime - lunchTime - unavailTime;
                             if (availTime < 0) {
                                 break;
                             }
 
-                            if (visibleCols[COL_availTime]) {
-                                row[availPos] += availTime;
-                                row.info[availPos].push(el);
+                            if (availColShuf !== -1) {
+                                row[availColShuf] += availTime;
                                 maxStateTime = Math.max(maxStateTime, availTime);
                             }
-                            if (visibleCols[COL_breakTime]) {
-                                row[breakPos] += breakTime;
-                                row.info[breakPos].push(el);
+                            if (breakColShuf !== -1) {
+                                row[breakColShuf] += breakTime;
                                 maxStateTime = Math.max(maxStateTime, breakTime);
                             }
-                            if (visibleCols[COL_lunchTime]) {
-                                row[lunchPos] += lunchTime;
-                                row.info[lunchPos].push(el);
+                            if (lunchColShuf !== -1) {
+                                row[lunchColShuf] += lunchTime;
                                 maxStateTime = Math.max(maxStateTime, lunchTime);
+                            }
+                            if (unavailableColShuf !== -1) {
+                                row[unavailableColShuf] += breakTime + lunchTime;
+                                maxStateTime = Math.max(maxStateTime, breakTime + lunchTime);
+                            }
+                            if (isPopupEnabled) {
+                                row.agents.push(el);
                             }
                         }
 
@@ -3278,7 +3385,7 @@ function qstatistics_begin(EMBEDDED) {
 
 
             equalHeight = function () {
-                var currentTabHeight = VIEW.tabs[options.type];
+                var currentTabHeight = TABS.currentTab;
                 currentTabHeight = currentTabHeight ? currentTabHeight.offsetHeight : 0;
                 mainContent.style.height = Math.max(currentTabHeight, rightMenuHeight, isExpanded ? (rightPanel.clientHeight + 9) : leftMenuHeight) + 'px';
             };
@@ -3332,10 +3439,10 @@ function qstatistics_begin(EMBEDDED) {
                 if (options.type === 'table') {
                     TABLE.resizeHeader();
                 }
-                else if (options.type === 'reasons') {
-                    //REASONS.render();
-                }
-                else {
+                else if (options.type !== 'reasons') {
+                //  AVAILABILITY.render();
+                // }
+                // else {
                     CHART.resize();
                 }
                 if (!EMBEDDED) {
@@ -3345,70 +3452,111 @@ function qstatistics_begin(EMBEDDED) {
         });
 
 
+        // todo report rows vs report cols
+        // don't recalculate when column options change on reasons tab
+        function onReportOptionsChange(doResize) {
+            if (report.service.chunksComplete) {
+                calculateReport(doResize);
+            }
+            else {
+                // force recalculate report!!!
+                reportNeedsCalculation = true;
+            }
+        }
 
-        function createReport(doResize, appendData, noRender) {
-            if (usesCache) {
-                isAppendMode = appendData;
-                if (!isAppendMode) {
-                    table = [];
-                    maxStateTime = 0;
-                    startSearchFromIndex = 0;
+
+        function calculateReport(doResize, appendOptions, noRender) {
+            appendCalls = appendOptions;
+            if (!appendCalls) {
+                // if cache was cleared
+                if (!isReportCacheValid || (updatesHaveNoEvents && reportDisplaysQueueEvents())) {
+                    clearAllCalls();
+                    SERVICE.startNewPolling();
+                    return;
                 }
 
-                now_END = Math.min(Date.now() / 1000 + 1, END);
-
-                if (options.period === 0) {
-                    var slicedCalls = isAppendMode ? appendData : getCallsFromTimePeriod(START, END);
-                    byDestType(slicedCalls);
-                    byQueueAgentPhone(slicedCalls);
-                }
-                else if (options.period > 0) {
-                    byTimePeriods()
-                }
-                else {
-                    if (options.period > -7 * DAY) {
-                        byHours(-options.period);
-                    }
-                    else {
-                        byDaysOfWeek()
-                    }
-                }
-
-                if (!timeColVisible) {
-                    debugLog('Major calculation stage ended, starting to summarise');
-                }
-                reduceTable();
-                sortTable();
-
-                if (!noRender) {
-                    if (postId) {
-                        report.downloadCSV();     // download CSV AND do something else
-                    }
-
-                    if (options.type === 'csv') {
-                        report.downloadCSV();
-                    }
-                    else if (EMBEDDED) {
-                        if (options.type === 'table') {
-                            container.style.overflow = 'auto';
-                            TABLE.render(container, doResize);
-                        }
-                        else if (options.type === 'reasons') {
-                            REASONS.render(container);
-                        }
-                        else {
-                            CHART.render(container, options.type);
-                        }
-                    }
-                    else {
-                        VIEW.update();
-                    }
+                table = [];
+                maxStateTime = 0;
+                startSearchFromIndex = 0;
+            }
+            else {
+                for (var i = 0, tblLen = table.length; i < tblLen; i++) {
+                    table[i].newCalls = [];
                 }
             }
-            // if cache was cleared
+
+            isReportEmpty = false;
+            reportNeedsCalculation = false;
+            reportEnd_byNow = Math.min(Date.now() / 1000 + 1, reportEnd);
+
+            if (options.period === 0) {
+                if (appendCalls) {
+                    byDestination(appendOptions.calls);
+                    byQueueAgentPhone(appendOptions.calls, undefined, appendOptions.start, appendOptions.end);
+                }
+                else {
+                    var slicedCalls = getCallsFromTimePeriod(reportStart, reportEnd);
+                    byDestination(slicedCalls);
+                    byQueueAgentPhone(slicedCalls);
+                }
+            }
+            else if (options.period > 0) {
+                byTimePeriods()
+            }
             else {
-                clearAllCalls();
-                SERVER.startNewPolling();
+                if (options.period > -7 * secondsInDay) {
+                    byHours(-options.period);
+                }
+                else {
+                    byDaysOfWeek()
+                }
+            }
+
+            if (!timeColVisible) {
+                debugLog('Major calculation stage ended, starting to summarise');
+            }
+            reduceTable();
+            sortTable();
+
+            if (!noRender) {
+                renderReport();
+            }
+        }
+
+
+        function renderReport(doResize) {
+            if (postId) {
+                report.downloadCSV();     // download CSV, AND then do something else
+            }
+
+            reportNeedsRender = false;
+
+            if (options.type === 'csv') {
+                report.downloadCSV();
+            }
+            else if (EMBEDDED) {
+                if (options.type === 'table') {
+                    container.style.overflow = 'auto';
+                    TABLE.render(container, doResize);
+                }
+                else if (options.type === 'reasons') {
+                    AVAILABILITY.render(container);
+                }
+                else {
+                    CHART.render(container, options.type);
+                }
+            }
+            else {
+                if (options.type === 'table') {
+                    TABLE.render(TABS.currentTab, doResize);
+                }
+                else if (options.type === 'reasons') {
+                    AVAILABILITY.render(TABS.currentTab);
+                }
+                else {
+                    CHART.render(TABS.currentTab, options.type);
+                }
+                equalHeight();
             }
         }
 
@@ -3457,8 +3605,8 @@ function qstatistics_begin(EMBEDDED) {
                     endDay = 1;
                 }
 
-                var start = moment.unix(START),
-                    end = moment.unix(END - 1),
+                var start = moment.unix(reportStart),
+                    end = moment.unix(reportEnd - 1),
                     y1, m1, d1, y2, m2, d2;
 
                 options.startday = startDay;
@@ -3512,6 +3660,7 @@ function qstatistics_begin(EMBEDDED) {
                     ],
                     i;
 
+                // This is for options update only, and for dirty marking. Recalculate is triggered elsewhere
                 var formLength = formEl.length;
                 for (i = 0; i < formLength; i++) {
                     // react on buttons below, not selects
@@ -3522,14 +3671,6 @@ function qstatistics_begin(EMBEDDED) {
                             }
                             else {
                                 options[this.name] = +this.value;
-                            }
-
-                            isQstatistics = getQstatistics();
-                            if (updatesHaveNoEvents && isQstatistics) {
-                                clearAllCalls();
-                                if (!loadButton) {
-                                    SERVER.startNewPolling();
-                                }
                             }
 
                             onFormDirty();
@@ -3547,8 +3688,7 @@ function qstatistics_begin(EMBEDDED) {
                     oldOptionsPeriod = options.period;
                     byId('heading_rows').innerHTML = options.period ? 'Sum of destinations:' : 'Display destinations:';
                     if (!loadButton) {
-                        toggleLROverlay(options.type);
-                        createReport();
+                        onReportOptionsChange(true);
                     }
                     that.preventScroll();
                 });
@@ -3563,7 +3703,7 @@ function qstatistics_begin(EMBEDDED) {
                     byId(timeControls[i]).addEventListener('change', function () {
                         that.preventScroll();
                         if (!loadButton) {
-                            SERVER.startNewPolling();
+                            SERVICE.startNewPolling();
                         }
                     });
                 }
@@ -3594,7 +3734,7 @@ function qstatistics_begin(EMBEDDED) {
                 for (i in filters) {
                     byId(filters[i]).addEventListener('change', function () {
                         if (!loadButton) {
-                            createReport();
+                            onReportOptionsChange();
                         }
                         equalHeight();
                         that.preventScroll();
@@ -3607,7 +3747,7 @@ function qstatistics_begin(EMBEDDED) {
                         onFormDirty();
                         if (!loadButton) {
                             memorizedIncludeIds = {};
-                            createReport();
+                            onReportOptionsChange(true);
                         }
                         that.preventScroll();
                     });
@@ -3618,8 +3758,9 @@ function qstatistics_begin(EMBEDDED) {
                     update: function () {
                         that.preventScroll();
                         if (!loadButton) {
-                            SERVER.startNewPolling();
+                            SERVICE.startNewPolling();
                         }
+                        debugger; // what is it?
                         onFormDirty();
                     }
                 };
@@ -3673,13 +3814,13 @@ function qstatistics_begin(EMBEDDED) {
                 }
 
                 if (loadButton) {
-                    SERVER.getRangeFromOptions();
+                    SERVICE.getRangeFromOptions();
                 }
 
-                options.startdate = START;
-                options.enddate = END - 1;
-                options.starttime = START - moment.unix(START).startOf('day').unix();
-                options.endtime = (END - 1) - moment.unix(END - 1).startOf('day').unix();
+                options.startdate = reportStart;
+                options.enddate = reportEnd - 1;
+                options.starttime = reportStart - moment.unix(reportStart).startOf('day').unix();
+                options.endtime = (reportEnd - 1) - moment.unix(reportEnd - 1).startOf('day').unix();
 
                 CHART.resetZoom();
 
@@ -3717,7 +3858,7 @@ function qstatistics_begin(EMBEDDED) {
             if (copyButton) {
                 loadButton.addEventListener('click', function (evt) {
                     evt.preventDefault();
-                    SERVER.startNewPolling();
+                    SERVICE.startNewPolling();
                     getVisibleColumnsAndRows();
                     loadButton.style.display = 'none';
                     equalHeight();
@@ -3764,67 +3905,73 @@ function qstatistics_begin(EMBEDDED) {
             };
 
             if (!loadButton) {
-                SERVER.startNewPolling();
+                SERVICE.startNewPolling();
             }
         }
 
 
-        function openCallDetails (i, j) {
-            var orig = colOrig[j],
-                row = table[i];
+        function openCallDetails (rowAbs, colShuf) {
+            var colAbs = getColAbs[colShuf],
+                row = table[rowAbs];
 
 
+            // remember! info in total row is calculated lazy
             function infoForTotalRow() {
                 var result = [],
                     x = 0, tblLen = table.length - 1;
 
-                if (isTimeCol(orig)) {
+                if (isTimeColumnAbs(colAbs)) {
                     for (; x < tblLen; x++) {
-                        var info = cPos1EqualsM1 ? table[x].calls : table[x].info[colPos1];
+                        var info = colShuf1EqualsM1 ? table[x].calls : table[x].info[colShuf1];
                         appendArrays(result, info);
                     }
-                    if (cPos1EqualsM1) {
+                    if (colShuf1EqualsM1) {
                         table[tblLen].calls = result;
                     }
                     else {
-                        table[tblLen].info[colPos1] = result;
+                        table[tblLen].info[colShuf1] = result;
                     }
                 }
-                else if (isAgentStatusCol(orig)) {
+                else if (isAvailabilityColumnAbs(colAbs)) {
                     if (options.period !== 0) {
                         if (table.length) {
-                            result = table[0].info[j];
+                            result = table[0].agents;
                         }
-                        table[tblLen].info[j] = result;
+                        table[tblLen].agents = result;
                     }
                     else {
                         for (; x < tblLen; x++) {
-                            appendArrays(result, table[x].info[j]);
+                            appendArrays(result, table[x].agents);
                         }
                         UTILS.uniqueObj(result);
-                        table[tblLen].info[j] = result;
+                        table[tblLen].agents = result;
                     }
                 }
                 else {
                     for (; x < tblLen; x++) {
-                        appendArrays(result, table[x].info[j]);
+                        appendArrays(result, table[x].info[colShuf]);
                     }
-                    table[tblLen].info[j] = result;
+                    table[tblLen].info[colShuf] = result;
                 }
             }
 
 
-            if (options.totalrow && (i === table.length - 1)) {
-                if (!row.info[j]) {
+            if (options.totalrow && (rowAbs === table.length - 1)) {
+                if (isAvailabilityColumnShuf(colShuf)) {
+                    if (!row.agents) {
+                        infoForTotalRow();
+                    }
+                }
+                else if (!row.info[colShuf]) {
                     infoForTotalRow();
                 }
             }
 
-            if (isTimeCol(orig)) {
-                if (!row.info[j]) {
-                    var info = cPos1EqualsM1 ? row.calls : row.info[colPos1];
+            if (isTimeColumnAbs(colAbs)) {
+                if (!row.info[colShuf]) {
+                    var info = colShuf1EqualsM1 ? row.calls : row.info[colShuf1];
 
-                    if (orig >= COL_talkMin && orig < COL_totalMin) { // just talk time
+                    if (colAbs >= COL_talkMin && colAbs < COL_totalMin) { // just talk time
                         var newInfo = [];
                         for (var x = 0, xx = info.length; x < xx; x++) {
                             if (info[x][KEY_answered]) {
@@ -3833,40 +3980,38 @@ function qstatistics_begin(EMBEDDED) {
                         }
                         info = newInfo;
                     }
-                    row.info[j] = info;
+                    row.info[colShuf] = info;
                 }
-                new Popup(row, j);
             }
-            else {
-                new Popup(row, j, isAgentStatusCol(orig));
-            }
+
+            Popup(row, colShuf, isAvailabilityColumnAbs(colAbs));
         }
 
 
-        function Popup(tblRow, col, isLoggedInTime, isAvailabilityReport) {
+        function Popup(rowAbs, colShuf, isAvailabilityData, isAvailabilityTab) {
             var overlay,
                 modal,
                 theadTh,
                 footTd,
-                row,
                 statusMap = {
                     0: 'Available',
                     1: 'Break',
                     2: 'Lunch',
                     3: 'Unavailable'
                 },
-                callsTbl = [],
+                tableCsv = [],
                 theadHtml = '<th>Status<br>Direction</th><th>Calling number<br>Called number</th><th>Start<br>End</th><th>Total time<br>Billable time</th>',
                 tbodyHtml = '',
                 filenameCsv,
                 headlineCsv,
-                isIE = navigator.userAgent.indexOf('MSIE') !== -1 || navigator.appVersion.indexOf('Trident/') > 0,
-                isFF = navigator.userAgent.toLowerCase().indexOf('firefox') > -1,
-                formatStr = CONFIG.dateformat,
-                info = tblRow.info[col];
+                ua = navigator.userAgent,
+                isIE = ua.indexOf('MSIE') !== -1 || navigator.appVersion.indexOf('Trident/') > 0,
+                isFF = ua.toLowerCase().indexOf('firefox') > -1,
+                formatStr = CONFIG.dateformat + (CONFIG.timeformat === 12 ? ' hh:mm:ssa' : ' HH:mm:ss'),
+                info = (isAvailabilityData && !isAvailabilityTab) ? rowAbs.agents : rowAbs.info[colShuf];
 
 
-            function escListen (evt) {
+            function listenToEscKey (evt) {
                 if (evt.keyCode === 27) {
                     closeModal();
                 }
@@ -3875,7 +4020,7 @@ function qstatistics_begin(EMBEDDED) {
 
             function closeModal() {
                 overlay.className = '';
-                document.removeEventListener('keyup', escListen);
+                document.removeEventListener('keyup', listenToEscKey);
                 window.removeEventListener('resize', scroll);
                 setTimeout(function () {
                     if (overlay.parentNode) {
@@ -3890,14 +4035,10 @@ function qstatistics_begin(EMBEDDED) {
             }
 
 
-            formatStr += ' ' + (CONFIG.timeformat === 12 ? 'hh:mm:ssa' : 'HH:mm:ss');
-
-            if (!isLoggedInTime) {
+            function callDetailsInfo() {
                 if (info.length) {
-                    filenameCsv = columnTitles[colOrig[col]] + '.csv';
+                    filenameCsv = columnTitles[getColAbs[colShuf]] + '.csv';
                     headlineCsv = 'Status,Direction,Calling type,Calling number,Called type,Called number,Start,End,Total time,Billable time,Call ID\r\n';
-
-                    var secondTable = [], row1;
 
                     for (var i = 0, n = info.length; i < n; i++) {
                         var call = info[i],
@@ -3932,109 +4073,113 @@ function qstatistics_begin(EMBEDDED) {
                         var v1 = moment.unix(call[KEY_start]).format(formatStr),
                             v2 = moment.unix(call[KEY_end]).format(formatStr),
                             v3 = UTILS.timeFormat(+call[KEY_totaltime], 2),
-                            v4 = UTILS.timeFormat(+call[KEY_talktime], 2);
+                            v4 = UTILS.timeFormat(+call[KEY_talktime], 2),
 
-                        row = [
-                            call[KEY_answered] ? 'Answered' : 'Not answered',
-                            destination,
-                            callingNumber,
-                            calledNumber,
-                            v1,
-                            v2,
-                            v3,
-                            v4,
-                            call[KEY_callid]
-                        ];
-                        row1 = [
-                            call[KEY_answered] ? 'Answered' : 'Not answered',
-                            destination,
-                            stype,
-                            call[KEY_snumber],
-                            ctype,
-                            call[KEY_cnumber],
-                            v1,
-                            v2,
-                            v3,
-                            v4,
-                            call[KEY_callid]
-                        ];
+                            row = [
+                                call[KEY_answered] ? 'Answered' : 'Not answered',
+                                destination,
+                                callingNumber,
+                                calledNumber,
+                                v1,
+                                v2,
+                                v3,
+                                v4,
+                                call[KEY_callid]
+                            ],
+                            rowCsv = [
+                                call[KEY_answered] ? 'Answered' : 'Not answered',
+                                destination,
+                                stype,
+                                call[KEY_snumber],
+                                ctype,
+                                call[KEY_cnumber],
+                                v1,
+                                v2,
+                                v3,
+                                v4,
+                                call[KEY_callid]
+                            ];
+
                         tbodyHtml += '<tr><td>' +
                             row[0] + '<br>' + row[1] + '</td><td>' +
                             row[2] + '<br>' + row[3] + '</td><td>' +
                             row[4] + '<br>' + row[5] + '</td><td>' +
                             row[6] + '<br>' + row[7] + '</td></tr>';
-                        callsTbl.push(row);
-                        secondTable.push(row1);
+                        tableCsv.push(rowCsv);
                     }
                 }
                 else {
                     tbodyHtml = '<tr><td colspan="4" class="empty-row">No calls</td></tr>';
                 }
             }
-            else {
+
+
+            function availabilityEvents() {
                 filenameCsv = 'Available time.csv';
                 headlineCsv = 'Agent,Time,Event\r\n';
                 theadHtml = '<th>Agent</th><th>Time</th><th>Event</th>';
 
-                if (isAvailabilityReport) {
-                    for (var ii = 0, nn = info.length; ii < nn; ii++) {
-                        var ev = info[ii],
-                            time = ev.time;
-                        if (time >= START && time < END) {
-                            row = [ev.name, time, statusMap[ev.status]];
-                            callsTbl.push(row);
+                if (isAvailabilityTab) {
+                    for (var i = 0, n = info.length; i < n; i++) {
+                        var event = info[i],
+                            time = event.time;
+                        if (time >= reportStart && time < reportEnd) {
+                            var row = [event.name, moment.unix(time).format(formatStr), statusMap[event.status]];
+                            tbodyHtml += '<tr><td>' + row[0] + '</td><td>' + row[1] + '</td><td>' + row[2] + '</td></tr>';
+                            tableCsv.push(row);
                         }
                     }
                 }
 
                 else {
-                    var intervals = tblRow.intervals || [[START, now_END]];
+                    var intervals = rowAbs.intervals || [[reportStart, reportEnd_byNow]];
                     for (var j = 0, m = intervals.length; j < m; j++) {
                         var interval = intervals[j];
 
                         for (i = 0, n = info.length; i < n; i++) {
-                            var call = info[i],
-                                name = phoneTitleDisplay(call),
-                                events = call.E.pairs;
+                            var agent = info[i],
+                                name = phoneTitleDisplay(agent),
+                                pairs = agent.E.pairs;
 
-                            for (var ii = 0, nn = events.length; ii < nn; ii++) {
-                                var ev = events[ii];
-                                    time = ev.time;
+                            for (var ii = 0, nn = pairs.length; ii < nn; ii++) {
+                                event = pairs[ii];
+                                time = event.time;
                                 if (time >= interval[0] && time < interval[1]) {
-                                    if (col === COL_breakTime && ev.status !== STATUS_break) {
+                                    if (colShuf === breakColShuf && event.status !== STATUS_break) {
                                         continue;
                                     }
-                                    if (col === COL_lunchTime && ev.status !== STATUS_lunch) {
+                                    if (colShuf === lunchColShuf && event.status !== STATUS_lunch) {
                                         continue;
                                     }
-                                    row = [name, time, statusMap[ev.status]];
-                                    callsTbl.push(row);
+                                    row = [name, moment.unix(time).format(formatStr), statusMap[event.status]];
+                                    tbodyHtml += '<tr><td>' + row[0] + '</td><td>' + row[1] + '</td><td>' + row[2] + '</td></tr>';
+                                    tableCsv.push(row);
                                 }
                             }
                         }
                     }
                 }
 
-                callsTbl.sort(function (a, b) {
-                    return a[1] - b[1];
-                });
+                // todo is it true that sort can be skipped?
+                // callsTbl.sort(function (a, b) {
+                //     return a[1] - b[1];
+                // });
 
-                n = callsTbl.length;
-                if (n) {
-                    for (i = 0; i < n; i++) {
-                        row = callsTbl[i];
-                        row[1] = moment.unix(row[1]).format(formatStr);
-                        tbodyHtml += '<tr><td>' + row[0] + '</td><td>' + row[1] + '</td><td>' + row[2] + '</td></tr>';
-                    }
-                }
-                else {
+                if (!tbodyHtml) {
                     tbodyHtml = '<tr><td colspan="3" class="empty-row">No events</td></tr>';
                 }
             }
 
 
+            if (isAvailabilityData) {
+                availabilityEvents();
+            }
+            else {
+                callDetailsInfo();
+            }
+
             var html = '<overlay><modal class="results"><table cellpadding="0" cellspacing="0"><thead><tr class="head">' + theadHtml + '</tr></thead><tbody>' + tbodyHtml + '<tr class="foot"><td class="button" colspan="4"><input type="button" style="float:left" id="modal-close" class="universal" value="Close window">';
-            if (callsTbl.length) {
+            if (tableCsv.length) {
                 html += '<input type="button" id="modal-csv" class="universal secondary" value="Export as .csv">';
             }
             html += '</td></tr></tbody></table></modal></overlay>';
@@ -4047,16 +4192,16 @@ function qstatistics_begin(EMBEDDED) {
 
             overlay.onclick = closeModal;
             byId('modal-close').onclick = closeModal;
-            if (callsTbl.length) {
+            if (tableCsv.length) {
                 byId('modal-csv').onclick = function () {
-                    vs.report.downloadCSV(secondTable || callsTbl, filenameCsv, headlineCsv);
+                    vs.report.downloadCSV(tableCsv, filenameCsv, headlineCsv);
                 };
             }
 
             modal.addEventListener('click', function (evt) {
                 evt.stopPropagation();
             });
-            document.addEventListener('keyup', escListen);
+            document.addEventListener('keyup', listenToEscKey);
 
             if (!isIE && !isFF) {
                 modal.addEventListener('scroll', scroll);
@@ -4090,19 +4235,19 @@ function qstatistics_begin(EMBEDDED) {
         }
 
 
-        function Server() {
+        function Service() {
             var that = this,
-                encodedUsername = encodeURIComponent(CONFIG.username),
-                encodedPassword = encodeURIComponent(CONFIG.password),
+                encodedCredentials = '?_username=' + encodeURIComponent(CONFIG.username) +
+                    ';_password=' + encodeURIComponent(CONFIG.password),
                 xhr,
-                isAnythingChanged,
                 preloader,
                 lastToday,
-                requestStart,
-                requestEnd,
-                stopPolling = false,
+                requestsBlockStart,
+                requestsBlockEnd,
+                chunksTotal,
+                chunksReceived,
+
                 pollTimeoutHandle,
-                isFirstReport,
                 errorsShown = false,
                 startNewPollingOnEveryRequest = false;
 
@@ -4113,21 +4258,39 @@ function qstatistics_begin(EMBEDDED) {
 
                 function setStart() {
                     var startDay = options.startday;
-                    if (startDay === 1) {
-                        if (options.start_year) {
-                            start = moment({
-                                year: options.start_year,
-                                month: options.start_month - 1,
-                                day: options.start_day
-                            });
-                        }
-                        else {
-                            start = options.startdate;
-                            return;
-                        }
-                    }
-                    else {
-                        start = moment().add(startDay, 'days');
+                    switch (startDay) {
+                        // specific date
+                        case 1:
+                            if (options.start_year) {
+                                start = moment({
+                                    year: options.start_year,
+                                    month: options.start_month - 1,
+                                    day: options.start_day
+                                });
+                            }
+                            else {
+                                start = options.startdate;
+                                return;
+                            }
+                            break;
+
+                        // start of last month
+                        case 2:
+                            start = moment().startOf('month').add(-1, 'month');
+                            break;
+
+                        // start of this month
+                        case 3:
+                            start = moment().startOf('month');
+                            break;
+
+                        // tomorrow
+                        case 4:
+                            start = moment().startOf('day').add(1, 'days');
+                            break;
+
+                        default:
+                            start = moment().add(startDay, 'days');
                     }
 
                     if (options.start_hour !== undefined) {
@@ -4150,21 +4313,38 @@ function qstatistics_begin(EMBEDDED) {
 
                 function setEnd() {
                     var endDay = options.endday;
-                    if (endDay === 1) {
-                        if (options.end_year) {
-                            end = moment({
-                                year: options.end_year,
-                                month: options.end_month - 1,
-                                day: options.end_day
-                            });
-                        }
-                        else {
-                            end = options.enddate;
-                            return;
-                        }
-                    }
-                    else {
-                        end = moment().add(endDay, 'days');
+                    switch (endDay) {
+                        case 1:
+                            if (options.end_year) {
+                                end = moment({
+                                    year: options.end_year,
+                                    month: options.end_month - 1,
+                                    day: options.end_day
+                                });
+                            }
+                            else {
+                                end = options.enddate;
+                                return;
+                            }
+                            break;
+
+                        // start of last month
+                        case 2:
+                            end = moment().startOf('month').add(-1, 'month');
+                            break;
+
+                        // start of this month
+                        case 3:
+                            end = moment().startOf('month');
+                            break;
+
+                        // tomorrow
+                        case 4:
+                            end = moment().startOf('day').add(1, 'days');
+                            break;
+
+                        default:
+                            end = moment().add(endDay, 'days');
                     }
 
                     if (options.end_hour !== undefined) {
@@ -4188,13 +4368,11 @@ function qstatistics_begin(EMBEDDED) {
                 setStart();
                 setEnd();
 
-                START = Math.min(start, end);
-                END = Math.max(start, end);
-                END++;                        // because in all calculations we use "end is not included" approach, e.g: start <= ... < end
+                reportStart = Math.min(start, end);
+                reportEnd = Math.max(start, end);
 
-                if (START * 1000 > Date.now()) {
+                if (reportStart * 1000 > Date.now()) {
                     alert('The start time cannot be in the future.');
-                    stopPolling = true;     // this is an error, so stop doing anything
                     // todo do we stop everything?
                     hidePreloader();
                     throw 'start > now';
@@ -4212,60 +4390,54 @@ function qstatistics_begin(EMBEDDED) {
                 switch (byId(options.time).value) {
                     case '0_hour':
                         startNewPollingOnEveryRequest = true;
-                        START = moment().startOf('hour');
-                        END = moment().endOf('hour');
+                        reportStart = moment().startOf('hour');
+                        reportEnd = moment().endOf('hour');
                         break;
 
                     case '0_day':
-                        START = moment().startOf('day');
-                        END = moment().endOf('day');
+                        reportStart = moment().startOf('day');
+                        reportEnd = moment().endOf('day');
                         break;
 
                     case '1_day':
-                        START = moment().startOf('day').add(-1, 'days');
-                        END = moment().endOf('day').add(-1, 'days');
+                        reportStart = moment().startOf('day').add(-1, 'days');
+                        reportEnd = moment().endOf('day').add(-1, 'days');
                         break;
 
                     case '7_days':
-                        START = moment().startOf('day').add(-7, 'days');
-                        END = moment().endOf('day');
+                        reportStart = moment().startOf('day').add(-7, 'days');
+                        reportEnd = moment().endOf('day');
                         break;
 
                     case '0_month':
-                        START = moment().startOf('month');
-                        END = moment().endOf('month');
+                        reportStart = moment().startOf('month');
+                        reportEnd = moment().endOf('month');
                         break;
 
                     case '1_month':
-                        START = moment().startOf('month').add(-1, 'months');
-                        END = moment().startOf('month').add(-1, 'seconds');
+                        reportStart = moment().startOf('month').add(-1, 'months');
+                        reportEnd = moment().startOf('month').add(-1, 'seconds');
                         break;
                 }
 
-                START = START.unix();
-                END = END.unix() + 1;   // because in all calculations we use "end is not included" approach, e.g: start <= ... < end
+                reportStart = reportStart.unix();
+                reportEnd = reportEnd.unix() + 1;   // because in all calculations we use "end is not included" approach, e.g: start <= ... < end
             }
 
 
             this.tryNewRequest = function () {
-                var requestsToSend = Math.ceil((requestEnd - requestStart) / DAY),
-                    requestsReceived = 0,
-                    isEarliestRequest = !this.addToBeginning || requestsToSend === 1;
-
-                clearTimeout(pollTimeoutHandle);
-
 
                 function recursiveSplit() {
                     if (that.addToBeginning) {
-                        end -= DAY;
-                        splitRequest(Math.max(requestStart, end - DAY), end);
-                        if (requestStart > end - DAY) {
+                        end -= secondsInDay;
+                        splitRequest(Math.max(requestsBlockStart, end - secondsInDay), end);
+                        if (requestsBlockStart >= end - secondsInDay) {
                             isEarliestRequest = true;
                         }
                     }
                     else {
-                        start += DAY;
-                        splitRequest(start, Math.min(requestEnd, start + DAY));
+                        start += secondsInDay;
+                        splitRequest(start, Math.min(requestsBlockEnd, start + secondsInDay));
                     }
                 }
 
@@ -4279,22 +4451,27 @@ function qstatistics_begin(EMBEDDED) {
 
                 function splitRequest(start, end) {
                     var request =
-                        '?_username=' + encodedUsername +
-                        ';_password=' + encodedPassword +
+                        encodedCredentials +
                         ';start=' + start +
                         ';end=' + end +
-                        (isEarliestRequest && (isFirstReport || that.addToBeginning) ? ';first=1' : '') +
+                        (isEarliestRequest && (isReportEmpty || that.addToBeginning) ? ';first=1' : '') +
                         ';recursive=' + options.recursive +
                         ';id=' + (options.id || 0) +
                         ';refresh=' + CONFIG.refresh +
-                        ';queueevents=' + (isQstatistics ? 1 : 0);
+                        ';queueevents=' + (reportDisplaysQueueEvents() ? 1 : 0);
+
+                    if (start >= end) {
+                        debugger;
+                        return;
+                    }
 
                     debugLog('/update request sent       ' + request);
                     xhr = UTILS.get(request, function (r) {
-                        requestsReceived++;
-                        if (response(r, requestsToSend === requestsReceived)) {
-                            if (requestsToSend === requestsReceived) {
-                                xhr = null;
+                        chunksReceived++;
+                        that.chunksComplete = chunksTotal === chunksReceived;
+                        xhr = null;
+                        if (response(r ,start)) {
+                            if (that.chunksComplete) {
                                 that.addToBeginning = false;
                                 hidePreloader();
                                 if (EMBEDDED) {
@@ -4312,15 +4489,29 @@ function qstatistics_begin(EMBEDDED) {
                 }
 
 
-                if (!xhr && !stopPolling && (requestsToSend > 1 || !document.hidden) && requestEnd >= requestStart) {
-                    var start = requestStart,
-                        end = requestEnd;
+                var start = requestsBlockStart,
+                    end = Math.min(requestsBlockEnd, Date.now() / 1000 + 1);
 
+                if (start >= end) {
+                    pollTimeoutHandle = setTimeout(function () {
+                        that.tryNewRequest();
+                    }, 5000);
+                    return;
+                }
+
+                chunksTotal = Math.ceil((end - start) / secondsInDay);
+                chunksReceived = 0;
+                this.chunksComplete = false;
+                var isEarliestRequest = !this.addToBeginning || chunksTotal === 1;
+
+                clearTimeout(pollTimeoutHandle);
+
+                if (requestsBlockEnd >= requestsBlockStart && (chunksTotal > 1 || !document.hidden)) {
                     if (that.addToBeginning) {
-                        splitRequest(Math.max(requestStart, end - DAY), end);
+                        splitRequest(Math.max(requestsBlockStart, end - secondsInDay), end);
                     }
                     else {
-                        splitRequest(start, Math.min(requestEnd, start + DAY));
+                        splitRequest(start, Math.min(requestsBlockEnd, start + secondsInDay));
                     }
                 }
                 else {
@@ -4332,17 +4523,15 @@ function qstatistics_begin(EMBEDDED) {
             };
 
 
-            this.stopRequest = function () {
+            this.startNewPolling = function () {
                 clearTimeout(pollTimeoutHandle);
                 if (xhr) {
                     xhr.abort();
-                    xhr = null;
                 }
-            };
 
-
-            this.startNewPolling = function () {
-                this.stopRequest();         // if we don't do this, polling may be broken
+                if (EMBEDDED) {
+                    embeddedPOLL.requestReplayed();
+                }
 
                 if (EMBEDDED && options.time) {
                     getRangeFromDropdown();
@@ -4352,40 +4541,44 @@ function qstatistics_begin(EMBEDDED) {
 
                 lastToday = moment().startOf('day');
                 errorsShown = false;
-                stopPolling = false;
-                isFirstReport = true;
+                reportNeedsRender = true;
                 this.addToBeginning = false;
 
                 // if all required data is in the cache, don't query server
-                if (START >= minRecordedTime && END <= maxRecordedTime) {
-                    createReport();
+                if (reportStart >= minRecordedTime && reportEnd <= maxRecordedTime) {
+                    calculateReport();
                     // no requests needed
                     return;
                 }
                 // query only what is missing (but only from the beginning)
-                else if (START < minRecordedTime && END >= minRecordedTime && (END <= maxRecordedTime || !stopPolling)) {
-                    requestStart = START;
-                    requestEnd = minRecordedTime;
+                else if (reportStart < minRecordedTime && reportEnd >= minRecordedTime && (reportEnd <= maxRecordedTime || reportEnd_byNow < reportEnd)) {
+                    requestsBlockStart = reportStart;
+                    requestsBlockEnd = minRecordedTime;
                     this.addToBeginning = true;
                 }
                 // query only what is missing (but only from the end)
-                else if (START <= maxRecordedTime && START >= minRecordedTime && END > maxRecordedTime) {
-                    requestStart = maxRecordedTime;
-                    requestEnd = END;
+                else if (reportStart <= maxRecordedTime && reportStart >= minRecordedTime && reportEnd > maxRecordedTime) {
+                    if (Date.now() < reportEnd * 1000) {
+                        var dontShowPreloader = true;
+                    }
+                    requestsBlockStart = maxRecordedTime;
+                    requestsBlockEnd = reportEnd;
                 }
                 // if missing data is on both sides, just query everything
                 else {
-                    requestStart = START;
-                    requestEnd = END;
+                    requestsBlockStart = reportStart;
+                    requestsBlockEnd = reportEnd;
                     clearAllCalls();
                 }
 
-                showPreloader();
+                if (!dontShowPreloader) {
+                    showPreloader();
+                }
                 this.tryNewRequest();
             };
 
 
-            function response(response, complete) {
+            function response(response, responseStart) {
                 debugLog('Response loading finished, ' + (response.length / 1048576).toFixed(2) + ' Mb loaded.   Starting to parse...');
                 var json = JSON.parse(response);
 
@@ -4396,38 +4589,52 @@ function qstatistics_begin(EMBEDDED) {
                         for (var j in json.errors) {
                             errorsShown += '\n' + json.errors[j].message + '\n\n';
                         }
+                        debugger;
+                        debugLog(errorsShown);
                         alert(errorsShown);
                     }
-                    return false;
+                    return false;  // really?
                 }
                 else {
-                    var updateEnd = +json.updated;           // if updated does not go beyond END, polling will never stop
+                    var updateEnd = +json.updated,
+                        isAnythingChanged = addRecordsToDatabase(json);
 
-                    var isAnythingChanged = addRecordsToDatabase(json);
-
-                    // var timeDiff = Math.abs(updateEnd - now_END);
-                    // if (timeDiff > 3) {
-                    //     alert('Clock on your local machine is ' + timeDiff + ' seconds ' + (updateEnd - now_END > 0 ? ' behind' : ' ahead'));
+                    // if (Date.now() < updateEnd * 1000) {
+                    //     alert('Clock on your local machine is behind the server time');
                     // }
 
-                    if (requestEnd === END) {
-                        now_END = Math.min(updateEnd, END);
+                    if (requestsBlockEnd === reportEnd) {
+                        reportEnd_byNow = Math.min(updateEnd, reportEnd);
                     }
 
-                    if (!isQstatistics) {
+                    if (!reportDisplaysQueueEvents()) {
                         updatesHaveNoEvents = true;
                     }
 
-                    minRecordedTime = Math.min(minRecordedTime, requestStart);
-                    maxRecordedTime = Math.max(maxRecordedTime, Math.min(requestEnd, updateEnd));
+                    minRecordedTime = Math.min(minRecordedTime, requestsBlockStart);
+                    maxRecordedTime = Math.max(maxRecordedTime, Math.min(requestsBlockEnd, updateEnd));
 
-                    if (isFirstReport || isAnythingChanged) {
-                        createReport(isFirstReport, !isFirstReport && json.cdrs_values, !complete);
+                    if (isReportEmpty || isAnythingChanged || options.period > 0 || (reportNeedsCalculation && that.chunksComplete)) {
+                        var appendOptions;
+                        if (!(isReportEmpty || that.addToBeginning)) {
+                            appendOptions = {
+                                calls: json.cdrs_values,
+                                start: requestsBlockStart,
+                                end: requestsBlockEnd
+                            }
+                        }
+
+                        calculateReport(true /* todo */, appendOptions, !that.chunksComplete);
+                        appendStart = responseStart;
+                    }
+                    else if (that.chunksComplete && reportNeedsRender) {
+                        // todo update class  // todo no view , todo how does the table know resize
+                        renderReport();
                     }
 
-                    if (complete) {
-                        requestStart = maxRecordedTime;
-                        requestEnd = END;
+                    if (that.chunksComplete) {
+                        requestsBlockStart = maxRecordedTime;
+                        requestsBlockEnd = reportEnd;
 
                         enableRightMenu();
 
@@ -4440,12 +4647,11 @@ function qstatistics_begin(EMBEDDED) {
                             that.startNewPolling();
                             return false;
                         }
-                        else if (END <= maxRecordedTime) {
-                            stopPolling = true;
+                        else if (reportEnd <= maxRecordedTime) {
+                            clearTimeout(pollTimeoutHandle);
                         }
                     }
 
-                    isFirstReport = false;
                 }
 
                 return true;
@@ -4479,7 +4685,7 @@ function qstatistics_begin(EMBEDDED) {
                     if (document.hidden) {
                         clearTimeout(pollTimeoutHandle);
                     }
-                    else {
+                    else if (that.chunksComplete) {
                         that.tryNewRequest();
                     }
                 });
@@ -4530,13 +4736,13 @@ function qstatistics_begin(EMBEDDED) {
                     FORM.preventScroll();
                 }
 
-                notifyReportRendered();
+                onReportRendered();
             };
 
 
             function createHeader() {
                 function getSorting(i) {
-                    if (sortingCol === i) {
+                    if (sortingColAbs === i) {
                         return sortingOrder === 1 ? ' class="asc"' : ' class="desc"';
                     }
                     else {
@@ -4547,8 +4753,8 @@ function qstatistics_begin(EMBEDDED) {
 
                 var str = '<th style="position: relative" id="0col"' + getSorting(0) + '>' + (options.period ? 'Time' : 'Destination') + '</th>';
 
-                for (var i = 1; i < colPosLength; i++) {
-                    var newI = colOrig[i];
+                for (var i = 1; i < colShufLength; i++) {
+                    var newI = getColAbs[i];
                     str += '<th style="position: relative" id="' + newI + 'col" draggable="true" ondragover="return false"' + getSorting(newI) + '>' + columnTitles[newI] + '</th>';
                 }
 
@@ -4585,25 +4791,15 @@ function qstatistics_begin(EMBEDDED) {
                     startTh = evt.target;
                     startId = parseInt(startTh.id);
 
-                    if (sortingCol === startId) {
+                    if (sortingColAbs === startId) {
                         sortingOrder *= -1;
                     }
                     else {
                         sortingOrder = -1;
                     }
-                    sortingCol = startId;
-                    if (startId) {      // ??????????????
-                        if (EMBEDDED) { ////????????????
-                            createReport();
-                        }
-                        else {
-                            sortTable();
-                            VIEW.update();
-                        }
-                    }
-                    else {
-                        createReport();
-                    }
+                    sortingColAbs = startId;
+                    sortTable();
+                    renderReport();
                 });
 
                 tr.addEventListener('dragstart', function (evt) {
@@ -4660,7 +4856,7 @@ function qstatistics_begin(EMBEDDED) {
                         colsOrder[id1] = colsOrder[id2];
                         colsOrder[id2] = temp;
                         getColumnPositions();
-                        createReport();
+                        renderReport();
                     }
                 });
             }
@@ -4686,11 +4882,11 @@ function qstatistics_begin(EMBEDDED) {
                         }
                         var row = target.parentNode,
                             bc = tbody.children;
-                        for (var i = 0, n = bc.length; i < n; i++) {
-                            if (row === bc[i]) {
+                        for (var rowAbs = 0, n = bc.length; rowAbs < n; rowAbs++) {
+                            if (row === bc[rowAbs]) {
                                 var rc = row.children;
-                                for (var j = 1, m = rc.length; j < m; j++) {
-                                    if (target === rc[j]) {
+                                for (var colShuf = 1, m = rc.length; colShuf < m; colShuf++) {
+                                    if (target === rc[colShuf]) {
                                         break;
                                     }
                                 }
@@ -4698,8 +4894,8 @@ function qstatistics_begin(EMBEDDED) {
                             }
                         }
 
-                        if (j !== m) {
-                            openCallDetails(i, j);
+                        if (colShuf !== m) {
+                            openCallDetails(rowAbs, colShuf);
                         }
                     }
                 });
@@ -4798,10 +4994,10 @@ function qstatistics_begin(EMBEDDED) {
                         var totalRow = data.pop();
                     }
                     data.sort(function (a, b) {
-                        if (a[sortingCol] < b[sortingCol]) {
+                        if (a[sortingColAbs] < b[sortingColAbs]) {
                             return -sortOrder;
                         }
-                        if (a[sortingCol] > b[sortingCol]) {
+                        if (a[sortingColAbs] > b[sortingColAbs]) {
                             return sortOrder;
                         }
                         return 0;
@@ -4833,7 +5029,7 @@ function qstatistics_begin(EMBEDDED) {
                     headerChildren[Math.abs(sortCol)].className = (sortOrder > 0) ? 'asc' : 'desc';
                 }
 
-                if (!reportRendered && !google.visualization) {
+                if (!google.visualization) {
                     debugLog('Start waiting until google charts load');
                 }
                 google.charts.setOnLoadCallback(drawChart);
@@ -4864,84 +5060,81 @@ function qstatistics_begin(EMBEDDED) {
                 oldType = options.type,
                 upToDate = [],
                 zIndex = 1,
-                oldSlideIndex = types.indexOf(oldType),
-                str = '';
+                oldTabIndex = types.indexOf(oldType),
+                slidesStr = '',
+                buttonsStr = '';
 
             for (var i in types) {
-                str += '<slide style="z-index: ' + (+i === oldSlideIndex ? 1 : 0) + '; opacity: ' + (+i === oldSlideIndex ? 1 : 0) + '"></slide>';
+                slidesStr += '<slide style="z-index: ' + (+i === oldTabIndex ? 1 : 0) + '; opacity: ' + (+i === oldTabIndex ? 1 : 0) + '"></slide>';
+                buttonsStr += '<button id="go-' + types[i] + '"' + (oldType === types[i] ? ' class="active"' : '') + ' onclick="vs.tabs.goTo(\'' + types[i] + '\')" disabled></button>';
             }
 
-            container.innerHTML = str +
+            container.innerHTML = slidesStr +
                 '<div id="piechart-chooser"></div><button id="zoom-out" onclick="vs.chart.resetZoom()" class="universal">Reset chart</button>' +
                 '<div id="zooming-overlay" ondragstart="return false"></div><div id="left-overlay">&#10096;</div><div id="right-overlay">&#10097;</div>';
-            byId('main-content').insertAdjacentHTML('afterend', '<section id="right-menu"><button id="go-table" onclick="vs.tabs.goTo(\'table\')" disabled></button><button id="go-linechart" onclick="vs.tabs.goTo(\'linechart\')" disabled></button><button id="go-barchart" onclick="vs.tabs.goTo(\'barchart\')" disabled></button><button id="go-stacked" onclick="vs.tabs.goTo(\'stacked\')" disabled></button><button id="go-piechart" onclick="vs.tabs.goTo(\'piechart\')" disabled><button id="go-reasons" onclick="vs.tabs.goTo(\'reasons\')" disabled></button><button id="go-csv" onclick="vs.report.downloadCSV()" disabled></button><button id="go-png" onclick="vs.chart.downloadPNG()" disabled></button></section>');
+            byId('main-content').insertAdjacentHTML('afterend', '<section id="right-menu">' +
+                buttonsStr +
+                '<button id="go-csv" onclick="vs.report.downloadCSV()" disabled></button><button id="go-png" onclick="vs.chart.downloadPNG()" disabled></button></section>');
             // todo put this in thml
 
-            var children = container.children,
+            var tabs = container.children,
                 goPng = byId('go-png'),
                 pieSourceChooser = byId('piechart-chooser');
 
-            this.tabs = {};
+            this.currentTab = tabs[oldTabIndex];
 
 
             this.goTo = function (nextType) {
-                var oldSlide = children[oldSlideIndex],
-                    nextSlideIndex = types.indexOf(nextType),
-                    nextSlide = children[nextSlideIndex];
+                var oldTab = tabs[oldTabIndex],
+                    nextTabIndex = types.indexOf(nextType),
+                    nextTab = tabs[nextTabIndex];
 
-                if (nextSlideIndex !== oldSlideIndex) {
-                    oldSlide.style.opacity = 0;
+                if (nextTabIndex !== oldTabIndex) {
+                    oldTab.style.opacity = 0;
                     setTimeout(function () {
-                        oldSlide.style.visibility = 'hidden';
+                        oldTab.style.visibility = 'hidden';
                     }, 300);
-                    nextSlide.style.visibility = 'visible';
-                    nextSlide.style.zIndex = ++zIndex;
-                    nextSlide.style.opacity = 1;
+                    nextTab.style.visibility = 'visible';
+                    nextTab.style.zIndex = ++zIndex;
+                    nextTab.style.opacity = 1;
                     byId('go-' + oldType).className = '';
                     byId('go-' + nextType).className = 'active';//
 
                     FORM.enableSaveButton();
                     options.type = nextType;
-                    this.tabs[nextType] = nextSlide;
+                    this.currentTab = nextTab;
                 }
 
-                isQstatistics = getQstatistics();
-                if (updatesHaveNoEvents && nextType === 'reasons') {
-                    clearAllCalls();
-                    SERVER.startNewPolling();
-                    return;
-                }
+                oldTabIndex = nextTabIndex;
+                oldType = nextType;
 
                 // if chart has bee zoomed and we are moving to other tab, then cancel zoom and recreate report
-                if (oldSlideIndex !== nextSlideIndex && CHART.zoomHasChanged()) {
-                    oldSlideIndex = nextSlideIndex;
-                    oldType = nextType;
+                if (oldTabIndex !== nextTabIndex && CHART.zoomHasChanged()) {
                     CHART.resetZoom();
                     return;  // TODO TRICKY  // CHART.resetZoom() will call createReport which will call goTo again
                 }
-
-                if (!upToDate[nextSlideIndex]) {
-                    if (nextType === 'table') {
-                        TABLE.render(nextSlide, true);
-                    }
-                    else if (nextType === 'reasons') {
-                        REASONS.render(nextSlide);
-                    }
-                    else {
-                        CHART.render(nextSlide, nextType);
-                    }
-                }
-                upToDate[nextSlideIndex] = true;
 
                 goPng.disabled = (nextType === 'table' || nextType === 'reasons');
                 pieSourceChooser.style.display = nextType === 'piechart' ? '' : 'none';
                 toggleLROverlay(nextType);
 
-                oldSlideIndex = nextSlideIndex;
-                oldType = nextType;
+                if (updatesHaveNoEvents && nextType === 'reasons') {
+                    if (calls.length > 100000) {
+                        // alert('Please wait...');
+                    }
+                    clearAllCalls();
+                    SERVICE.startNewPolling();
+                    return;
+                }
 
-                equalHeight();
-                TABLE.onScroll();
+                if (!upToDate[nextTabIndex]) {
+                    renderReport(true);
+                    upToDate[nextTabIndex] = true;
+                }
+
+                if (nextType === 'table') {
+                    TABLE.onScroll();
+                }
             };
 
 
@@ -4959,18 +5152,17 @@ function qstatistics_begin(EMBEDDED) {
         }
         getVisibleColumnsAndRows();
 
-        var SERVER = this.server = new Server();
+        var SERVICE = this.service = new Service();
 
         if (!EMBEDDED) {
-            var VIEW = new Tabs(),
-                REASONS = new Reasons(),
+            var TABS = new Tabs(),
+                AVAILABILITY = new Availability(),
                 SORTABLE = new SorTable(),
                 TABLE = new Table(),
                 FORM = new Form(formEl),
                 CHART = new Chart();
 
             htmlConstructor();
-            toggleLROverlay('table');
             equalHeight();
         }
         else {
@@ -4980,7 +5172,7 @@ function qstatistics_begin(EMBEDDED) {
                 container.classList.add('results');
             }
             else if (options.type === 'reasons') {
-                var REASONS = new Reasons(),
+                var AVAILABILITY = new Availability(),
                     SORTABLE = new SorTable();
             }
             else {
@@ -4990,18 +5182,17 @@ function qstatistics_begin(EMBEDDED) {
 
             if (options.time) {
                 byId(options.time).addEventListener('change', function () {
-                    SERVER.startNewPolling();
+                    SERVICE.startNewPolling();
                 });
             }
-            if (options.queuesSelect) {
-                // initially override queue filter
+            if (options.queuesSelect && options.queues !== 'none') {
+                // use from select
                 options.queues = 'use_include';
-
                 // listen for changes
                 byId(options.queuesSelect).addEventListener('change', function () {
                     options.queues = 'use_include';
                     delete memorizedIncludeIds[options.queuesSelect];
-                    createReport();
+                    onReportOptionsChange();
                 });
 
                 var phone_title = byId('phone_title');
@@ -5009,16 +5200,16 @@ function qstatistics_begin(EMBEDDED) {
                     opts.phonetitle = phone_title.value;
                     phone_title.addEventListener('change', function () {
                         options.phonetitle = this.value;
-                        createReport(true);
+                        onReportOptionsChange(true);
                     });
                 }
             }
 
-            SERVER.startNewPolling();
+            SERVICE.startNewPolling();
         }
 
         window.vs = {
-            tabs: VIEW,
+            tabs: TABS,
             chart: CHART,
             report: report
         };
@@ -5036,6 +5227,15 @@ function qstatistics_begin(EMBEDDED) {
             globalPollTimeout;
 
 
+        this.requestReplayed = function () {
+            clearTimeout(globalPollTimeout);
+            for (i = 0; i < reportServers.length; i++) {
+                clearTimeout(offsetTimeouts[i]);
+            }
+            offsetsEnded = EMBEDDED.length - 1;  // trick: onComplete will be launched after that REPLAYED request completes
+        };
+
+
         function launchOffsetRequests() {
             if (!document.hidden) {
                 offsetsEnded = 0;
@@ -5043,7 +5243,12 @@ function qstatistics_begin(EMBEDDED) {
                 for (var i = 0; i < reportServers.length; i++) {
                     var offset = +EMBEDDED[i].offset;
                     if (offset) {
-                        offsetTimeouts[i] = setTimeout(reportServers[i].tryNewRequest.bind(reportServers[i]), offset);
+                        offsetTimeouts[i] = setTimeout((function(i) {
+                            return function () {
+                                // offsetTimeouts[i] = null;
+                                reportServers[i].tryNewRequest();
+                            }
+                        })(i), offset);
                     }
                     else {
                         reportServers[i].tryNewRequest();
@@ -5062,8 +5267,13 @@ function qstatistics_begin(EMBEDDED) {
 
 
         document.addEventListener('visibilitychange', function () {
-            if (!document.hidden) {
-                clearTimeout(globalPollTimeout);
+            clearTimeout(globalPollTimeout);
+            if (document.hidden) {
+                for (i = 0; i < reportServers.length; i++) {
+                    clearTimeout(offsetTimeouts[i]);
+                }
+            }
+            else {
                 if (offsetsEnded === EMBEDDED.length) {
                     offsetsEnded = 0;
                     for (i = 0; i < reportServers.length; i++) {
@@ -5175,12 +5385,13 @@ function qstatistics_begin(EMBEDDED) {
                     success(xhr.responseText);
                 }
                 else if (xhr.status !== 500) { // todo
-                    debugger;
                     xhr.onerror();
                 }
             };
             xhr.onerror = function () {
-                setTimeout(that.get.bind(that, uri, success));
+                xhr.abort();
+                // todo this prevents xhr from being aborted
+                setTimeout(that.get.bind(that, uri, success), 100);
             };
             xhr.send();
 
@@ -5358,7 +5569,7 @@ function qstatistics_begin(EMBEDDED) {
             }
 
             var report = new Report(opts, byId(em.container));
-            reportServers.push(report.server);
+            reportServers.push(report.service);
         }
     }
     else {
